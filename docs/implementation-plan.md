@@ -336,15 +336,15 @@ export function calculateAttemptScore(
 - Create: `src/domain/mastery/mastery-calculator.ts`
 - Test: `src/domain/mastery/mastery-calculator.test.ts`
 
-- [ ] 品質變化表。
-- [ ] 模式倍率。
-- [ ] 提示倍率。
-- [ ] 情境倍率。
-- [ ] 技能權重。
-- [ ] 0–100 clamp。
-- [ ] Level 3/4/5 最低條件。
-- [ ] 高等級單次失敗保護。
-- [ ] Commit：`feat: calculate long-term skill mastery`
+- [x] 品質變化表。
+- [x] 模式倍率。
+- [x] 提示倍率。
+- [x] 情境倍率。
+- [x] 技能權重。
+- [x] 0–100 clamp。
+- [x] Level 3/4/5 最低條件。
+- [x] 高等級單次失敗保護。
+- [x] Commit：`feat: calculate long-term skill mastery`
 
 ### Task 4.3：ReviewScheduler
 
