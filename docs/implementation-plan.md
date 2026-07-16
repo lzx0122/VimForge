@@ -240,12 +240,12 @@ export function normalizeCommandInput(
 ): NormalizedAction[];
 ```
 
-- [ ] 測試 `d i "` 合併為 `di"`。
-- [ ] 測試 `2 d w` 正規化為等價操作。
-- [ ] 測試 Insert 文字合併。
-- [ ] 測試 Escape 轉為 Mode Change。
-- [ ] 不保存瀏覽器無關按鍵。
-- [ ] Commit：`feat: normalize vim command actions`
+- [x] 測試 `d i "` 合併為 `di"`。
+- [x] 測試 `2 d w` 正規化為等價操作。
+- [x] 測試 Insert 文字合併。
+- [x] 測試 Escape 轉為 Mode Change。
+- [x] 不保存瀏覽器無關按鍵。
+- [x] Commit：`feat: normalize vim command actions`
 
 ### Task 3.2：ExerciseEvaluator
 
