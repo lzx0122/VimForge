@@ -386,12 +386,12 @@ export function calculateAttemptScore(
 - Create: `src/features/practice/services/practice-session-service.ts`
 - Test: `src/stores/practice-store.test.ts`
 
-- [ ] 建立題組。
-- [ ] 追蹤 currentIndex。
-- [ ] 保存 AttemptDraft。
-- [ ] complete/skip/reset。
-- [ ] 不保存 EditorView。
-- [ ] Commit：`feat: manage practice session state`
+- [x] 建立題組。
+- [x] 追蹤 currentIndex。
+- [x] 保存 AttemptDraft。
+- [x] complete/skip/reset。
+- [x] 不保存 EditorView。
+- [x] Commit：`feat: manage practice session state`
 
 ### Task 5.2：IndexedDB Database
 
