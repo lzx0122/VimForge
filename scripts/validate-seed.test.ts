@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { validateCatalogFile } from "./content-validate";
 import { validateSeedSql } from "./validate-seed";
 
 const seedSql = readFileSync(
@@ -72,6 +73,16 @@ describe("seed validator", () => {
         other: 20,
       },
     });
+  });
+
+  it("keeps the expanded canonical snapshot at the same 10-unit/100-exercise baseline", () => {
+    const report = validateCatalogFile(
+      resolve(process.cwd(), "content/catalog.json"),
+    );
+
+    expect(report.errors).toEqual([]);
+    expect(report.summary.unitCount).toBe(10);
+    expect(report.summary.exerciseCount).toBe(100);
   });
 
   it("rejects skill weights that do not sum to one", () => {

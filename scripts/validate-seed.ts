@@ -18,6 +18,11 @@ import {
   type LearningMode,
   type VimMode,
 } from "../src/types/learning";
+import {
+  convertSeedCatalog,
+  type SeedCatalogUnit,
+} from "./content-validate";
+import { validateCatalogSnapshot } from "../src/content/catalog-contract";
 
 interface SeedSkill {
   slug: string;
@@ -302,6 +307,18 @@ export function validateSeedSql(seedSql: string): SeedValidationResult {
     return { errors: ["Seed catalog must be an array."], summary };
   }
 
+  // Keep the legacy seed diagnostics below, but run the expanded records
+  // through the canonical catalog contract as well. This makes the seed and
+  // offline JSON validator enforce the same exercise-level rules.
+  if (parsedCatalog.every(hasSeedUnitShape)) {
+    const expandedCatalog = convertSeedCatalog(
+      parsedCatalog as SeedCatalogUnit[],
+    );
+    for (const error of validateCatalogSnapshot(expandedCatalog)) {
+      errors.push(`Catalog ${error.path}: ${error.message}`);
+    }
+  }
+
   const unitSlugs = new Set<string>();
   const displayOrders = new Set<number>();
 
@@ -366,19 +383,21 @@ export function validateSeedSql(seedSql: string): SeedValidationResult {
       errors.push(`Unit ${unit.slug} contains an invalid supported mode.`);
     }
 
-    for (const [variantIndex, variant] of unit.variants.entries()) {
+    let exerciseNumber = 0;
+    for (const variant of unit.variants) {
       if (!Number.isInteger(variant.count) || variant.count <= 0) {
         errors.push(`Unit ${unit.slug} variant count must be positive.`);
         continue;
       }
 
       for (let ordinal = 1; ordinal <= variant.count; ordinal += 1) {
+        exerciseNumber += 1;
         const initialContent = replaceOrdinal(variant.initialContent, ordinal);
         const expectedContent = replaceOrdinal(variant.expectedContent, ordinal);
         const exercise = {
-          id: `${unit.slug}-${variantIndex + 1}-${ordinal}`,
+          id: `${unit.slug}-${String(exerciseNumber).padStart(2, "0")}`,
           unitId: unit.slug,
-          slug: `${unit.slug}-${variantIndex + 1}-${ordinal}`,
+          slug: `${unit.slug}-${String(exerciseNumber).padStart(2, "0")}`,
           title: replaceOrdinal(variant.title, ordinal),
           instruction: replaceOrdinal(variant.instruction, ordinal),
           language: variant.language,

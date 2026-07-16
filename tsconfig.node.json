@@ -18,8 +18,8 @@
     "eslint.config.ts",
     "playwright.config.ts",
     "scripts/**/*.ts",
-    "src/types/exercise.ts",
-    "src/types/learning.ts",
+    "src/content/**/*.ts",
+    "src/types/**/*.ts",
     "vite.config.ts",
     "vitest.config.ts"
   ]
