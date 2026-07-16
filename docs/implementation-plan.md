@@ -439,10 +439,10 @@ export function calculateAttemptScore(
 - Modify: `.env.example`
 - Test: `src/infrastructure/supabase/env.test.ts`
 
-- [ ] 驗證 URL 與 Publishable Key。
-- [ ] 缺少環境變數時顯示明確錯誤。
-- [ ] 不接受 Service Role 變數。
-- [ ] Commit：`feat: configure supabase browser client`
+- [x] 驗證 URL 與 Publishable Key。
+- [x] 缺少環境變數時顯示明確錯誤。
+- [x] 不接受 Service Role 變數。
+- [x] Commit：`feat: configure supabase browser client`
 
 ### Task 6.2：Catalog Migration
 
