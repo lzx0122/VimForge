@@ -353,12 +353,12 @@ export function calculateAttemptScore(
 - Create: `src/domain/review/review-scheduler.ts`
 - Test: `src/domain/review/review-scheduler.test.ts`
 
-- [ ] Level 基礎間隔。
-- [ ] 品質倍率。
-- [ ] 提示最長間隔。
-- [ ] 最大 30 天。
-- [ ] 失敗安排 10 分鐘後或本輪尾端。
-- [ ] Commit：`feat: schedule adaptive exercise reviews`
+- [x] Level 基礎間隔。
+- [x] 品質倍率。
+- [x] 提示最長間隔。
+- [x] 最大 30 天。
+- [x] 失敗安排 10 分鐘後或本輪尾端。
+- [x] Commit：`feat: schedule adaptive exercise reviews`
 
 ### Task 4.4：單題結果 UI
 
