@@ -55,9 +55,29 @@ export function advancePracticeSession(
 
   return {
     ...session,
+    exerciseIds: [...session.exerciseIds],
+    selectedSkillIds: [...session.selectedSkillIds],
     currentIndex,
     status: isComplete ? "completed" : "active",
     completedAt: isComplete ? updatedAt : null,
     updatedAt,
+  };
+}
+
+export function abandonPracticeSession(
+  session: PracticeSession,
+  abandonedAt: string,
+): PracticeSession {
+  if (session.status !== "active") {
+    throw new Error("Only an active practice session can be abandoned.");
+  }
+
+  return {
+    ...session,
+    exerciseIds: [...session.exerciseIds],
+    selectedSkillIds: [...session.selectedSkillIds],
+    status: "abandoned",
+    completedAt: abandonedAt,
+    updatedAt: abandonedAt,
   };
 }

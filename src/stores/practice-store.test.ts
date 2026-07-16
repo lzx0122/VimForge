@@ -1,7 +1,9 @@
 import { createPinia, setActivePinia } from "pinia";
+import { isReactive } from "vue";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import type { AttemptDraft } from "../types/attempt";
+import type { PracticeSession } from "../types/session";
 import { usePracticeStore } from "./practice-store";
 
 const SESSION_STARTED_AT = "2026-07-16T08:00:00.000Z";
@@ -151,6 +153,60 @@ describe("usePracticeStore", () => {
       store.skipCurrentExercise("2026-07-16T08:02:00.000Z"),
     ).toThrow("Only an active practice session can advance.");
     expect(JSON.stringify(store.$state)).toBe(completedState);
+  });
+
+  it("restores a persisted session and can discard only its attempt draft", () => {
+    const store = usePracticeStore();
+    const persistedSession: PracticeSession = {
+      id: "session-1",
+      learningMode: "memory_review",
+      selectionType: "daily_review",
+      requestedCount: 5,
+      status: "active",
+      currentIndex: 1,
+      exerciseIds: ["exercise-1", "exercise-2"],
+      selectedSkillIds: [],
+      startedAt: SESSION_STARTED_AT,
+      completedAt: null,
+      updatedAt: "2026-07-16T08:01:00.000Z",
+    };
+
+    store.restoreSession(persistedSession, createAttemptDraft("exercise-2"));
+
+    expect(store.currentExerciseId).toBe("exercise-2");
+    expect(store.attemptDraft?.exerciseId).toBe("exercise-2");
+
+    store.discardAttemptDraft();
+
+    expect(store.session?.id).toBe("session-1");
+    expect(store.attemptDraft).toBeNull();
+  });
+
+  it("abandons an active session without creating a failed attempt", () => {
+    const store = usePracticeStore();
+    store.createSession({
+      id: "session-1",
+      learningMode: "memory_review",
+      selectionType: "daily_review",
+      requestedCount: 5,
+      exerciseIds: ["exercise-1", "exercise-2"],
+      startedAt: SESSION_STARTED_AT,
+    });
+    store.saveAttemptDraft(createAttemptDraft());
+
+    const abandonedSession = store.abandonSession(
+      "2026-07-16T08:01:00.000Z",
+    );
+
+    expect(abandonedSession).toMatchObject({
+      status: "abandoned",
+      currentIndex: 0,
+      completedAt: "2026-07-16T08:01:00.000Z",
+      updatedAt: "2026-07-16T08:01:00.000Z",
+    });
+    expect(isReactive(abandonedSession.exerciseIds)).toBe(false);
+    expect(isReactive(abandonedSession.selectedSkillIds)).toBe(false);
+    expect(store.attemptDraft).toBeNull();
   });
 
   it("resets all practice session state", () => {

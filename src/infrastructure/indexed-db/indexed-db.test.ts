@@ -124,6 +124,30 @@ describe("IndexedDB repositories", () => {
     expect(await repository.getActive()).toEqual(session);
   });
 
+  it("stores an unfinished attempt draft with its resumable session", async () => {
+    const repository = new SessionRepository(database);
+    const session = createSession();
+    const attemptDraft = {
+      ...createAttempt(),
+      completed: false,
+      completedAt: null,
+    } satisfies AttemptDraft;
+
+    await repository.save(session, attemptDraft);
+
+    expect(await repository.getResumeState(session.id)).toEqual({
+      session,
+      attemptDraft,
+    });
+
+    await repository.saveAttemptDraft(session.id, null);
+
+    expect(await repository.getResumeState(session.id)).toEqual({
+      session,
+      attemptDraft: null,
+    });
+  });
+
   it("persists local editor and practice settings", async () => {
     const repository = new SettingsRepository(database);
     const settings = {

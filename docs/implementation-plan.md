@@ -419,11 +419,11 @@ export function calculateAttemptScore(
 - Test: `src/features/practice/components/ResumeSessionDialog.test.ts`
 - E2E: `tests/e2e/resume-session.spec.ts`
 
-- [ ] 重新整理後發現 active session。
-- [ ] 可恢復或放棄。
-- [ ] 未完成單題可恢復內容或重設。
-- [ ] 不自動算失敗。
-- [ ] Commit：`feat: resume interrupted practice sessions`
+- [x] 重新整理後發現 active session。
+- [x] 可恢復或放棄。
+- [x] 未完成單題可恢復內容或重設。
+- [x] 不自動算失敗。
+- [x] Commit：`feat: resume interrupted practice sessions`
 
 ---
 

@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 
 import {
+  abandonPracticeSession,
   advancePracticeSession,
   createPracticeSession,
   type CreatePracticeSessionInput,
@@ -11,6 +12,14 @@ import type { PracticeSession } from "../types/session";
 interface PracticeStoreState {
   session: PracticeSession | null;
   attemptDraft: AttemptDraft | null;
+}
+
+function copyPracticeSession(session: PracticeSession): PracticeSession {
+  return {
+    ...session,
+    exerciseIds: [...session.exerciseIds],
+    selectedSkillIds: [...session.selectedSkillIds],
+  };
 }
 
 function copyAttemptDraft(draft: AttemptDraft): AttemptDraft {
@@ -83,6 +92,19 @@ export const usePracticeStore = defineStore("practice", {
       this.attemptDraft = copyAttemptDraft(draft);
     },
 
+    restoreSession(
+      session: PracticeSession,
+      attemptDraft: AttemptDraft | null,
+    ): void {
+      this.session = copyPracticeSession(session);
+      this.attemptDraft =
+        attemptDraft === null ? null : copyAttemptDraft(attemptDraft);
+    },
+
+    discardAttemptDraft(): void {
+      this.attemptDraft = null;
+    },
+
     completeCurrentExercise(completedAt: string): void {
       if (this.session === null) {
         throw new Error("Cannot complete an exercise without a practice session.");
@@ -111,6 +133,18 @@ export const usePracticeStore = defineStore("practice", {
       );
       this.session = nextState.session;
       this.attemptDraft = nextState.attemptDraft;
+    },
+
+    abandonSession(abandonedAt: string): PracticeSession {
+      if (this.session === null) {
+        throw new Error("Cannot abandon a missing practice session.");
+      }
+
+      const session = abandonPracticeSession(this.session, abandonedAt);
+      this.session = session;
+      this.attemptDraft = null;
+
+      return session;
     },
 
     resetSession(): void {
