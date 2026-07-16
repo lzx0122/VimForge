@@ -1,16 +1,40 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const EXERCISE_ID = "00000000-0000-4000-8000-000000000401";
+const MOVEMENT_EXERCISE_ID = "00000000-0000-4000-8000-000000000402";
 
-async function mockExerciseCatalog(page: Page): Promise<void> {
-  await page.route("**/rest/v1/**", async (route) => {
-    const requestUrl = new URL(route.request().url());
-    const table = requestUrl.pathname.split("/").at(-1);
-    let body: object | object[];
+type ExerciseScenario = "insert" | "movement";
 
-    if (table === "exercises") {
-      const exercise = {
-        id: EXERCISE_ID,
+async function mockExerciseCatalog(
+  page: Page,
+  scenario: ExerciseScenario = "insert",
+): Promise<void> {
+  const isMovement = scenario === "movement";
+  const exerciseId = isMovement ? MOVEMENT_EXERCISE_ID : EXERCISE_ID;
+  const exercise = isMovement
+    ? {
+        id: exerciseId,
+        unit_id: "00000000-0000-4000-8000-000000000201",
+        slug: "move-cursor-01",
+        title: "移動游標",
+        instruction: "把游標移到 c 上，完成後維持 Normal Mode。",
+        language: "plaintext",
+        exercise_type: "challenge",
+        difficulty: "beginner",
+        supported_modes: ["beginner", "memory_review"],
+        target_duration_ms: 12000,
+        version: 1,
+        initial_content: "abc",
+        expected_content: "abc",
+        initial_cursor: { line: 0, column: 0 },
+        completion_rule: {
+          contentMatch: "unchanged",
+          cursorMatch: { type: "exact", line: 0, column: 2 },
+          requiredMode: "normal",
+        },
+      }
+    : {
+        id: exerciseId,
         unit_id: "00000000-0000-4000-8000-000000000201",
         slug: "insert-prefix-01",
         title: "插入字首",
@@ -30,6 +54,13 @@ async function mockExerciseCatalog(page: Page): Promise<void> {
           requiredMode: "normal",
         },
       };
+
+  await page.route("**/rest/v1/**", async (route) => {
+    const requestUrl = new URL(route.request().url());
+    const table = requestUrl.pathname.split("/").at(-1);
+    let body: object | object[];
+
+    if (table === "exercises") {
       body = requestUrl.searchParams.has("id")
         ? exercise
         : [{
@@ -52,18 +83,30 @@ async function mockExerciseCatalog(page: Page): Promise<void> {
         is_primary: true,
       }];
     } else if (table === "exercise_solutions") {
-      body = [{
-        sequence: "ix<Esc>",
-        normalized_actions: [
-          { type: "vim_command", command: "i" },
-          { type: "insert_text", text: "x", textLength: 1 },
-          { type: "mode_change", mode: "normal" },
-        ],
-        keystroke_count: 3,
-        is_recommended: true,
-        explanation: "使用 i 插入字元，完成後按 Esc。",
-        display_order: 0,
-      }];
+      body = isMovement
+        ? [{
+            sequence: "ll",
+            normalized_actions: [
+              { type: "vim_command", command: "l" },
+              { type: "vim_command", command: "l" },
+            ],
+            keystroke_count: 2,
+            is_recommended: true,
+            explanation: "使用 l 向右移動兩格。",
+            display_order: 0,
+          }]
+        : [{
+            sequence: "ix<Esc>",
+            normalized_actions: [
+              { type: "vim_command", command: "i" },
+              { type: "insert_text", text: "x", textLength: 1 },
+              { type: "mode_change", mode: "normal" },
+            ],
+            keystroke_count: 3,
+            is_recommended: true,
+            explanation: "使用 i 插入字元，完成後按 Esc。",
+            display_order: 0,
+          }];
     } else if (table === "exercise_hints") {
       body = [
         { level: 1, content: "先進入可輸入文字的模式。", command_preview: null },
@@ -83,13 +126,22 @@ async function mockExerciseCatalog(page: Page): Promise<void> {
   });
 }
 
-async function startPracticeSession(page: Page): Promise<string> {
-  await mockExerciseCatalog(page);
+async function startPracticeSession(
+  page: Page,
+  scenario: ExerciseScenario = "insert",
+): Promise<string> {
+  await mockExerciseCatalog(page, scenario);
   await page.goto("/practice/setup?mode=memory_review");
   await page.getByLabel("5 題").check();
   await page.getByRole("button", { name: "開始練習" }).click();
   await expect(page).toHaveURL(/\/practice\/[0-9a-f-]+$/u);
-  await expect(page.getByText("在 name 前插入 x，最後回到 Normal Mode。")).toBeVisible();
+  await expect(
+    page.getByText(
+      scenario === "movement"
+        ? "把游標移到 c 上，完成後維持 Normal Mode。"
+        : "在 name 前插入 x，最後回到 Normal Mode。",
+    ),
+  ).toBeVisible();
   return page.url().split("/").at(-1) ?? "";
 }
 
@@ -157,32 +209,51 @@ async function domCursorOffset(page: Page): Promise<number | null> {
   });
 }
 
-test("requires the target mode before showing scored feedback", async ({ page }) => {
+test("automatically completes after every target condition matches", async ({ page }) => {
   const sessionId = await startPracticeSession(page);
   const editor = page.locator(".cm-content");
   await expect(editor).toBeFocused();
   await page.keyboard.press("i");
   await page.keyboard.type("x");
-  await page.getByRole("button", { name: "檢查答案" }).click();
 
   await expect(page.getByText("請回到 Normal Mode")).toBeVisible();
   await expect(page.getByRole("article", { name: "完成！" })).toHaveCount(0);
 
-  await editor.focus();
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "檢查答案" }).click();
 
   await expect(page.getByRole("article", { name: "完成！" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "檢查答案" })).toHaveCount(0);
   await expect(page.getByText("準確", { exact: true })).toBeVisible();
   await expect(page.getByText("速度", { exact: true })).toBeVisible();
   await expect(page.getByText("推薦操作", { exact: true })).toBeVisible();
-  await expect(page.getByText("ix<Esc>", { exact: true })).toBeVisible();
+  await expect(
+    page.locator('[data-feedback-section="solutions"] code').first(),
+  ).toHaveText("ix<Esc>");
   await expect.poll(() => readAttemptCount(page)).toBe(1);
 
   await page.getByRole("button", { name: "下一題" }).click();
   await expect(page).toHaveURL(`/practice/${sessionId}/result`);
   await page.reload();
   await expect(page.getByRole("heading", { name: "練習結果" })).toBeVisible();
+});
+
+test("shows a cursor target and auto-completes a movement exercise", async ({ page }) => {
+  await startPracticeSession(page, "movement");
+
+  await expect(page.getByText("黃色框為目標游標位置")).toBeVisible();
+  await expect(
+    page.locator(
+      ".cm-cursor-target:not(.cm-cursor-target-eol)",
+    ),
+  ).toHaveText("c");
+  await expect(page.getByRole("article", { name: "完成！" })).toHaveCount(0);
+
+  await page.keyboard.press("l");
+  await expect(page.getByRole("article", { name: "完成！" })).toHaveCount(0);
+  await page.keyboard.press("l");
+
+  await expect(page.getByRole("article", { name: "完成！" })).toBeVisible();
+  await expect.poll(() => readAttemptCount(page)).toBe(1);
 });
 
 test("autofocuses the target and restarts without creating an attempt", async ({ page }) => {

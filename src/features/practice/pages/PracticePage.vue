@@ -4,7 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 
 import VimEditor from "../../../components/editor/VimEditor.vue";
 import ExerciseFeedback from "../../../components/feedback/ExerciseFeedback.vue";
-import { evaluateExercise, type EditorSnapshot } from "../../../domain/exercise/exercise-evaluator";
+import type { EditorSnapshot } from "../../../domain/exercise/exercise-evaluator";
 import {
   openVimForgeDatabase,
 } from "../../../infrastructure/indexed-db/database";
@@ -16,7 +16,11 @@ import { reportError } from "../../../infrastructure/monitoring/error-reporter";
 import { SupabaseExerciseRepository } from "../../../infrastructure/supabase/supabase-exercise-repository";
 import { usePracticeStore } from "../../../stores/practice-store";
 import { useSyncStore } from "../../../stores/sync-store";
-import type { AttemptDraft, HintLevel } from "../../../types/attempt";
+import type {
+  AttemptDraft,
+  HintLevel,
+  NormalizedAction,
+} from "../../../types/attempt";
 import type { VimMode } from "../../../types/learning";
 import type { PracticeSession } from "../../../types/session";
 import type { ExerciseRepository, PracticeExercise } from "../repositories/exercise-repository";
@@ -28,6 +32,7 @@ import {
   createAttemptOutcome,
   type AttemptFeedback,
 } from "../services/attempt-outcome-service";
+import { evaluateAutoCompletion } from "../services/auto-completion-service";
 
 const route = useRoute();
 const router = useRouter();
@@ -47,6 +52,8 @@ const unmetMessages = ref<string[]>([]);
 const highestHintLevel = ref<HintLevel>(0);
 const resetCount = ref(0);
 const keystrokeCount = ref(0);
+const recordedActions = ref<NormalizedAction[]>([]);
+const hasUserInteraction = ref(false);
 const editorInstance = ref(0);
 const attemptClientId = ref("");
 const attemptStartedAt = ref("");
@@ -67,6 +74,7 @@ let repository: SessionRepository | null = null;
 let exerciseRepository: ExerciseRepository | null = null;
 let isUnmounted = false;
 let draftSaveQueue: Promise<void> = Promise.resolve();
+let autoEvaluationQueued = false;
 
 const restoredAttemptContent = computed(
   () => practiceStore.attemptDraft?.currentContent ?? null,
@@ -129,9 +137,10 @@ function buildAttemptDraft(
     initialCursor: { ...activeExercise.initialCursor },
     currentCursor: { ...editorSnapshot.cursor },
     currentMode: editorSnapshot.mode,
-    actions: [],
+    actions: recordedActions.value.map((action) => ({ ...action })),
     mistakeCount: 0,
-    undoCount: 0,
+    undoCount: recordedActions.value.filter((action) => action.type === "undo")
+      .length,
     resetCount: resetCount.value,
     highestHintLevel: highestHintLevel.value,
     completed,
@@ -171,6 +180,9 @@ function prepareExercise(activeExercise: PracticeExercise): void {
   };
   highestHintLevel.value = restoredDraft?.highestHintLevel ?? 0;
   resetCount.value = restoredDraft?.resetCount ?? 0;
+  recordedActions.value =
+    restoredDraft?.actions.map((action) => ({ ...action })) ?? [];
+  hasUserInteraction.value = recordedActions.value.length > 0;
   attemptClientId.value = restoredDraft?.clientAttemptId ?? crypto.randomUUID();
   attemptStartedAt.value = restoredDraft?.startedAt ?? new Date().toISOString();
   keystrokeCount.value = 0;
@@ -239,8 +251,8 @@ async function resetAttempt(): Promise<void> {
 function updateContent(content: string): void {
   if (snapshot.value !== null) {
     snapshot.value = { ...snapshot.value, content };
-    unmetMessages.value = [];
     queueDraftSave();
+    scheduleAutoEvaluation();
   }
 }
 
@@ -248,6 +260,7 @@ function updateCursor(cursor: EditorSnapshot["cursor"]): void {
   if (snapshot.value !== null) {
     snapshot.value = { ...snapshot.value, cursor: { ...cursor } };
     queueDraftSave();
+    scheduleAutoEvaluation();
   }
 }
 
@@ -255,7 +268,15 @@ function updateMode(mode: VimMode): void {
   if (snapshot.value !== null) {
     snapshot.value = { ...snapshot.value, mode };
     queueDraftSave();
+    scheduleAutoEvaluation();
   }
+}
+
+function recordAction(action: NormalizedAction): void {
+  recordedActions.value.push({ ...action });
+  hasUserInteraction.value = true;
+  queueDraftSave();
+  scheduleAutoEvaluation();
 }
 
 function updateHighestHint(level: HintLevel): void {
@@ -281,10 +302,48 @@ function resetExercise(): void {
     cursor: { ...activeExercise.initialCursor },
     mode: "normal",
   };
+  recordedActions.value = [];
+  hasUserInteraction.value = false;
   unmetMessages.value = [];
   editorInstance.value += 1;
   statusMessage.value = "示範已結束，題目已重設，請親自完成。";
   queueDraftSave();
+}
+
+function scheduleAutoEvaluation(): void {
+  if (autoEvaluationQueued) {
+    return;
+  }
+
+  autoEvaluationQueued = true;
+  queueMicrotask(() => {
+    autoEvaluationQueued = false;
+    void autoCompleteCurrentExercise();
+  });
+}
+
+async function autoCompleteCurrentExercise(): Promise<void> {
+  if (
+    !hasUserInteraction.value ||
+    isSavingOutcome.value ||
+    feedback.value !== null ||
+    exercise.value === null ||
+    snapshot.value === null
+  ) {
+    return;
+  }
+
+  const result = evaluateAutoCompletion(
+    exercise.value,
+    snapshot.value,
+    hasUserInteraction.value,
+  );
+  unmetMessages.value = result.evaluation.unmetConditions.map(
+    (condition) => condition.message,
+  );
+  if (result.shouldSubmit) {
+    await recordOutcome(true);
+  }
 }
 
 async function recordOutcome(completed: boolean): Promise<void> {
@@ -342,17 +401,6 @@ async function recordOutcome(completed: boolean): Promise<void> {
   } finally {
     isSavingOutcome.value = false;
   }
-}
-
-async function checkAnswer(): Promise<void> {
-  const evaluation = evaluateExercise(currentExercise(), currentSnapshot());
-  unmetMessages.value = evaluation.unmetConditions.map(
-    (condition) => condition.message,
-  );
-  if (!evaluation.completed) {
-    return;
-  }
-  await recordOutcome(true);
 }
 
 async function skipExercise(): Promise<void> {
@@ -496,13 +544,22 @@ onUnmounted(() => {
           :initial-content="snapshot.content"
           :initial-cursor="snapshot.cursor"
           :language="exercise.language"
+          :cursor-target="exercise.completionRule.cursorMatch"
           show-line-numbers
           show-keypresses
           auto-focus
           @content-changed="updateContent"
           @cursor-changed="updateCursor"
           @mode-changed="updateMode"
+          @action-recorded="recordAction"
         />
+        <p
+          v-if="exercise.completionRule.cursorMatch.type !== 'ignore'"
+          class="cursor-target-note"
+          role="note"
+        >
+          黃色框為目標游標位置
+        </p>
         <PracticeEditorStatusBar
           :mode="snapshot.mode"
           :elapsed-seconds="elapsedSeconds"
@@ -512,13 +569,6 @@ onUnmounted(() => {
       </div>
 
       <div class="exercise-actions">
-        <button
-          type="button"
-          :disabled="isSavingOutcome"
-          @click="checkAnswer"
-        >
-          {{ isSavingOutcome ? "正在保存…" : "檢查答案" }}
-        </button>
         <button
           type="button"
           :disabled="isSavingOutcome"
@@ -636,6 +686,14 @@ onUnmounted(() => {
 .practice-editor-frame :deep(.vim-editor) {
   border: 0;
   border-radius: 0;
+}
+
+.cursor-target-note {
+  margin: 0;
+  padding: 0.65rem 1rem;
+  color: #fef3c7;
+  background: #292114;
+  font-size: 0.88rem;
 }
 
 .exercise-heading h2,
