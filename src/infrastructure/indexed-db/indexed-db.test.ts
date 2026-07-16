@@ -2,6 +2,7 @@ import "fake-indexeddb/auto";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import type { AttemptSyncInput } from "../../features/practice/repositories/attempt-sync-repository";
 import type { AttemptDraft } from "../../types/attempt";
 import type { PracticeSession } from "../../types/session";
 import { AttemptRepository } from "./attempt-repository";
@@ -15,7 +16,7 @@ import { SettingsRepository } from "./settings-repository";
 
 const DATABASE_NAME = "vim-forge-indexed-db-test";
 
-function createAttempt(): AttemptDraft {
+function createAttemptDraft(): AttemptDraft {
   return {
     clientAttemptId: "attempt-1",
     exerciseId: "exercise-1",
@@ -35,6 +36,33 @@ function createAttempt(): AttemptDraft {
     resetCount: 0,
     highestHintLevel: 0,
     completed: true,
+  };
+}
+
+function createSyncAttempt(): AttemptSyncInput {
+  return {
+    clientAttemptId: "attempt-1",
+    sessionId: null,
+    exerciseId: "exercise-1",
+    exerciseVersion: 1,
+    learningMode: "memory_review",
+    source: "web",
+    completed: true,
+    startedAt: "2026-07-16T08:00:00.000Z",
+    completedAt: "2026-07-16T08:01:00.000Z",
+    durationMs: 60_000,
+    keystrokeCount: 3,
+    recommendedKeystrokeCount: 3,
+    mistakeCount: 0,
+    undoCount: 0,
+    resetCount: 0,
+    highestHintLevel: 0,
+    usedRecommendedSolution: true,
+    normalizedActions: [{ type: "vim_command", command: "ciw" }],
+    speedScore: 100,
+    accuracyScore: 100,
+    performanceQuality: 5,
+    practiceContext: "different_exercise",
   };
 }
 
@@ -78,7 +106,7 @@ describe("IndexedDB repositories", () => {
 
   it("keys attempts by clientAttemptId and tracks pending or synced status", async () => {
     const repository = new AttemptRepository(database);
-    const attempt = createAttempt();
+    const attempt = createSyncAttempt();
 
     await repository.save(attempt);
 
@@ -99,17 +127,17 @@ describe("IndexedDB repositories", () => {
 
   it("keeps attempts append-only when the same clientAttemptId is saved again", async () => {
     const repository = new AttemptRepository(database);
-    const attempt = createAttempt();
+    const attempt = createSyncAttempt();
     await repository.save(attempt);
     await repository.markSynced(attempt.clientAttemptId);
 
     await repository.save({
       ...attempt,
-      currentContent: "overwritten content",
+      accuracyScore: 1,
     });
 
     expect(await repository.get(attempt.clientAttemptId)).toMatchObject({
-      currentContent: attempt.currentContent,
+      accuracyScore: attempt.accuracyScore,
       syncStatus: "synced",
     });
   });
@@ -128,7 +156,7 @@ describe("IndexedDB repositories", () => {
     const repository = new SessionRepository(database);
     const session = createSession();
     const attemptDraft = {
-      ...createAttempt(),
+      ...createAttemptDraft(),
       completed: false,
       completedAt: null,
     } satisfies AttemptDraft;
@@ -173,7 +201,7 @@ describe("IndexedDB repositories", () => {
     const completion = transactionToPromise(transaction);
 
     transaction.objectStore("attempts").put({
-      ...createAttempt(),
+      ...createSyncAttempt(),
       syncStatus: "pending",
     });
     transaction.objectStore("sessions").put(createSession());

@@ -536,13 +536,13 @@ export function calculateAttemptScore(
 - Test: `src/features/guest-sync/services/guest-sync-service.test.ts`
 - E2E: `tests/e2e/offline-sync.spec.ts`
 
-- [ ] 完成題目先本機。
-- [ ] 登入後批次同步。
-- [ ] 成功標記 synced。
-- [ ] 失敗保留 pending。
-- [ ] 網路恢復重試。
-- [ ] 下一題不受阻。
-- [ ] Commit：`feat: sync guest attempts after login`
+- [x] 完成題目先本機。
+- [x] 登入後批次同步。
+- [x] 成功標記 synced。
+- [x] 失敗保留 pending。
+- [x] 網路恢復重試。
+- [x] 下一題不受阻。
+- [x] Commit：`feat: sync guest attempts after login`
 
 ---
 

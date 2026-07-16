@@ -1,4 +1,4 @@
-import type { AttemptDraft } from "../../types/attempt";
+import type { AttemptSyncInput } from "../../features/practice/repositories/attempt-sync-repository";
 import {
   INDEXED_DB_STORES,
   requestToPromise,
@@ -7,7 +7,7 @@ import {
 
 export type AttemptSyncStatus = "pending" | "synced";
 
-export interface StoredAttempt extends AttemptDraft {
+export interface StoredAttempt extends AttemptSyncInput {
   syncStatus: AttemptSyncStatus;
 }
 
@@ -15,7 +15,7 @@ export class AttemptRepository {
   public constructor(private readonly database: IDBDatabase) {}
 
   public async save(
-    attempt: AttemptDraft,
+    attempt: AttemptSyncInput,
     syncStatus: AttemptSyncStatus = "pending",
   ): Promise<void> {
     const transaction = this.database.transaction(

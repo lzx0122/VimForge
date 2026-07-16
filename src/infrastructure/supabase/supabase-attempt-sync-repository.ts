@@ -113,14 +113,14 @@ function toAttemptSyncResult(value: unknown): AttemptSyncResult {
 
 export class SupabaseAttemptSyncRepository implements AttemptSyncRepository {
   public constructor(
-    private readonly client: SupabaseClient<Database> =
-      getSupabaseBrowserClient(),
+    private readonly client: SupabaseClient<Database> | null = null,
   ) {}
 
   public async recordAttempt(
     attempt: AttemptSyncInput,
   ): Promise<AttemptSyncResult> {
-    const { data, error } = await this.client.rpc(
+    const client = this.client ?? getSupabaseBrowserClient();
+    const { data, error } = await client.rpc(
       "record_exercise_attempt",
       { payload: toPayload(attempt) },
     );
