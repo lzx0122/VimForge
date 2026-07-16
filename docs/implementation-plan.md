@@ -470,10 +470,10 @@ export function calculateAttemptScore(
 - Create: `src/infrastructure/supabase/supabase-exercise-repository.ts`
 - Test: `src/infrastructure/supabase/catalog-repositories.test.ts`
 
-- [ ] Domain 依賴 Repository Interface。
-- [ ] Supabase DTO 轉 Domain。
-- [ ] 不一次載入 100 題完整內容。
-- [ ] Commit：`feat: load published curriculum from supabase`
+- [x] Domain 依賴 Repository Interface。
+- [x] Supabase DTO 轉 Domain。
+- [x] 不一次載入 100 題完整內容。
+- [x] Commit：`feat: load published curriculum from supabase`
 
 ### Task 6.4：User Learning Migration 與 RLS
 
