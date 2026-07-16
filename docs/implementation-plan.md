@@ -203,10 +203,10 @@ export interface LearningModeSelection {
 - Modify: `src/components/editor/VimEditor.vue`
 - Test: `src/components/editor/VimModeBadge.test.ts`
 
-- [ ] 顯示 Normal、Insert、Visual。
-- [ ] 編輯器失去焦點時顯示「點擊編輯器以繼續」。
-- [ ] Mode 改變時 emit。
-- [ ] Commit：`feat: expose vim mode and focus state`
+- [x] 顯示 Normal、Insert、Visual。
+- [x] 編輯器失去焦點時顯示「點擊編輯器以繼續」。
+- [x] Mode 改變時 emit。
+- [x] Commit：`feat: expose vim mode and focus state`
 
 ### Task 2.3：每題建立全新 Editor State
 

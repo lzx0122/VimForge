@@ -1,6 +1,8 @@
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { getCM, Vim } from "@replit/codemirror-vim";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
+import { nextTick } from "vue";
 import {
   afterEach,
   afterAll,
@@ -49,9 +51,10 @@ afterAll(() => {
   Reflect.deleteProperty(Range.prototype, "getClientRects");
 });
 
-async function mountEditor() {
+async function mountEditor(attachTo?: HTMLElement) {
   const wrapper = mount(VimEditor, {
     props: defaultProps,
+    ...(attachTo ? { attachTo } : {}),
   });
   await flushPromises();
   return wrapper;
@@ -143,5 +146,43 @@ describe("VimEditor", () => {
     wrapper.unmount();
 
     expect(destroySpy).toHaveBeenCalledOnce();
+  });
+
+  it("emits mode changes from the real Vim runtime", async () => {
+    const wrapper = await mountEditor();
+    const view = getEditorView(wrapper);
+    const codeMirror = getCM(view);
+    if (!codeMirror) {
+      throw new Error("expected the Vim bridge");
+    }
+
+    Vim.handleKey(codeMirror, "i", "user");
+
+    expect(wrapper.emitted("modeChanged")?.at(-1)).toEqual(["insert"]);
+
+    Vim.handleKey(codeMirror, "<Esc>", "user");
+
+    expect(wrapper.emitted("modeChanged")?.at(-1)).toEqual(["normal"]);
+    wrapper.unmount();
+  });
+
+  it("shows a notice only while the editor is unfocused", async () => {
+    const wrapper = await mountEditor(document.body);
+
+    try {
+      const view = getEditorView(wrapper);
+
+      expect(wrapper.text()).toContain("點擊編輯器以繼續");
+
+      view.contentDOM.focus();
+      await nextTick();
+      expect(wrapper.text()).not.toContain("點擊編輯器以繼續");
+
+      view.contentDOM.blur();
+      await nextTick();
+      expect(wrapper.text()).toContain("點擊編輯器以繼續");
+    } finally {
+      wrapper.unmount();
+    }
   });
 });

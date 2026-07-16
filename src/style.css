@@ -258,6 +258,43 @@ textarea {
   background: #111827;
 }
 
+.vim-editor-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.vim-mode-badge {
+  padding: 0.3rem 0.65rem;
+  border: 1px solid #4ade80;
+  border-radius: 999px;
+  color: #86efac;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.vim-mode-badge[data-mode="insert"] {
+  border-color: #60a5fa;
+  color: #93c5fd;
+}
+
+.vim-mode-badge[data-mode="visual"] {
+  border-color: #c084fc;
+  color: #d8b4fe;
+}
+
+.editor-focus-notice {
+  margin: 0;
+  color: #fbbf24;
+  font-size: 0.9rem;
+}
+
 .vim-editor .cm-editor {
   min-height: 20rem;
   color: #e5e7eb;

@@ -6,9 +6,16 @@ import {
   lineNumbers,
   type ViewUpdate,
 } from "@codemirror/view";
-import { vim } from "@replit/codemirror-vim";
+import {
+  getCM,
+  vim,
+  type CodeMirror,
+} from "@replit/codemirror-vim";
 import { onBeforeUnmount, onMounted, ref } from "vue";
 
+import type { VimMode } from "../../types";
+import EditorFocusNotice from "./EditorFocusNotice.vue";
+import VimModeBadge from "./VimModeBadge.vue";
 import {
   orderEditorExtensions,
   type VimEditorEmits,
@@ -20,7 +27,11 @@ const props = defineProps<VimEditorProps>();
 const emit = defineEmits<VimEditorEmits>();
 
 const editorHost = ref<HTMLElement | null>(null);
+const currentMode = ref<VimMode>("normal");
+const isFocused = ref(false);
 let editorView: EditorView | null = null;
+let vimBridge: CodeMirror | null = null;
+let vimModeHandler: ((event: unknown) => void) | null = null;
 let disposed = false;
 
 function cursorOffset(content: string) {
@@ -47,6 +58,25 @@ function cursorPosition(update: ViewUpdate) {
   };
 }
 
+function modeFromEvent(event: unknown): VimMode | null {
+  if (typeof event !== "object" || event === null || !("mode" in event)) {
+    return null;
+  }
+
+  const { mode } = event;
+  if (
+    mode === "normal" ||
+    mode === "insert" ||
+    mode === "visual" ||
+    mode === "replace" ||
+    mode === "command"
+  ) {
+    return mode;
+  }
+
+  return null;
+}
+
 onMounted(async () => {
   const languageExtension = await loadLanguageExtension(props.language);
 
@@ -62,12 +92,23 @@ onMounted(async () => {
       emit("cursorChanged", cursorPosition(update));
     }
   });
+  const focusHandlers = EditorView.domEventHandlers({
+    focus: () => {
+      isFocused.value = true;
+      return false;
+    },
+    blur: () => {
+      isFocused.value = false;
+      return false;
+    },
+  });
   const remainingExtensions: Extension[] = [
     minimalSetup,
     ...(props.showLineNumbers ? [lineNumbers()] : []),
     languageExtension,
     EditorState.readOnly.of(props.readOnly ?? false),
     EditorView.editable.of(!(props.readOnly ?? false)),
+    focusHandlers,
     updateListener,
   ];
   const state = EditorState.create({
@@ -80,20 +121,45 @@ onMounted(async () => {
     parent: editorHost.value,
     state,
   });
+  vimBridge = getCM(editorView);
+  if (vimBridge) {
+    vimModeHandler = (event: unknown) => {
+      const mode = modeFromEvent(event);
+      if (!mode) {
+        return;
+      }
+
+      currentMode.value = mode;
+      emit("modeChanged", mode);
+    };
+    vimBridge.on("vim-mode-change", vimModeHandler);
+  }
+  emit("modeChanged", currentMode.value);
   emit("editorReady");
 });
 
 onBeforeUnmount(() => {
   disposed = true;
+  if (vimBridge && vimModeHandler) {
+    vimBridge.off("vim-mode-change", vimModeHandler);
+  }
+  vimModeHandler = null;
+  vimBridge = null;
   editorView?.destroy();
   editorView = null;
 });
 </script>
 
 <template>
-  <div
-    ref="editorHost"
-    class="vim-editor"
-    :data-show-keypresses="showKeypresses"
-  />
+  <section class="vim-editor-shell">
+    <div class="vim-editor-status">
+      <VimModeBadge :mode="currentMode" />
+      <EditorFocusNotice :is-focused="isFocused" />
+    </div>
+    <div
+      ref="editorHost"
+      class="vim-editor"
+      :data-show-keypresses="showKeypresses"
+    />
+  </section>
 </template>
