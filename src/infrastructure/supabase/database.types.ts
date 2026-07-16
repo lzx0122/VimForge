@@ -105,7 +105,12 @@ export interface Database {
       exercise_hints: CatalogTable<ExerciseHintRow>;
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      record_exercise_attempt: {
+        Args: { payload: Json };
+        Returns: Json;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

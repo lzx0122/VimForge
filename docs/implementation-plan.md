@@ -518,13 +518,13 @@ export function calculateAttemptScore(
 - Create: `src/infrastructure/supabase/supabase-attempt-sync-repository.ts`
 - Test: `src/infrastructure/supabase/attempt-sync.test.ts`
 
-- [ ] Function 由 auth.uid 決定 user。
-- [ ] clientAttemptId 去重。
-- [ ] Transaction 更新所有摘要。
-- [ ] RPC 使用 `security invoker`，所有寫入仍受 RLS。
-- [ ] 不接受前端 user_id；以 auth.uid() 決定擁有者。
-- [ ] revoke from public、anon；只 grant authenticated。
-- [ ] Commit：`feat: record attempts transactionally`
+- [x] Function 由 auth.uid 決定 user。
+- [x] clientAttemptId 去重。
+- [x] Transaction 更新所有摘要。
+- [x] RPC 使用 `security invoker`，所有寫入仍受 RLS。
+- [x] 不接受前端 user_id；以 auth.uid() 決定擁有者。
+- [x] revoke from public、anon；只 grant authenticated。
+- [x] Commit：`feat: record attempts transactionally`
 
 ### Task 7.3：Guest Sync Queue
 
