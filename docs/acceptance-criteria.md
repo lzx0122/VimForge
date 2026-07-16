@@ -216,3 +216,32 @@ Given 裝置沒有實體鍵盤或寬度偏小
 When 進入練習頁  
 Then 顯示建議使用電腦與實體鍵盤  
 And 仍可查看課程與進度
+
+## AC-031：練習題自動聚焦
+
+Given 可編輯練習題已載入\
+When CodeMirror 與 Vim bridge 建立完成\
+Then 編輯器自動取得焦點一次\
+And 游標維持在題目提供的起始位置\
+And 第一個 Vim 按鍵不需要先點擊編輯器\
+And 唯讀編輯器不得自動取得焦點
+
+## AC-032：編輯器狀態列
+
+Given 使用者正在完成一題\
+When Vim Mode 改變\
+Then 編輯器下方狀態列顯示目前 Mode\
+And 顯示從 Attempt startedAt 計算的已練習時間\
+And 時間格式為 mm:ss\
+And 背景分頁造成 interval 延遲時，時間仍以壁鐘差值為準
+
+## AC-033：重新開始本題
+
+Given 使用者已修改題目內容並經過部分練習時間\
+When 點擊「重新開始本題」\
+Then 內容與游標還原為題目初始值\
+And Vim Mode 回到 Normal\
+And resetCount 增加一次\
+And 已練習時間不得倒退或歸零\
+And 不建立成功或失敗 Attempt\
+And outcome 保存中控制項不可操作

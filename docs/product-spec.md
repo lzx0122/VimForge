@@ -238,6 +238,16 @@ Visual Block 若 CodeMirror Vim Keymap 的相容性不足，可在 MVP 標記為
 
 > 內容已正確，請回到 Normal Mode。
 
+### 10.1 練習編輯器互動
+
+- 可編輯題目建立完成後，只在初次掛載時自動取得焦點。
+- 新題與重新開始的題目使用題目 `initialCursor`；恢復未完成題目使用已保存的 `currentCursor`。
+- 唯讀編輯器不得自動取得焦點；使用者主動移到其他控制項後，編輯器不得持續搶回焦點。
+- 編輯器下方顯示目前 Vim Mode、從 `startedAt` 計算的已練習時間，以及「重新開始本題」控制項。
+- 已練習時間使用壁鐘差值並顯示為 `mm:ss`，不得作為新的計分輸入。
+- 重新開始會還原初始內容、初始游標與 Normal Mode，並增加一次 `resetCount`。
+- 重新開始不得更換 `clientAttemptId`、重設 `startedAt`、自動建立 Attempt 或自動判定失敗。
+
 ## 11. 單題回饋
 
 完成後依序顯示：

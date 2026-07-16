@@ -227,8 +227,20 @@ describe("VimEditor", () => {
       view.contentDOM.blur();
       await nextTick();
       expect(wrapper.text()).toContain("點擊編輯器以繼續");
+      expect(wrapper.get(".editor-focus-notice").classes()).toContain(
+        "editor-focus-notice-overlay",
+      );
     } finally {
       wrapper.unmount();
     }
+  });
+
+  it("leaves mode presentation to the practice footer", async () => {
+    const wrapper = await mountEditor();
+
+    expect(wrapper.find(".vim-mode-badge").exists()).toBe(false);
+    expect(wrapper.find(".vim-editor-status").exists()).toBe(false);
+
+    wrapper.unmount();
   });
 });

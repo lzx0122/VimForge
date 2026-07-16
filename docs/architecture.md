@@ -209,6 +209,7 @@ export interface VimEditorProps {
   language: SupportedLanguage;
   showLineNumbers: boolean;
   showKeypresses: boolean;
+  autoFocus?: boolean;
   readOnly?: boolean;
 }
 ```
@@ -234,6 +235,15 @@ export interface VimEditorEmits {
 - 上一題操作
 
 Vim Extension 必須排在其他 Insert Mode keymap 之前。
+
+`VimEditor.vue` 另負責載入 presentation-only 的 CodeMirror theme。當 `autoFocus` 為 true 且不是 readonly 時，必須在 EditorView 與 Vim bridge 建立完成後聚焦一次，不得透過 transaction 改動既有 selection。
+
+練習功能負責編輯器外的 orchestration：
+
+- `PracticeEditorStatusBar.vue` 只呈現 Mode、elapsed time 與 restart event，不持有 timer 或 attempt state。
+- elapsed-time composable 從 `AttemptDraft.startedAt` 與壁鐘時間計算秒數，並在 feedback 或頁面卸載時停止 interval。
+- `PracticePage.vue` 將 restart event 接到既有 reset flow，還原內容、游標與 Mode，保存更新後 draft，但保留 `clientAttemptId` 與 `startedAt`。
+- restart 不直接產生 Attempt，也不改動 scoring、mastery、exercise evaluation 或同步合約。
 
 ## 8. Attempt Draft
 

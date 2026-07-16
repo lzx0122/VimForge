@@ -20,8 +20,10 @@ import type { AttemptDraft, HintLevel } from "../../../types/attempt";
 import type { VimMode } from "../../../types/learning";
 import type { PracticeSession } from "../../../types/session";
 import type { ExerciseRepository, PracticeExercise } from "../repositories/exercise-repository";
+import PracticeEditorStatusBar from "../components/PracticeEditorStatusBar.vue";
 import ProgressiveHintPanel from "../components/ProgressiveHintPanel.vue";
 import ResumeSessionDialog from "../components/ResumeSessionDialog.vue";
+import { useAttemptElapsedTime } from "../composables/use-attempt-elapsed-time";
 import {
   createAttemptOutcome,
   type AttemptFeedback,
@@ -49,6 +51,16 @@ const editorInstance = ref(0);
 const attemptClientId = ref("");
 const attemptStartedAt = ref("");
 const feedback = ref<AttemptFeedback | null>(null);
+const isAttemptActive = computed(
+  () =>
+    exercise.value !== null &&
+    snapshot.value !== null &&
+    feedback.value === null,
+);
+const elapsedSeconds = useAttemptElapsedTime(
+  attemptStartedAt,
+  isAttemptActive,
+);
 
 let database: IDBDatabase | null = null;
 let repository: SessionRepository | null = null;
@@ -258,6 +270,10 @@ function recordKeydown(event: KeyboardEvent): void {
 }
 
 function resetExercise(): void {
+  if (isSavingOutcome.value) {
+    return;
+  }
+
   const activeExercise = currentExercise();
   resetCount.value += 1;
   snapshot.value = {
@@ -474,17 +490,26 @@ onUnmounted(() => {
         <p>{{ exercise.instruction }}</p>
       </header>
 
-      <VimEditor
-        :key="`${exercise.id}-${editorInstance}`"
-        :initial-content="snapshot.content"
-        :initial-cursor="snapshot.cursor"
-        :language="exercise.language"
-        show-line-numbers
-        show-keypresses
-        @content-changed="updateContent"
-        @cursor-changed="updateCursor"
-        @mode-changed="updateMode"
-      />
+      <div class="practice-editor-frame">
+        <VimEditor
+          :key="`${exercise.id}-${editorInstance}`"
+          :initial-content="snapshot.content"
+          :initial-cursor="snapshot.cursor"
+          :language="exercise.language"
+          show-line-numbers
+          show-keypresses
+          auto-focus
+          @content-changed="updateContent"
+          @cursor-changed="updateCursor"
+          @mode-changed="updateMode"
+        />
+        <PracticeEditorStatusBar
+          :mode="snapshot.mode"
+          :elapsed-seconds="elapsedSeconds"
+          :restart-disabled="isSavingOutcome"
+          @request-restart="resetExercise"
+        />
+      </div>
 
       <div class="exercise-actions">
         <button
@@ -599,6 +624,18 @@ onUnmounted(() => {
   display: grid;
   gap: 1.5rem;
   margin-top: 2rem;
+}
+
+.practice-editor-frame {
+  overflow: hidden;
+  border: 1px solid #4b5563;
+  border-radius: 0.75rem;
+  background: #171b23;
+}
+
+.practice-editor-frame :deep(.vim-editor) {
+  border: 0;
+  border-radius: 0;
 }
 
 .exercise-heading h2,

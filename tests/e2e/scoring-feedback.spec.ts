@@ -121,10 +121,46 @@ async function readAttemptCount(page: Page): Promise<number> {
   });
 }
 
+function elapsedSeconds(value: string | null): number {
+  if (value === null) {
+    throw new Error("Expected an elapsed-time value");
+  }
+
+  const [minutes, seconds] = value.split(":").map(Number);
+  if (
+    minutes === undefined ||
+    seconds === undefined ||
+    !Number.isFinite(minutes) ||
+    !Number.isFinite(seconds)
+  ) {
+    throw new Error(`Invalid elapsed-time value: ${value}`);
+  }
+
+  return minutes * 60 + seconds;
+}
+
+async function domCursorOffset(page: Page): Promise<number | null> {
+  return page.locator(".cm-content").evaluate((content) => {
+    const selection = window.getSelection();
+    if (
+      selection?.anchorNode === null ||
+      selection?.anchorNode === undefined ||
+      !content.contains(selection.anchorNode)
+    ) {
+      return null;
+    }
+
+    const range = document.createRange();
+    range.selectNodeContents(content);
+    range.setEnd(selection.anchorNode, selection.anchorOffset);
+    return range.toString().length;
+  });
+}
+
 test("requires the target mode before showing scored feedback", async ({ page }) => {
   const sessionId = await startPracticeSession(page);
   const editor = page.locator(".cm-content");
-  await editor.focus();
+  await expect(editor).toBeFocused();
   await page.keyboard.press("i");
   await page.keyboard.type("x");
   await page.getByRole("button", { name: "檢查答案" }).click();
@@ -147,6 +183,38 @@ test("requires the target mode before showing scored feedback", async ({ page })
   await expect(page).toHaveURL(`/practice/${sessionId}/result`);
   await page.reload();
   await expect(page.getByRole("heading", { name: "練習結果" })).toBeVisible();
+});
+
+test("autofocuses the target and restarts without creating an attempt", async ({ page }) => {
+  await startPracticeSession(page);
+
+  const editor = page.locator(".cm-content");
+  const mode = page.locator(".practice-editor-status-bar .vim-mode-badge");
+  const timer = page.getByLabel("已練習時間");
+
+  await expect(editor).toBeFocused();
+  await expect.poll(() => domCursorOffset(page)).toBe(6);
+  await expect(mode).toHaveText("Normal");
+  await expect(timer).toHaveText(/^\d{2,}:\d{2}$/u);
+  await expect
+    .poll(async () => elapsedSeconds(await timer.textContent()))
+    .toBeGreaterThanOrEqual(1);
+
+  await page.keyboard.press("i");
+  await expect(mode).toHaveText("Insert");
+  await page.keyboard.type("x");
+  const beforeRestart = elapsedSeconds(await timer.textContent());
+
+  const restartButton = page.getByRole("button", { name: "重新開始本題" });
+  await restartButton.click();
+  await expect(editor).toHaveText("const name = true;");
+  await expect(editor).toBeFocused();
+  await expect.poll(() => domCursorOffset(page)).toBe(6);
+  await expect(mode).toHaveText("Normal");
+  expect(elapsedSeconds(await timer.textContent())).toBeGreaterThanOrEqual(
+    beforeRestart,
+  );
+  expect(await readAttemptCount(page)).toBe(0);
 });
 
 test("reveals four hints in order and resets after playback without an attempt", async ({ page }) => {

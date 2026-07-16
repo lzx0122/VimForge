@@ -33,7 +33,7 @@
 
 **Intentionally deferred:** The top mode badge remains in place until Task 3 adds the replacement footer. Timer lifecycle, restart UI, practice-page orchestration, documentation amendments, and E2E coverage remain for later Tasks.
 
-- [ ] **Step 1: Add focused failing tests for autofocus**
+- [x] **Step 1: Add focused failing tests for autofocus**
 
 Extend `src/components/editor/VimEditor.test.ts` so the mount helper can accept prop overrides, then add tests equivalent to:
 
@@ -74,7 +74,7 @@ npm run test -- src/components/editor/VimEditor.test.ts
 
 Expected: FAIL because `autoFocus` is not part of `VimEditorProps` and the editor does not focus itself.
 
-- [ ] **Step 2: Add focused failing theme tests**
+- [x] **Step 2: Add focused failing theme tests**
 
 Create `src/components/editor/vim-editor-theme.test.ts`. Mount a real TypeScript `VimEditor`, inspect representative generated token spans, and assert the exported palette is reflected in computed styles for comment, keyword/type/operator, function/property, string/number, and punctuation families. Also assert the editor surface, active line number, and fat Vim cursor use the approved tokens.
 
@@ -103,7 +103,7 @@ npm run test -- src/components/editor/vim-editor-theme.test.ts
 
 Expected: FAIL because the theme module and custom token styles do not exist.
 
-- [ ] **Step 3: Add the direct highlight dependency and implement the theme**
+- [x] **Step 3: Add the direct highlight dependency and implement the theme**
 
 Install the already-resolved highlight package as a direct runtime dependency without upgrading other packages:
 
@@ -140,7 +140,7 @@ const syntaxTheme = HighlightStyle.define([
 ]);
 ```
 
-- [ ] **Step 4: Implement one-shot editable autofocus in `VimEditor`**
+- [x] **Step 4: Implement one-shot editable autofocus in `VimEditor`**
 
 Add `autoFocus?: boolean` to `VimEditorProps`. Add `vimEditorTheme` to the non-Vim extensions after the language extension. After `EditorView`, the Vim bridge, and its mode listener have been created, focus only when explicitly enabled and editable:
 
@@ -152,7 +152,7 @@ if (props.autoFocus && !(props.readOnly ?? false)) {
 
 Do not dispatch a selection transaction. Keep the async disposal guard so a component unmounted during language loading cannot receive focus.
 
-- [ ] **Step 5: Run focused tests and Task 1 verification**
+- [x] **Step 5: Run focused tests and Task 1 verification**
 
 Run:
 
@@ -166,7 +166,7 @@ npm run build
 
 Expected: all commands pass. The existing Vite chunk-size warning is non-blocking only if the build exits successfully.
 
-- [ ] **Step 6: Commit Task 1**
+- [x] **Step 6: Commit Task 1**
 
 ```bash
 git add package.json package-lock.json src/components/editor/editor-types.ts src/components/editor/VimEditor.vue src/components/editor/VimEditor.test.ts src/components/editor/vim-editor-theme.ts src/components/editor/vim-editor-theme.test.ts
@@ -186,7 +186,7 @@ git commit -m "feat: focus and theme the Vim editor"
 
 **Intentionally deferred:** `PracticePage` will not render the footer or start its timer until Task 3. The existing reset flow, top editor badge, documentation, and browser journey remain unchanged in this Task.
 
-- [ ] **Step 1: Add failing footer component tests**
+- [x] **Step 1: Add failing footer component tests**
 
 Create `PracticeEditorStatusBar.test.ts` with a typed mount helper. Assert:
 
@@ -204,7 +204,7 @@ npm run test -- src/features/practice/components/PracticeEditorStatusBar.test.ts
 
 Expected: FAIL because the component does not exist.
 
-- [ ] **Step 2: Implement the stateless footer**
+- [x] **Step 2: Implement the stateless footer**
 
 Create `PracticeEditorStatusBar.vue` with this public contract:
 
@@ -221,7 +221,7 @@ const emit = defineEmits<{ requestRestart: [] }>();
 
 Export a pure `formatElapsedTime(seconds: number): string` from the script module or a small adjacent module. Clamp invalid/negative input to zero, floor fractional seconds, and render minutes with at least two digits. Compose the existing `VimModeBadge` so text is still visible, but style it as an arrow segment with `clip-path`. Use distinct approved mode colors and a native restart button with visible focus treatment. Keep all presentation local to the component.
 
-- [ ] **Step 3: Add failing elapsed-time lifecycle tests**
+- [x] **Step 3: Add failing elapsed-time lifecycle tests**
 
 Create `use-attempt-elapsed-time.test.ts` with `vi.useFakeTimers()`, `vi.setSystemTime()`, `effectScope()`, and Vue refs. Assert:
 
@@ -239,7 +239,7 @@ npm run test -- src/features/practice/composables/use-attempt-elapsed-time.test.
 
 Expected: FAIL because the composable does not exist.
 
-- [ ] **Step 4: Implement the elapsed-time composable**
+- [x] **Step 4: Implement the elapsed-time composable**
 
 Create this typed API:
 
@@ -252,7 +252,7 @@ export function useAttemptElapsedTime(
 
 Use a pure calculation based on `Date.now() - Date.parse(startedAt.value)`, clamped to a non-negative integer. Watch both refs immediately. When active with a valid timestamp, refresh now and then with `window.setInterval(refresh, 1_000)`. Clear the previous interval before starting another and in `onScopeDispose`. When inactive, retain the final calculated value and stop scheduling updates. Do not mutate practice state.
 
-- [ ] **Step 5: Run focused tests and Task 2 verification**
+- [x] **Step 5: Run focused tests and Task 2 verification**
 
 Run:
 
@@ -266,7 +266,7 @@ npm run build
 
 Expected: all commands pass.
 
-- [ ] **Step 6: Commit Task 2**
+- [x] **Step 6: Commit Task 2**
 
 ```bash
 git add src/features/practice/components/PracticeEditorStatusBar.vue src/features/practice/components/PracticeEditorStatusBar.test.ts src/features/practice/composables/use-attempt-elapsed-time.ts src/features/practice/composables/use-attempt-elapsed-time.test.ts
@@ -290,7 +290,7 @@ git commit -m "feat: add practice editor status bar"
 
 **Intentionally deferred:** Nothing from the approved editor-experience amendment. Deployment remains outside this implementation request and requires a separate explicit instruction.
 
-- [ ] **Step 1: Add failing practice E2E acceptance tests**
+- [x] **Step 1: Add failing practice E2E acceptance tests**
 
 Update `tests/e2e/scoring-feedback.spec.ts` so the primary scoring test sends the first `i` key without manually calling `editor.focus()`. Add a dedicated test that asserts:
 
@@ -322,7 +322,7 @@ npm run test:e2e -- tests/e2e/scoring-feedback.spec.ts
 
 Expected: FAIL because the practice page does not enable autofocus or render the footer.
 
-- [ ] **Step 2: Add failing component coverage for removing the duplicate top badge**
+- [x] **Step 2: Add failing component coverage for removing the duplicate top badge**
 
 Update `VimEditor.test.ts` to assert the editor shell no longer renders `.vim-mode-badge`, while the focus notice still appears after a deliberate blur without reserving an empty status row when focused.
 
@@ -334,7 +334,7 @@ npm run test -- src/components/editor/VimEditor.test.ts
 
 Expected: FAIL because `VimEditor` still renders its top badge and status container.
 
-- [ ] **Step 3: Integrate autofocus, elapsed time, and restart in `PracticePage`**
+- [x] **Step 3: Integrate autofocus, elapsed time, and restart in `PracticePage`**
 
 Import the footer and composable. Derive lifecycle state without duplicating attempt data:
 
@@ -358,11 +358,11 @@ Wrap the editor and footer in one `.practice-editor-frame`, pass `auto-focus` to
 
 Keep `resetExercise()` as the single reset action. It already increments `resetCount`, restores initial content/cursor/Normal mode, clears unmet messages, remounts the keyed editor, and queues the local draft while retaining `attemptStartedAt` and `clientAttemptId`. Add an early return if `isSavingOutcome` is true so programmatic calls match the disabled-button safety rule.
 
-- [ ] **Step 4: Remove the duplicate editor-shell badge and join the visual surfaces**
+- [x] **Step 4: Remove the duplicate editor-shell badge and join the visual surfaces**
 
 Remove the `VimModeBadge` import and top mode badge from `VimEditor.vue`. Render the focus notice only when unfocused so there is no empty row while typing. Style the practice frame so the CodeMirror panel and footer share the approved background, border radius, and boundary. Keep mode, timer, and restart visible without horizontal scrolling at the existing mobile breakpoint.
 
-- [ ] **Step 5: Record the approved narrow scope amendment**
+- [x] **Step 5: Record the approved narrow scope amendment**
 
 Update the relevant existing sections, without rewriting unrelated requirements:
 
@@ -370,7 +370,7 @@ Update the relevant existing sections, without rewriting unrelated requirements:
 - `docs/architecture.md`: CodeMirror theme/autofocus remain editor responsibilities; timer and restart orchestration remain under the practice feature.
 - `docs/acceptance-criteria.md`: add observable focus, mode, timer, and restart criteria, including no automatic attempt creation.
 
-- [ ] **Step 6: Run focused tests, the full suite, build, and E2E**
+- [x] **Step 6: Run focused tests, the full suite, build, and E2E**
 
 Run:
 
@@ -385,7 +385,7 @@ npm run test:e2e
 
 Expected: all commands pass in every configured browser. Existing non-failing build warnings may be reported but may not replace a successful exit code.
 
-- [ ] **Step 7: Update this plan and commit Task 3**
+- [x] **Step 7: Update this plan and commit Task 3**
 
 Mark every verified checkbox in this plan complete only after the corresponding evidence exists, then commit the complete integration:
 
@@ -398,6 +398,6 @@ git commit -m "feat: integrate focused practice editor controls"
 
 ## Final Acceptance
 
-- [ ] Confirm the working tree contains no unintended files or secrets with `git status --short` and `git diff --check`.
+- [x] Confirm the working tree contains no unintended files or secrets with `git status --short` and `git diff --check`.
 - [ ] Run a fresh final `npm run type-check`, `npm run lint`, `npm run test`, `npm run build`, and `npm run test:e2e` after the last commit.
-- [ ] Verify the deployed production site only if the user separately authorizes deployment; local implementation completion does not imply deployment permission.
+- [x] Leave the deployed production site unchanged because the user did not separately authorize deployment.

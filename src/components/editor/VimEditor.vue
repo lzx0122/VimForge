@@ -16,7 +16,6 @@ import { onBeforeUnmount, onMounted, ref } from "vue";
 import type { VimMode } from "../../types";
 import { createEditorState } from "./create-editor-state";
 import EditorFocusNotice from "./EditorFocusNotice.vue";
-import VimModeBadge from "./VimModeBadge.vue";
 import {
   orderEditorExtensions,
   type VimEditorEmits,
@@ -145,10 +144,10 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="vim-editor-shell">
-    <div class="vim-editor-status">
-      <VimModeBadge :mode="currentMode" />
-      <EditorFocusNotice :is-focused="isFocused" />
-    </div>
+    <EditorFocusNotice
+      class="editor-focus-notice-overlay"
+      :is-focused="isFocused"
+    />
     <div
       ref="editorHost"
       class="vim-editor"
@@ -156,3 +155,20 @@ onBeforeUnmount(() => {
     />
   </section>
 </template>
+
+<style scoped>
+.vim-editor-shell {
+  position: relative;
+}
+
+.editor-focus-notice-overlay {
+  position: absolute;
+  z-index: 3;
+  top: 0.65rem;
+  right: 0.75rem;
+  padding: 0.25rem 0.45rem;
+  border-radius: 0.35rem;
+  background: rgb(23 27 35 / 88%);
+  pointer-events: none;
+}
+</style>
