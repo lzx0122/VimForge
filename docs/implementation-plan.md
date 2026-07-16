@@ -145,11 +145,11 @@ export interface LearningModeSelection {
 - Modify: `src/features/practice/pages/PracticeSetupPage.vue`
 - Test: `src/features/practice/pages/PracticeSetupPage.test.ts`
 
-- [ ] 顯示 5、10、20，預設 10。
-- [ ] `memory_review` 顯示「今日複習／指定主題」。
-- [ ] `efficiency` 顯示題量與可選主題。
-- [ ] `beginner` 顯示課程單元入口，不強制題量。
-- [ ] Commit：`feat: add practice setup options`
+- [x] 顯示 5、10、20，預設 10。
+- [x] `memory_review` 顯示「今日複習／指定主題」。
+- [x] `efficiency` 顯示題量與可選主題。
+- [x] `beginner` 顯示課程單元入口，不強制題量。
+- [x] Commit：`feat: add practice setup options`
 
 ### Task 1.3：自由課程地圖
 

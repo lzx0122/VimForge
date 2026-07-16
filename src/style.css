@@ -137,6 +137,74 @@ textarea {
   font-weight: 800;
 }
 
+.setup-panel {
+  display: grid;
+  gap: 1.5rem;
+  max-width: 52rem;
+}
+
+.option-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.option-fieldset legend,
+.setup-panel h2 {
+  margin-bottom: 0.75rem;
+  color: #f9fafb;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.option-row,
+.topic-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.topic-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.choice-pill,
+.choice-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid #4b5563;
+  border-radius: 0.75rem;
+  background: #1f2937;
+  cursor: pointer;
+}
+
+.choice-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.choice-card small {
+  display: block;
+  margin-top: 0.35rem;
+  color: #9ca3af;
+  line-height: 1.5;
+}
+
+.primary-link {
+  justify-self: start;
+  padding: 0.75rem 1rem;
+  border-radius: 0.6rem;
+  color: #052e16;
+  background: #4ade80;
+  font-weight: 800;
+  text-decoration: none;
+}
+
 .eyebrow {
   color: #4ade80;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -156,6 +224,11 @@ textarea {
   }
 
   .learning-mode-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .choice-card-grid,
+  .topic-grid {
     grid-template-columns: 1fr;
   }
 }
