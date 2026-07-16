@@ -22,6 +22,10 @@ import {
   type VimEditorProps,
 } from "./editor-types";
 import { loadLanguageExtension } from "./language-loader";
+import {
+  createVimActionRecorder,
+  keyboardEventToVimKey,
+} from "./vim-action-recorder";
 import { vimEditorTheme } from "./vim-editor-theme";
 
 const props = defineProps<VimEditorProps>();
@@ -33,7 +37,11 @@ const isFocused = ref(false);
 let editorView: EditorView | null = null;
 let vimBridge: CodeMirror | null = null;
 let vimModeHandler: ((event: unknown) => void) | null = null;
+let vimCommandDoneHandler: (() => void) | null = null;
 let disposed = false;
+const actionRecorder = createVimActionRecorder((action) => {
+  emit("actionRecorded", action);
+});
 
 function cursorPosition(update: ViewUpdate) {
   const head = update.state.selection.main.head;
@@ -74,6 +82,15 @@ onMounted(async () => {
   const updateListener = EditorView.updateListener.of((update) => {
     if (update.docChanged) {
       emit("contentChanged", update.state.doc.toString());
+      if (currentMode.value === "insert" || currentMode.value === "replace") {
+        let insertedText = "";
+        update.changes.iterChanges(
+          (_fromA, _toA, _fromB, _toB, inserted) => {
+            insertedText += inserted.toString();
+          },
+        );
+        actionRecorder.recordInsertedText(insertedText);
+      }
     }
     if (update.selectionSet) {
       emit("cursorChanged", cursorPosition(update));
@@ -89,6 +106,14 @@ onMounted(async () => {
       return false;
     },
   });
+  const keyObservers = EditorView.domEventObservers({
+    keydown: (event) => {
+      actionRecorder.recordKey(
+        keyboardEventToVimKey(event),
+        currentMode.value,
+      );
+    },
+  });
   const remainingExtensions: Extension[] = [
     minimalSetup,
     ...(props.showLineNumbers ? [lineNumbers()] : []),
@@ -97,6 +122,7 @@ onMounted(async () => {
     EditorState.readOnly.of(props.readOnly ?? false),
     EditorView.editable.of(!(props.readOnly ?? false)),
     focusHandlers,
+    keyObservers,
     updateListener,
   ];
   const state = createEditorState({
@@ -122,6 +148,10 @@ onMounted(async () => {
       emit("modeChanged", mode);
     };
     vimBridge.on("vim-mode-change", vimModeHandler);
+    vimCommandDoneHandler = () => {
+      actionRecorder.finishCommand();
+    };
+    vimBridge.on("vim-command-done", vimCommandDoneHandler);
   }
   if (props.autoFocus && !(props.readOnly ?? false)) {
     view.focus();
@@ -135,7 +165,12 @@ onBeforeUnmount(() => {
   if (vimBridge && vimModeHandler) {
     vimBridge.off("vim-mode-change", vimModeHandler);
   }
+  if (vimBridge && vimCommandDoneHandler) {
+    vimBridge.off("vim-command-done", vimCommandDoneHandler);
+  }
+  actionRecorder.clear();
   vimModeHandler = null;
+  vimCommandDoneHandler = null;
   vimBridge = null;
   editorView?.destroy();
   editorView = null;

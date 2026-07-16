@@ -212,6 +212,57 @@ describe("VimEditor", () => {
     wrapper.unmount();
   });
 
+  it("emits normalized actions from real Vim keyboard input", async () => {
+    const wrapper = await mountEditor(document.body);
+    const view = getEditorView(wrapper);
+    const codeMirror = getCM(view);
+    if (!codeMirror) {
+      throw new Error("expected the Vim bridge");
+    }
+    view.contentDOM.focus();
+
+    for (const key of ["i", "x", "Escape"]) {
+      view.contentDOM.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          key,
+        }),
+      );
+      Vim.handleKey(codeMirror, key === "Escape" ? "<Esc>" : key, "user");
+      if (key === "x") {
+        const head = view.state.selection.main.head;
+        view.dispatch({
+          changes: { from: head, insert: "x" },
+          selection: { anchor: head + 1 },
+        });
+      }
+      await nextTick();
+    }
+
+    expect(wrapper.emitted("actionRecorded")).toEqual([
+      [{ type: "vim_command", command: "i" }],
+      [{ type: "insert_text", text: "x", textLength: 1 }],
+      [{ type: "mode_change", mode: "normal" }],
+    ]);
+
+    wrapper.unmount();
+  });
+
+  it("cleans up the Vim command listener when unmounted", async () => {
+    const wrapper = await mountEditor();
+    const view = getEditorView(wrapper);
+    const codeMirror = getCM(view);
+    if (!codeMirror) {
+      throw new Error("expected the Vim bridge");
+    }
+
+    wrapper.unmount();
+    codeMirror.signal("vim-command-done", undefined);
+
+    expect(wrapper.emitted("actionRecorded")).toBeUndefined();
+  });
+
   it("shows a notice only while the editor is unfocused", async () => {
     const wrapper = await mountEditor(document.body);
 
