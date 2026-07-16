@@ -706,3 +706,45 @@ npm run test:e2e
 - Vercel Preview 可直接開啟深層路由。
 - 前端 Bundle 不包含 Service Role、Secret Key 或 Google Client Secret。
 - 所有 Acceptance Criteria 已對應測試或人工驗收紀錄。
+
+## Phase 11：練習互動與回饋可理解性
+
+### Task 11.1：自動完成與操作紀錄
+
+**Files:**
+
+- Modify: `src/components/editor/VimEditor.vue`
+- Create: `src/components/editor/vim-action-recorder.ts`
+- Modify: `src/features/practice/pages/PracticePage.vue`
+- Modify: `src/features/practice/services/attempt-outcome-service.ts`
+
+- [x] 有效操作會保存為標準化序列並顯示在單題回饋。
+- [x] 使用者互動後首次符合完成條件時自動建立一次成功 Attempt。
+- [x] 移除額外的「檢查答案」步驟，且初始狀態不會自動完成。
+- [x] 未收錄但有效的操作不影響完成結果。
+
+### Task 11.2：游標目標與指標說明
+
+**Files:**
+
+- Create: `src/components/editor/cursor-target-extension.ts`
+- Modify: `src/components/feedback/ExerciseFeedback.vue`
+- Modify: `tests/e2e/scoring-feedback.spec.ts`
+
+- [x] exact/range 游標題顯示黃色透明細邊框目標。
+- [x] 回饋頁說明準確、速度、熟練的定義與計算方式。
+- [x] E2E 覆蓋自動完成、操作紀錄、游標目標與指標說明。
+
+### Task 11.3：規格同步與驗證
+
+**Files:**
+
+- Modify: `docs/product-spec.md`
+- Modify: `docs/architecture.md`
+- Modify: `docs/acceptance-criteria.md`
+- Modify: `docs/implementation-plan.md`
+
+- [x] 規格文件記錄新的練習互動與回饋行為。
+- [x] `npm run type-check`、`npm run lint`、`npm run test`、`npm run build` 通過。
+- [x] `npm run test:e2e` 在 Chromium、Firefox、WebKit 通過。
+- [x] Commit：`docs: specify automatic practice feedback`

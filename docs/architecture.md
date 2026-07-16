@@ -28,6 +28,7 @@ Browser
 - 監聽內容、游標與 Vim Mode。
 - 記錄標準化操作。
 - 即時判定完成條件。
+- 使用者互動後自動完成符合條件的題目，且同一題只送出一次成功結果。
 - 計算速度與準確的預覽。
 - 顯示提示與動畫。
 - 先保存 IndexedDB。
@@ -209,6 +210,7 @@ export interface VimEditorProps {
   language: SupportedLanguage;
   showLineNumbers: boolean;
   showKeypresses: boolean;
+  cursorTarget?: CursorMatchRule;
   autoFocus?: boolean;
   readOnly?: boolean;
 }
@@ -237,6 +239,10 @@ export interface VimEditorEmits {
 Vim Extension 必須排在其他 Insert Mode keymap 之前。
 
 `VimEditor.vue` 另負責載入 presentation-only 的 CodeMirror theme。當 `autoFocus` 為 true 且不是 readonly 時，必須在 EditorView 與 Vim bridge 建立完成後聚焦一次，不得透過 transaction 改動既有 selection。
+
+當題目有 `cursorTarget` 時，`VimEditor.vue` 只負責將 `exact` 或 `range` 目標轉成 CodeMirror decoration；這是 presentation-only 行為，不改變 EditorState、游標或完成判定。目標位置使用黃色透明細邊框，並提供可辨識的 aria label。
+
+`PracticePage.vue` 負責接收 `actionRecorded`、保存標準化操作、在內容／游標／Mode 改變後觸發自動評估，以及在首次互動後符合條件時呼叫既有 outcome service。完成回饋由 `ExerciseFeedback.vue` 呈現操作序列與三項指標的文字定義；評分與熟練計算仍只由 Domain modules 負責。
 
 練習功能負責編輯器外的 orchestration：
 

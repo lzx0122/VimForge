@@ -245,3 +245,37 @@ And resetCount 增加一次\
 And 已練習時間不得倒退或歸零\
 And 不建立成功或失敗 Attempt\
 And outcome 保存中控制項不可操作
+
+## AC-034：操作後自動完成
+
+Given 使用者尚未完成題目
+When 使用者輸入有效操作並使內容、游標與 Vim Mode 同時符合完成條件
+Then 系統自動建立一次成功 Attempt
+And 顯示單題回饋
+And 不需要點擊「檢查答案」
+When 題目剛載入且初始狀態已符合完成條件
+Then 系統不得在使用者互動前自動建立 Attempt
+
+## AC-035：實際操作紀錄
+
+Given 使用者在題目中執行 Vim command、插入文字、模式切換、Undo、Reset 或搜尋
+When 單題回饋顯示
+Then 顯示由標準化操作組成的使用者實際操作序列
+And 有效但未出現在題庫解法中的操作仍會被保留並標示為未收錄的有效操作
+
+## AC-036：游標目標提示
+
+Given completion_rule.cursorMatch 為 exact 或 range
+When 題目載入編輯器
+Then 目標位置顯示黃色透明細邊框
+And 目標提示不得改變內容、游標或完成判定
+Given completion_rule.cursorMatch 為 ignore
+Then 不顯示游標目標框
+
+## AC-037：指標定義可理解
+
+Given 使用者查看單題回饋
+Then 看得到準確、速度、熟練的簡短定義
+When 使用者展開「查看計算方式」
+Then 看得到準確扣分、速度 60%／40% 權重與模式寬限
+And 看得到熟練 0–5 等級及其長期指標定義

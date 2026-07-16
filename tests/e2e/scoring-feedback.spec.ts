@@ -223,8 +223,38 @@ test("automatically completes after every target condition matches", async ({ pa
 
   await expect(page.getByRole("article", { name: "完成！" })).toBeVisible();
   await expect(page.getByRole("button", { name: "檢查答案" })).toHaveCount(0);
-  await expect(page.getByText("準確", { exact: true })).toBeVisible();
-  await expect(page.getByText("速度", { exact: true })).toBeVisible();
+  await expect(
+    page.locator('[data-feedback-section="accuracy"]').getByText("準確", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.locator('[data-feedback-section="speed"]').getByText("速度", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "準確：是否一次到位；Undo、重新開始與提示會扣分，按鍵較多不會重複扣分。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "速度：按鍵精簡度 60% 加上完成時間 40%，並依學習模式提供時間寬限。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "熟練：跨題目、跨時間累積的 0–5 長期程度，不是單題分數。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await page.getByText("查看計算方式", { exact: true }).click();
+  await expect(page.locator("details.metric-explanation")).toContainText(
+    "按鍵精簡度 60% + 時間效率 40%",
+  );
   await expect(page.getByText("推薦操作", { exact: true })).toBeVisible();
   await expect(
     page.locator('[data-feedback-section="solutions"] code').first(),
