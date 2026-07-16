@@ -319,14 +319,14 @@ export function calculateAttemptScore(
 ): ScoreResult;
 ```
 
-- [ ] 按鍵效率 60%。
-- [ ] 時間效率 40%。
-- [ ] 模式時間寬限。
-- [ ] 未完成速度 0。
-- [ ] 準確扣分表。
-- [ ] 最高 Hint only。
-- [ ] performanceQuality 0–5。
-- [ ] Commit：`feat: calculate speed and accuracy scores`
+- [x] 按鍵效率 60%。
+- [x] 時間效率 40%。
+- [x] 模式時間寬限。
+- [x] 未完成速度 0。
+- [x] 準確扣分表。
+- [x] 最高 Hint only。
+- [x] performanceQuality 0–5。
+- [x] Commit：`feat: calculate speed and accuracy scores`
 
 ### Task 4.2：MasteryCalculator
 
