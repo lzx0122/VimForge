@@ -606,12 +606,12 @@ export function calculateAttemptScore(
 - Modify: `src/features/progress/pages/ProgressPage.vue`
 - Test: `src/features/progress/pages/ProgressPage.test.ts`
 
-- [ ] 顯示技能 0–5。
-- [ ] 顯示單元完成度。
-- [ ] 顯示最近錯誤。
-- [ ] 顯示待複習。
-- [ ] 不顯示 XP、排名。
-- [ ] Commit：`feat: add learning progress dashboard`
+- [x] 顯示技能 0–5。
+- [x] 顯示單元完成度。
+- [x] 顯示最近錯誤。
+- [x] 顯示待複習。
+- [x] 不顯示 XP、排名。
+- [x] Commit：`feat: add learning progress dashboard`
 
 ### Task 9.2：設定頁
 
