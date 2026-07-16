@@ -555,13 +555,13 @@ export function calculateAttemptScore(
 - Create: `src/domain/review/practice-selector.ts`
 - Test: `src/domain/review/practice-selector.test.ts`
 
-- [ ] 5 題 3/1/1。
-- [ ] 10 題 7/2/1。
-- [ ] 20 題 14/4/2。
-- [ ] 題目不足遞補。
-- [ ] 同一 Exercise 不重複。
-- [ ] 只出已接觸技能。
-- [ ] Commit：`feat: select adaptive review exercises`
+- [x] 5 題 3/1/1。
+- [x] 10 題 7/2/1。
+- [x] 20 題 14/4/2。
+- [x] 題目不足遞補。
+- [x] 同一 Exercise 不重複。
+- [x] 只出已接觸技能。
+- [x] Commit：`feat: select adaptive review exercises`
 
 ### Task 8.2：今日複習頁
 
