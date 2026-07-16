@@ -49,3 +49,41 @@ The validator accepts `published`/`slug` relation aliases when validating
 legacy-shaped input, but `parseCatalogSnapshot` normalizes output to the
 canonical camelCase fields. Catalog export, diff, migration, and production
 publisher commands remain deferred to later tasks.
+
+## Review fix report
+
+### Files changed
+
+- Modified `src/content/catalog-contract.ts` to reject only removed/added
+  exercise pairs whose canonical metadata matches after excluding the slug;
+  independent removals and additions with equal counts are now allowed.
+- Modified `src/content/catalog-contract.test.ts` with a one-removal/one-addition
+  regression case and canonicalizer assertions for recursive object-key sorting
+  and preserved array order.
+- Appended this review-fix report.
+
+### Verification commands/results
+
+- `npx vitest run src/content/catalog-contract.test.ts` — passed (9 tests).
+- `npm run type-check` — passed.
+- `npm run lint` — passed.
+- `npm run test` — passed (44 files, 295 tests).
+- `npm run build` — passed (Vite emitted the existing large-chunk warning).
+- `git diff --check` — passed.
+
+### Self-review
+
+- The true-rename fixture still reports the rename validation error.
+- An equal-count removal/addition with changed exercise metadata no longer
+  reports a rename.
+- Canonicalizer coverage confirms nested object keys are sorted and array
+  elements retain their declared order.
+- No Supabase, CLI, dependency, or unrelated production changes were made.
+
+### Concerns
+
+Rename detection intentionally uses exact canonical exercise metadata (all
+exercise fields except `slug`) to distinguish a rename from an independent
+addition/removal. A slug change accompanied by broad content edits cannot be
+proven to be a rename from snapshots alone and remains outside this contract's
+normal-import detection.

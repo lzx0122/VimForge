@@ -673,6 +673,11 @@ function validateUnit(
   else value.exercises.forEach((exercise, index) => validateExercise(exercise as CatalogExercise, `${path}.exercises[${index}]`, unitSkillSlugs, globalExerciseSlugs, errors));
 }
 
+function canonicalExerciseWithoutSlug(exercise: CatalogExercise): string {
+  const entries = Object.entries(exercise).filter(([key]) => key !== "slug");
+  return canonicalizeValue(Object.fromEntries(entries));
+}
+
 export function validateCatalogSnapshot(
   snapshot: CatalogSnapshot,
   previous?: CatalogSnapshot,
@@ -697,11 +702,14 @@ export function validateCatalogSnapshot(
   }
 
   if (previous !== undefined) {
-    const beforeSlugs = new Set(previous.units.flatMap((unit) => unit.exercises.map((exercise) => exercise.slug)));
-    const afterSlugs = new Set(snapshot.units.flatMap((unit) => unit.exercises.map((exercise) => exercise.slug)));
-    const removed = [...beforeSlugs].filter((slug) => !afterSlugs.has(slug));
-    const added = [...afterSlugs].filter((slug) => !beforeSlugs.has(slug));
-    if (removed.length > 0 && removed.length === added.length) {
+    const beforeExercises = previous.units.flatMap((unit) => unit.exercises);
+    const afterExercises = snapshot.units.flatMap((unit) => unit.exercises);
+    const beforeSlugs = new Set(beforeExercises.map((exercise) => exercise.slug));
+    const afterSlugs = new Set(afterExercises.map((exercise) => exercise.slug));
+    const removed = beforeExercises.filter((exercise) => !afterSlugs.has(exercise.slug));
+    const added = afterExercises.filter((exercise) => !beforeSlugs.has(exercise.slug));
+    const addedIdentities = new Set(added.map(canonicalExerciseWithoutSlug));
+    if (removed.some((exercise) => addedIdentities.has(canonicalExerciseWithoutSlug(exercise)))) {
       addError(errors, "units", "renamed existing exercise slugs are not supported.");
     }
   }

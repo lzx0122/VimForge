@@ -8,6 +8,7 @@ import {
   validateCatalogSnapshot,
   type CatalogSnapshot,
 } from "./catalog-contract";
+import { canonicalizeValue } from "./catalog-canonicalizer";
 
 const fixture = {
   schemaVersion: 1,
@@ -164,6 +165,32 @@ describe("catalog contract", () => {
         error.message.includes("renamed"),
       ),
     ).toBe(true);
+  });
+
+  it("allows an independent removal and addition with equal slug counts", () => {
+    const before = copyFixture();
+    getExercise(before).slug = "text-objects-removed";
+    const after = copyFixture();
+    getExercise(after).slug = "text-objects-new";
+    getExercise(after).title = "A separate exercise";
+    getExercise(after).expectedContent = "const another = true;";
+
+    const errors = validateCatalogSnapshot(after, before);
+
+    expect(errors.some((error) => error.message.includes("renamed"))).toBe(false);
+  });
+
+  it("sorts object keys recursively while preserving array order", () => {
+    const value = {
+      zeta: 1,
+      alpha: 2,
+      nested: { zeta: "last", alpha: "first" },
+      ordered: ["second", "first"],
+    };
+
+    expect(canonicalizeValue(value)).toBe(
+      '{"alpha":2,"nested":{"alpha":"first","zeta":"last"},"ordered":["second","first"],"zeta":1}',
+    );
   });
 
   it("increments exercise version only for exercise-owned changes", () => {
