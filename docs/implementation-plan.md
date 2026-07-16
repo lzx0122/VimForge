@@ -483,11 +483,11 @@ export function calculateAttemptScore(
 - Create: `supabase/migrations/20260716000300_add_user_learning_rls.sql`
 - Create: `supabase/tests/rls_user_learning.sql`
 
-- [ ] 建立 profiles、settings、sessions、attempts、progress、mastery、reviews、guest_imports。
-- [ ] 所有 exposed tables 啟用 RLS。
-- [ ] A 無法存取 B。
-- [ ] Attempts 不提供一般 delete policy。
-- [ ] Commit：`feat: add secure user learning schema`
+- [x] 建立 profiles、settings、sessions、attempts、progress、mastery、reviews、guest_imports。
+- [x] 所有 exposed tables 啟用 RLS。
+- [x] A 無法存取 B。
+- [x] Attempts 不提供一般 delete policy。
+- [x] Commit：`feat: add secure user learning schema`
 
 ---
 
