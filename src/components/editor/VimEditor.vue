@@ -21,6 +21,7 @@ import {
   type VimEditorEmits,
   type VimEditorProps,
 } from "./editor-types";
+import { cursorTargetExtension } from "./cursor-target-extension";
 import { loadLanguageExtension } from "./language-loader";
 import {
   createVimActionRecorder,
@@ -119,6 +120,9 @@ onMounted(async () => {
     ...(props.showLineNumbers ? [lineNumbers()] : []),
     languageExtension,
     ...vimEditorTheme,
+    ...(props.cursorTarget && props.cursorTarget.type !== "ignore"
+      ? [cursorTargetExtension(props.cursorTarget)]
+      : []),
     EditorState.readOnly.of(props.readOnly ?? false),
     EditorView.editable.of(!(props.readOnly ?? false)),
     focusHandlers,

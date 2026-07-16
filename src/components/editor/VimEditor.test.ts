@@ -14,7 +14,7 @@ import {
   vi,
 } from "vitest";
 
-import type { NormalizedAction } from "../../types";
+import type { CursorMatchRule, NormalizedAction } from "../../types";
 import VimEditor from "./VimEditor.vue";
 import {
   orderEditorExtensions,
@@ -85,6 +85,9 @@ describe("VimEditor contracts", () => {
     >();
     expectTypeOf<VimEditorEmits["actionRecorded"]>().toEqualTypeOf<
       [action: NormalizedAction]
+    >();
+    expectTypeOf<VimEditorProps["cursorTarget"]>().toEqualTypeOf<
+      CursorMatchRule | undefined
     >();
   });
 
@@ -183,6 +186,35 @@ describe("VimEditor", () => {
     ]);
 
     wrapper.unmount();
+  });
+
+  it("renders the configured cursor target without moving the initial cursor", async () => {
+    const target: CursorMatchRule = {
+      type: "exact",
+      line: 0,
+      column: 1,
+    };
+    const wrapper = mount(VimEditor, {
+      props: {
+        ...defaultProps,
+        cursorTarget: target,
+      },
+      attachTo: document.body,
+    });
+    await flushPromises();
+
+    try {
+      const view = getEditorView(wrapper);
+      const cursorLine = view.state.doc.lineAt(view.state.selection.main.head);
+
+      expect(wrapper.find(".cm-cursor-target").text()).toBe("o");
+      expect({
+        line: cursorLine.number - 1,
+        column: view.state.selection.main.head - cursorLine.from,
+      }).toEqual(defaultProps.initialCursor);
+    } finally {
+      wrapper.unmount();
+    }
   });
 
   it("destroys the EditorView when unmounted", async () => {

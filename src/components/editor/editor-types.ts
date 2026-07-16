@@ -2,6 +2,7 @@ import type { Extension } from "@codemirror/state";
 
 import type {
   CursorPosition,
+  CursorMatchRule,
   NormalizedAction,
   SupportedLanguage,
   VimMode,
@@ -15,6 +16,7 @@ export interface VimEditorProps {
   showKeypresses: boolean;
   autoFocus?: boolean;
   readOnly?: boolean;
+  cursorTarget?: CursorMatchRule;
 }
 
 export interface VimEditorEmits {
