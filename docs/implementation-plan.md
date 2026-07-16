@@ -453,12 +453,12 @@ export function calculateAttemptScore(
 - Create: `scripts/validate-seed.ts`
 - Test: `scripts/validate-seed.test.ts`
 
-- [ ] 建立 units、skills、exercises、solutions、hints。
-- [ ] Constraints 與 indexes。
-- [ ] RLS。
-- [ ] 先 Seed 10 個 Units、最小 10 題作流程驗證。
-- [ ] Seed Validator 通過後再擴到約 100 題。
-- [ ] Commit：`feat: add supabase exercise catalog`
+- [x] 建立 units、skills、exercises、solutions、hints。
+- [x] Constraints 與 indexes。
+- [x] RLS。
+- [x] 先 Seed 10 個 Units、最小 10 題作流程驗證。
+- [x] Seed Validator 通過後再擴到約 100 題。
+- [x] Commit：`feat: add supabase exercise catalog`
 
 ### Task 6.3：Catalog Repository
 

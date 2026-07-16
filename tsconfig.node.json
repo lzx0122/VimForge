@@ -17,6 +17,9 @@
   "include": [
     "eslint.config.ts",
     "playwright.config.ts",
+    "scripts/**/*.ts",
+    "src/types/exercise.ts",
+    "src/types/learning.ts",
     "vite.config.ts",
     "vitest.config.ts"
   ]
