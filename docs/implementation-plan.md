@@ -293,11 +293,11 @@ export function evaluateExercise(
 - Create: `src/features/practice/components/EditorPlayback.vue`
 - Test: `src/features/practice/components/ProgressiveHintPanel.test.ts`
 
-- [ ] Level 1–4 依序顯示。
-- [ ] 記錄最高層級。
-- [ ] Level 4 播放後 emit `requestReset`。
-- [ ] 動畫不能 emit 完成。
-- [ ] Commit：`feat: add progressive exercise hints`
+- [x] Level 1–4 依序顯示。
+- [x] 記錄最高層級。
+- [x] Level 4 播放後 emit `requestReset`。
+- [x] 動畫不能 emit 完成。
+- [x] Commit：`feat: add progressive exercise hints`
 
 ---
 
