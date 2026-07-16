@@ -403,12 +403,12 @@ export function calculateAttemptScore(
 - Create: `src/infrastructure/indexed-db/settings-repository.ts`
 - Test: `src/infrastructure/indexed-db/indexed-db.test.ts`
 
-- [ ] 使用原生 IndexedDB。
-- [ ] Object Stores：attempts、sessions、settings、metadata。
-- [ ] Attempt 使用 clientAttemptId。
-- [ ] 支援 syncStatus pending/synced。
-- [ ] Transaction 測試。
-- [ ] Commit：`feat: persist guest progress in indexeddb`
+- [x] 使用原生 IndexedDB。
+- [x] Object Stores：attempts、sessions、settings、metadata。
+- [x] Attempt 使用 clientAttemptId。
+- [x] 支援 syncStatus pending/synced。
+- [x] Transaction 測試。
+- [x] Commit：`feat: persist guest progress in indexeddb`
 
 ### Task 5.3：中途恢復
 
