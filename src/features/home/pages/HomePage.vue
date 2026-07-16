@@ -1,3 +1,7 @@
+<script setup lang="ts">
+import LearningModeGrid from "../components/LearningModeGrid.vue";
+</script>
+
 <template>
   <section class="page-section">
     <p class="eyebrow">
@@ -6,4 +10,5 @@
     <h1>Vim Practice</h1>
     <p>在真實程式碼情境中，反覆練習高效率的 Vim 操作。</p>
   </section>
+  <LearningModeGrid />
 </template>

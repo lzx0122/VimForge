@@ -129,11 +129,11 @@ export interface LearningModeSelection {
 }
 ```
 
-- [ ] 測試顯示三張卡片。
-- [ ] 測試鍵盤可選取。
-- [ ] 選擇後導向 `/practice/setup?mode=<mode>`。
-- [ ] 不要求登入。
-- [ ] Commit：`feat: add learning mode selection`
+- [x] 測試顯示三張卡片。
+- [x] 測試鍵盤可選取。
+- [x] 選擇後導向 `/practice/setup?mode=<mode>`。
+- [x] 不要求登入。
+- [x] Commit：`feat: add learning mode selection`
 
 ### Task 1.2：題量與練習來源選擇
 
