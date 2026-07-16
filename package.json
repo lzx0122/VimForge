@@ -14,7 +14,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "content:validate": "vite-node --script scripts/content-validate.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "content:export:production": "vite-node --script scripts/content-export-production.ts",
+    "content:diff": "vite-node --script scripts/content-diff.ts"
   },
   "dependencies": {
     "@codemirror/lang-css": "^6.3.1",
