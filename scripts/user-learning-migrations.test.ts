@@ -92,4 +92,12 @@ describe("user learning RLS", () => {
     expect(rlsTestSql).toContain("select * from finish()");
     expect(rlsTestSql).toContain("rollback");
   });
+
+  it("tests anonymous access to published and unpublished catalog rows", () => {
+    expect(rlsTestSql).toContain("set local role anon");
+    expect(rlsTestSql).toContain("where is_published = true");
+    expect(rlsTestSql).toContain("where is_published = false");
+    expect(rlsTestSql).toContain("anonymous users can read published exercises");
+    expect(rlsTestSql).toContain("anonymous users cannot read unpublished exercises");
+  });
 });

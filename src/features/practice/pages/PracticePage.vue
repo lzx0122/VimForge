@@ -12,6 +12,7 @@ import {
   SessionRepository,
   type ResumeState,
 } from "../../../infrastructure/indexed-db/session-repository";
+import { reportError } from "../../../infrastructure/monitoring/error-reporter";
 import { SupabaseExerciseRepository } from "../../../infrastructure/supabase/supabase-exercise-repository";
 import { usePracticeStore } from "../../../stores/practice-store";
 import { useSyncStore } from "../../../stores/sync-store";
@@ -75,7 +76,8 @@ function requireRepository(): SessionRepository {
   return repository;
 }
 
-function reportActionError(): void {
+function reportActionError(context: string, error: unknown): void {
+  reportError(context, error);
   loadError.value = "無法更新本機練習進度，請稍後再試。";
 }
 
@@ -134,8 +136,8 @@ function queueDraftSave(): void {
   draftSaveQueue = draftSaveQueue
     .then(() => repository?.saveAttemptDraft(sessionId.value, draft))
     .then(() => undefined)
-    .catch(() => {
-      reportActionError();
+    .catch((error: unknown) => {
+      reportActionError("practice.save-draft", error);
     });
 }
 
@@ -187,7 +189,8 @@ async function loadCurrentExercise(): Promise<void> {
       return;
     }
     prepareExercise(loadedExercise);
-  } catch {
+  } catch (error: unknown) {
+    reportError("practice.load-exercise", error);
     loadError.value = "無法載入公開題目，請確認連線後再試。";
   } finally {
     isExerciseLoading.value = false;
@@ -216,8 +219,8 @@ async function resetAttempt(): Promise<void> {
     isDialogOpen.value = false;
     statusMessage.value = "已重設目前題目，可重新開始操作。";
     await loadCurrentExercise();
-  } catch {
-    reportActionError();
+  } catch (error: unknown) {
+    reportActionError("practice.reset-attempt", error);
   }
 }
 
@@ -272,7 +275,10 @@ async function recordOutcome(completed: boolean): Promise<void> {
   const activeExercise = currentExercise();
   const activeSession = practiceStore.session;
   if (activeSession === null || repository === null) {
-    reportActionError();
+    reportActionError(
+      "practice.record-outcome",
+      new Error("Practice persistence is unavailable."),
+    );
     return;
   }
 
@@ -315,8 +321,8 @@ async function recordOutcome(completed: boolean): Promise<void> {
 
     feedback.value = outcome.feedback;
     unmetMessages.value = [];
-  } catch {
-    reportActionError();
+  } catch (error: unknown) {
+    reportActionError("practice.record-outcome", error);
   } finally {
     isSavingOutcome.value = false;
   }
@@ -362,8 +368,8 @@ async function abandonSession(): Promise<void> {
     isDialogOpen.value = false;
     statusMessage.value =
       "已放棄這個題組，未完成題目不會算失敗。";
-  } catch {
-    reportActionError();
+  } catch (error: unknown) {
+    reportActionError("practice.abandon-session", error);
   }
 }
 
@@ -394,7 +400,8 @@ onMounted(async () => {
         params: { sessionId: sessionId.value },
       });
     }
-  } catch {
+  } catch (error: unknown) {
+    reportError("practice.restore-session", error);
     loadError.value = "無法讀取本機練習進度，請重新整理後再試。";
   } finally {
     isLoading.value = false;

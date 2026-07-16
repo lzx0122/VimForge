@@ -8,6 +8,7 @@ import {
 import type { AttemptSyncInput } from "../features/practice/repositories/attempt-sync-repository";
 import { AttemptRepository } from "../infrastructure/indexed-db/attempt-repository";
 import { openVimForgeDatabase } from "../infrastructure/indexed-db/database";
+import { reportError } from "../infrastructure/monitoring/error-reporter";
 import { SupabaseAttemptSyncRepository } from "../infrastructure/supabase/supabase-attempt-sync-repository";
 import { useAuthStore } from "./auth-store";
 
@@ -40,10 +41,8 @@ function getDefaultService(): Promise<GuestSyncService> {
   return defaultServicePromise;
 }
 
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error
-    ? error.message
-    : "無法讀取這台裝置上的待同步紀錄。";
+function getErrorMessage(): string {
+  return "無法讀取這台裝置上的待同步紀錄。";
 }
 
 export const useSyncStore = defineStore("sync", {
@@ -75,7 +74,8 @@ export const useSyncStore = defineStore("sync", {
           void this.refreshPending(activeService);
         });
       } catch (error: unknown) {
-        this.errorMessage = getErrorMessage(error);
+        reportError("sync.initialize", error);
+        this.errorMessage = getErrorMessage();
       } finally {
         this.initialized = true;
       }
@@ -120,7 +120,8 @@ export const useSyncStore = defineStore("sync", {
       try {
         this.applyResult(await activeService.syncPending());
       } catch (error: unknown) {
-        this.errorMessage = getErrorMessage(error);
+        reportError("sync.pending-attempts", error);
+        this.errorMessage = getErrorMessage();
       } finally {
         this.syncing = false;
       }

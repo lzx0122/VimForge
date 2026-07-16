@@ -4,6 +4,7 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 
 import { openVimForgeDatabase } from "../../../infrastructure/indexed-db/database";
 import { SessionRepository } from "../../../infrastructure/indexed-db/session-repository";
+import { reportError } from "../../../infrastructure/monitoring/error-reporter";
 import { SupabaseExerciseRepository } from "../../../infrastructure/supabase/supabase-exercise-repository";
 import { usePracticeStore } from "../../../stores/practice-store";
 import type {
@@ -100,7 +101,8 @@ async function startPractice(): Promise<void> {
       name: "practice",
       params: { sessionId: session.id },
     });
-  } catch {
+  } catch (error: unknown) {
+    reportError("practice.create-session", error);
     startError.value = "無法建立題組，請確認連線後再試。";
   } finally {
     isStarting.value = false;

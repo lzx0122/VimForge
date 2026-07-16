@@ -5,6 +5,7 @@ import {
   type LocalSettings,
 } from "../infrastructure/indexed-db/settings-repository";
 import { openVimForgeDatabase } from "../infrastructure/indexed-db/database";
+import { reportError } from "../infrastructure/monitoring/error-reporter";
 import { SupabaseSettingsRepository } from "../infrastructure/supabase/supabase-settings-repository";
 import type { QuestionCount } from "../types/learning";
 import { useAuthStore } from "./auth-store";
@@ -110,7 +111,8 @@ export const useSettingsStore = defineStore("settings", {
           this.$patch(normalizeSettings(settings));
         }
         this.persistenceStatus = "local";
-      } catch {
+      } catch (error: unknown) {
+        reportError("settings.initialize", error);
         this.persistenceStatus = "error";
         this.errorMessage = "無法讀取這台裝置上的設定。";
       } finally {
@@ -162,13 +164,15 @@ export const useSettingsStore = defineStore("settings", {
           try {
             await cloud.save(userId, settings);
             this.persistenceStatus = "synced";
-          } catch {
+          } catch (error: unknown) {
+            reportError("settings.cloud-save", error);
             this.persistenceStatus = "error";
             this.errorMessage =
               "設定已保存在這台裝置，但暫時無法同步。";
           }
         }
-      } catch {
+      } catch (error: unknown) {
+        reportError("settings.local-save", error);
         this.persistenceStatus = "error";
         this.errorMessage = "無法將設定保存在這台裝置。";
       } finally {

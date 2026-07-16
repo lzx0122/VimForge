@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(22);
+select plan(24);
 
 select has_table('public', 'profiles', 'profiles exists');
 select has_table('public', 'user_settings', 'user_settings exists');
@@ -49,6 +49,35 @@ select ok(
   (select relrowsecurity from pg_class where oid = 'public.guest_imports'::regclass),
   'guest_imports has RLS enabled'
 );
+
+update public.exercises
+set is_published = false
+where id = (
+  select id
+  from public.exercises
+  where is_published = true
+  order by slug
+  limit 1
+);
+
+set local role anon;
+
+select ok(
+  (select count(*) from public.exercises where is_published = true) > 0,
+  'anonymous users can read published exercises'
+);
+
+select is(
+  (
+    select count(*)::integer
+    from public.exercises
+    where is_published = false
+  ),
+  0,
+  'anonymous users cannot read unpublished exercises'
+);
+
+reset role;
 
 insert into auth.users (id, email)
 values

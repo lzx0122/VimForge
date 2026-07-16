@@ -676,14 +676,14 @@ export function calculateAttemptScore(
 - Modify: `README.md`
 - Modify: `vercel.json`
 
-- [ ] Vercel env 設定文件。
-- [ ] Supabase Redirect URL 文件。
-- [ ] Google OAuth origins 與 callback 文件。
-- [ ] RLS 驗證。
-- [ ] Production Build。
-- [ ] Vercel Deep Link。
-- [ ] 錯誤監控最低限度 console + user-safe message。
-- [ ] Commit：`docs: add production deployment guide`
+- [x] Vercel env 設定文件。
+- [x] Supabase Redirect URL 文件。
+- [x] Google OAuth origins 與 callback 文件。
+- [x] RLS 驗證。
+- [x] Production Build。
+- [x] Vercel Deep Link。
+- [x] 錯誤監控最低限度 console + user-safe message。
+- [x] Commit：`docs: add production deployment guide`
 
 ---
 

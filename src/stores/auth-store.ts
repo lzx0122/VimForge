@@ -5,6 +5,7 @@ import {
   AuthService,
   type AuthenticationService,
 } from "../features/auth/services/auth-service";
+import { reportError } from "../infrastructure/monitoring/error-reporter";
 
 interface AuthStoreState {
   session: Session | null;
@@ -22,10 +23,8 @@ function getDefaultAuthService(): AuthenticationService {
   return defaultAuthService;
 }
 
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error
-    ? error.message
-    : "無法完成驗證，請稍後再試。";
+function getErrorMessage(): string {
+  return "無法完成驗證，請稍後再試。";
 }
 
 export const useAuthStore = defineStore("auth", {
@@ -54,7 +53,8 @@ export const useAuthStore = defineStore("auth", {
           this.session = session;
         });
       } catch (error: unknown) {
-        this.errorMessage = getErrorMessage(error);
+        reportError("auth.initialize", error);
+        this.errorMessage = getErrorMessage();
       } finally {
         this.initialized = true;
       }
@@ -70,7 +70,8 @@ export const useAuthStore = defineStore("auth", {
       try {
         await service.signInWithGoogle(currentLocation);
       } catch (error: unknown) {
-        this.errorMessage = getErrorMessage(error);
+        reportError("auth.sign-in", error);
+        this.errorMessage = getErrorMessage();
       } finally {
         this.pending = false;
       }
@@ -86,7 +87,8 @@ export const useAuthStore = defineStore("auth", {
         await service.signOut();
         this.session = null;
       } catch (error: unknown) {
-        this.errorMessage = getErrorMessage(error);
+        reportError("auth.sign-out", error);
+        this.errorMessage = getErrorMessage();
       } finally {
         this.pending = false;
       }
