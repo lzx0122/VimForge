@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 
 import migrationSql from "../../../supabase/migrations/20260716000400_add_record_attempt_function.sql?raw";
+import missingSessionMigrationSql from "../../../supabase/migrations/20260716125332_allow_missing_attempt_session.sql?raw";
 import type { AttemptSyncInput } from "../../features/practice/repositories/attempt-sync-repository";
 import { SupabaseAttemptSyncRepository } from "./supabase-attempt-sync-repository";
 import type { Database } from "./database.types";
@@ -133,6 +134,36 @@ describe("record_exercise_attempt migration", () => {
     expect(normalizedSql).not.toContain(
       `grant execute on ${signature} to anon`,
     );
+  });
+});
+
+describe("record_exercise_attempt missing-session regression", () => {
+  const normalizedSql = missingSessionMigrationSql.toLowerCase();
+
+  it("normalizes an unavailable session before inserting the attempt", () => {
+    const sessionParse = normalizedSql.indexOf(
+      "v_session_id := nullif(payload ->> 'sessionid', '')::uuid",
+    );
+    const ownedSessionLookup = normalizedSql.indexOf(
+      "select practice_sessions.id into v_session_id",
+    );
+    const attemptInsert = normalizedSql.indexOf(
+      "insert into public.exercise_attempts",
+    );
+
+    expect(normalizedSql).toContain(
+      "create or replace function public.record_exercise_attempt(payload jsonb)",
+    );
+    expect(normalizedSql).toContain("security invoker");
+    expect(normalizedSql).toContain(
+      "where practice_sessions.id = v_session_id",
+    );
+    expect(normalizedSql).toContain(
+      "and practice_sessions.user_id = v_user_id",
+    );
+    expect(sessionParse).toBeGreaterThan(-1);
+    expect(ownedSessionLookup).toBeGreaterThan(sessionParse);
+    expect(attemptInsert).toBeGreaterThan(ownedSessionLookup);
   });
 });
 
