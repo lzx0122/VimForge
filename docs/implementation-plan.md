@@ -160,11 +160,11 @@ export interface LearningModeSelection {
 - Modify: `src/features/course/pages/CoursesPage.vue`
 - Test: `src/features/course/pages/CoursesPage.test.ts`
 
-- [ ] 建立十個單元靜態資料。
-- [ ] 所有單元都有可操作按鈕。
-- [ ] 不出現鎖定狀態。
-- [ ] 顯示先備技能文字，但不阻止進入。
-- [ ] Commit：`feat: add freely accessible course map`
+- [x] 建立十個單元靜態資料。
+- [x] 所有單元都有可操作按鈕。
+- [x] 不出現鎖定狀態。
+- [x] 顯示先備技能文字，但不阻止進入。
+- [x] Commit：`feat: add freely accessible course map`
 
 ---
 
