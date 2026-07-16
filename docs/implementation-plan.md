@@ -187,12 +187,12 @@ export interface LearningModeSelection {
 - `actionRecorded`
 - `editorReady`
 
-- [ ] 先測試 Props 與 Emits 契約。
-- [ ] 動態建立 EditorView。
-- [ ] `vim()` Extension 排在其他 keymaps 前。
-- [ ] 初始化內容與游標。
-- [ ] unmount 時銷毀 EditorView。
-- [ ] Commit：`feat: add codemirror vim editor adapter`
+- [x] 先測試 Props 與 Emits 契約。
+- [x] 動態建立 EditorView。
+- [x] `vim()` Extension 排在其他 keymaps 前。
+- [x] 初始化內容與游標。
+- [x] unmount 時銷毀 EditorView。
+- [x] Commit：`feat: add codemirror vim editor adapter`
 
 ### Task 2.2：Vim Mode 與焦點狀態
 
