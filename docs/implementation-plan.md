@@ -51,13 +51,13 @@
 - `npm run build`
 - `npm run test:e2e`
 
-- [ ] 建立 Vue 3 + TypeScript + Vite 專案。
-- [ ] 安裝 Vue Router、Pinia、CodeMirror 6、`@replit/codemirror-vim`、Supabase JS、Vitest、Vue Test Utils、Playwright、ESLint。
-- [ ] 設定 scripts，與 `testing-strategy.md` 一致。
-- [ ] 建立 `vercel.json` SPA rewrite。
-- [ ] 建立 Smoke Test，驗證首頁顯示 `Vim Practice`。
-- [ ] 執行所有驗證。
-- [ ] Commit：`chore: initialize vim practice app`
+- [x] 建立 Vue 3 + TypeScript + Vite 專案。
+- [x] 安裝 Vue Router、Pinia、CodeMirror 6、`@replit/codemirror-vim`、Supabase JS、Vitest、Vue Test Utils、Playwright、ESLint。
+- [x] 設定 scripts，與 `testing-strategy.md` 一致。
+- [x] 建立 `vercel.json` SPA rewrite。
+- [x] 建立 Smoke Test，驗證首頁顯示 `Vim Practice`。
+- [x] 執行所有驗證。
+- [x] Commit：`chore: initialize vim practice app`
 
 ### Task 0.2：建立共用型別與資料驗證
 
