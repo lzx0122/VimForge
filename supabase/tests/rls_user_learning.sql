@@ -183,8 +183,7 @@ select throws_ok(
     from public.exercises
     where is_published = true
     limit 1
-  $$,
-  'user A cannot insert an attempt owned by user B'
+  $$
 );
 
 select throws_ok(
@@ -192,16 +191,14 @@ select throws_ok(
     update public.exercise_attempts
     set accuracy_score = 99
     where user_id = '00000000-0000-4000-8000-00000000000a'
-  $$,
-  'authenticated users cannot update append-only attempts'
+  $$
 );
 
 select throws_ok(
   $$
     delete from public.exercise_attempts
     where user_id = '00000000-0000-4000-8000-00000000000a'
-  $$,
-  'authenticated users cannot delete attempts'
+  $$
 );
 
 select is(

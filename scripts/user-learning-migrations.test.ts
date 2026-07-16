@@ -100,4 +100,15 @@ describe("user learning RLS", () => {
     expect(rlsTestSql).toContain("anonymous users can read published exercises");
     expect(rlsTestSql).toContain("anonymous users cannot read unpublished exercises");
   });
+
+  it("uses the pgTAP overload that accepts any thrown error", () => {
+    const throwAssertions = [
+      ...rlsTestSql.matchAll(/select throws_ok\(\n([\s\S]*?)\n\);/g),
+    ];
+
+    expect(throwAssertions).toHaveLength(3);
+    for (const assertion of throwAssertions) {
+      expect(assertion[1]?.trimEnd()).toMatch(/\$\$$/);
+    }
+  });
 });
