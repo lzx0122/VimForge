@@ -368,11 +368,11 @@ export function calculateAttemptScore(
 - Create: `src/components/feedback/ExerciseFeedback.vue`
 - Test: `src/components/feedback/ExerciseFeedback.test.ts`
 
-- [ ] 順序：完成、準確、速度、熟練、解法。
-- [ ] 新手模式弱化速度。
-- [ ] 效率模式顯示按鍵差距。
-- [ ] 無障礙文字標籤。
-- [ ] Commit：`feat: display exercise performance feedback`
+- [x] 順序：完成、準確、速度、熟練、解法。
+- [x] 新手模式弱化速度。
+- [x] 效率模式顯示按鍵差距。
+- [x] 無障礙文字標籤。
+- [x] Commit：`feat: display exercise performance feedback`
 
 ---
 
