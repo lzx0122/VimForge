@@ -278,12 +278,12 @@ export function evaluateExercise(
 - Create: `src/domain/exercise/solution-matcher.ts`
 - Test: `src/domain/exercise/solution-matcher.test.ts`
 
-- [ ] recommended exact match。
-- [ ] accepted match。
-- [ ] valid but inefficient。
-- [ ] unknown valid。
-- [ ] 結果正確時未知序列不得判錯。
-- [ ] Commit：`feat: compare user and recommended solutions`
+- [x] recommended exact match。
+- [x] accepted match。
+- [x] valid but inefficient。
+- [x] unknown valid。
+- [x] 結果正確時未知序列不得判錯。
+- [x] Commit：`feat: compare user and recommended solutions`
 
 ### Task 3.4：Progressive Hint
 
