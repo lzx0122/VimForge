@@ -1,3 +1,5 @@
+-- Author the catalog in the delimited JSON block below. See
+-- docs/exercise-authoring-guide.md and run the seed validator before applying it.
 begin;
 
 create temporary table seed_catalog on commit drop as

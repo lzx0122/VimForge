@@ -642,14 +642,14 @@ export function calculateAttemptScore(
 - Modify: `scripts/validate-seed.ts`
 - Create: `docs/exercise-authoring-guide.md`
 
-- [ ] 題數約 100。
-- [ ] C# 約 60%。
-- [ ] TypeScript/JavaScript 約 20%。
-- [ ] 其他約 20%。
-- [ ] 每題游標合法。
-- [ ] 每題有 Skill、Solution、Hints。
-- [ ] Seed Validator 全部通過。
-- [ ] Commit：`content: add mvp vim exercise catalog`
+- [x] 題數約 100。
+- [x] C# 約 60%。
+- [x] TypeScript/JavaScript 約 20%。
+- [x] 其他約 20%。
+- [x] 每題游標合法。
+- [x] 每題有 Skill、Solution、Hints。
+- [x] Seed Validator 全部通過。
+- [x] Commit：`content: add mvp vim exercise catalog`
 
 ### Task 10.2：完整 E2E
 

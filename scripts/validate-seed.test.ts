@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -15,6 +15,10 @@ const migrationSql = readFileSync(
     "supabase/migrations/20260716000100_create_catalog.sql",
   ),
   "utf8",
+);
+const authoringGuidePath = resolve(
+  process.cwd(),
+  "docs/exercise-authoring-guide.md",
 );
 
 function replaceOnce(source: string, search: string, replacement: string) {
@@ -102,6 +106,31 @@ describe("seed validator", () => {
     );
   });
 
+  it("rejects solution keystroke counts that violate database constraints", () => {
+    const invalidSql = replaceOnce(
+      seedSql,
+      '"keystrokeCount": 5',
+      '"keystrokeCount": 0',
+    );
+
+    expect(validateSeedSql(invalidSql).errors).toContain(
+      "Seed catalog contains an invalid unit record.",
+    );
+  });
+
+  it("requires the complete progressive hint sequence", () => {
+    const incompleteHints = replaceOnce(
+      seedSql,
+      '      { "level": 3, "content": "按 i，輸入兩個斜線與空格。", "commandPreview": "i// " },\n' +
+        '      { "level": 4, "content": "完整操作是 i// <Esc>。", "commandPreview": "i// <Esc>" }\n',
+      '      { "level": 3, "content": "按 i，輸入兩個斜線與空格。", "commandPreview": "i// " }\n',
+    );
+
+    expect(validateSeedSql(incompleteHints).errors).toContain(
+      "Unit mode-switching-basic-editing requires hint levels 1 through 4.",
+    );
+  });
+
   it("rejects invalid supported modes and out-of-range cursors", () => {
     const invalidMode = replaceOnce(
       seedSql,
@@ -133,5 +162,20 @@ describe("seed validator", () => {
     expect(validateSeedSql(invalidSql).errors).toContain(
       "Seed catalog contains an invalid unit record.",
     );
+  });
+});
+
+describe("exercise authoring guide", () => {
+  it("documents the catalog contract and validation workflow", () => {
+    expect(existsSync(authoringGuidePath)).toBe(true);
+    if (!existsSync(authoringGuidePath)) {
+      return;
+    }
+
+    const guide = readFileSync(authoringGuidePath, "utf8");
+    expect(guide).toContain("$catalog$");
+    expect(guide).toContain("Skill、Solution、Hints");
+    expect(guide).toContain("60/20/20");
+    expect(guide).toContain("vite-node --script scripts/validate-seed.ts");
   });
 });

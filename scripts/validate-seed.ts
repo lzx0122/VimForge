@@ -88,6 +88,7 @@ export interface SeedValidationResult {
 }
 
 const CATALOG_PATTERN = /\$catalog\$([\s\S]*?)\$catalog\$/u;
+const REQUIRED_HINT_LEVELS = [1, 2, 3, 4] as const;
 const SKILL_CATEGORIES = [
   "mode",
   "movement",
@@ -117,6 +118,10 @@ function isNonEmptyString(value: unknown): value is string {
 
 function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
 
 function isCursorPosition(value: unknown): value is CursorPosition {
@@ -165,6 +170,8 @@ function isSeedSkill(value: unknown): value is SeedSkill {
     isOneOf(value.category, SKILL_CATEGORIES) &&
     isOneOf(value.difficulty, DIFFICULTIES) &&
     typeof value.weight === "number" &&
+    value.weight > 0 &&
+    value.weight <= 1 &&
     typeof value.primary === "boolean"
   );
 }
@@ -174,7 +181,7 @@ function isSeedSolution(value: unknown): value is SeedSolution {
     isRecord(value) &&
     isNonEmptyString(value.sequence) &&
     Array.isArray(value.normalizedActions) &&
-    Number.isInteger(value.keystrokeCount) &&
+    isPositiveInteger(value.keystrokeCount) &&
     typeof value.recommended === "boolean" &&
     isNonEmptyString(value.explanation)
   );
@@ -193,14 +200,14 @@ function isSeedVariant(value: unknown): value is SeedVariant {
   return (
     isRecord(value) &&
     isOneOf(value.language, SUPPORTED_LANGUAGES) &&
-    Number.isInteger(value.count) &&
+    isPositiveInteger(value.count) &&
     isNonEmptyString(value.title) &&
     isNonEmptyString(value.instruction) &&
     typeof value.initialContent === "string" &&
     typeof value.expectedContent === "string" &&
     isCursorPosition(value.initialCursor) &&
     isCompletionRule(value.completionRule) &&
-    Number.isInteger(value.targetDurationMs)
+    isPositiveInteger(value.targetDurationMs)
   );
 }
 
@@ -247,8 +254,8 @@ function hasSeedUnitShape(value: unknown): value is SeedUnit {
     isNonEmptyString(value.title) &&
     isNonEmptyString(value.description) &&
     isOneOf(value.difficulty, DIFFICULTIES) &&
-    Number.isInteger(value.estimatedMinutes) &&
-    Number.isInteger(value.displayOrder) &&
+    isPositiveInteger(value.estimatedMinutes) &&
+    isPositiveInteger(value.displayOrder) &&
     typeof value.published === "boolean" &&
     isOneOf(value.exerciseType, EXERCISE_TYPES) &&
     Array.isArray(value.supportedModes) &&
@@ -342,6 +349,12 @@ export function validateSeedSql(seedSql: string): SeedValidationResult {
       hintLevels.some((level) => !Number.isInteger(level) || level < 1 || level > 4)
     ) {
       errors.push(`Unit ${unit.slug} contains an invalid hint level.`);
+    }
+    if (
+      hintLevels.length !== REQUIRED_HINT_LEVELS.length ||
+      REQUIRED_HINT_LEVELS.some((level) => !hintLevels.includes(level))
+    ) {
+      errors.push(`Unit ${unit.slug} requires hint levels 1 through 4.`);
     }
 
     if (
