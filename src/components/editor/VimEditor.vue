@@ -14,6 +14,7 @@ import {
 import { onBeforeUnmount, onMounted, ref } from "vue";
 
 import type { VimMode } from "../../types";
+import { createEditorState } from "./create-editor-state";
 import EditorFocusNotice from "./EditorFocusNotice.vue";
 import VimModeBadge from "./VimModeBadge.vue";
 import {
@@ -33,20 +34,6 @@ let editorView: EditorView | null = null;
 let vimBridge: CodeMirror | null = null;
 let vimModeHandler: ((event: unknown) => void) | null = null;
 let disposed = false;
-
-function cursorOffset(content: string) {
-  const lines = content.split("\n");
-  const lineIndex = Math.min(
-    Math.max(props.initialCursor.line, 0),
-    Math.max(lines.length - 1, 0),
-  );
-  const precedingLength = lines
-    .slice(0, lineIndex)
-    .reduce((total, line) => total + line.length + 1, 0);
-  const lineLength = lines[lineIndex]?.length ?? 0;
-
-  return precedingLength + Math.min(Math.max(props.initialCursor.column, 0), lineLength);
-}
 
 function cursorPosition(update: ViewUpdate) {
   const head = update.state.selection.main.head;
@@ -111,9 +98,9 @@ onMounted(async () => {
     focusHandlers,
     updateListener,
   ];
-  const state = EditorState.create({
-    doc: props.initialContent,
-    selection: { anchor: cursorOffset(props.initialContent) },
+  const state = createEditorState({
+    initialContent: props.initialContent,
+    initialCursor: props.initialCursor,
     extensions: orderEditorExtensions(vim(), remainingExtensions),
   });
 

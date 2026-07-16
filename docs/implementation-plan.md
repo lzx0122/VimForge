@@ -216,10 +216,10 @@ export interface LearningModeSelection {
 - Modify: `src/components/editor/VimEditor.vue`
 - Test: `src/components/editor/create-editor-state.test.ts`
 
-- [ ] 題目 ID 改變時銷毀舊 View 並建立新 View。
-- [ ] Undo 歷史不能跨題。
-- [ ] Search、Visual、Pending Operator 不能跨題。
-- [ ] Commit：`fix: isolate editor state between exercises`
+- [x] 題目 ID 改變時銷毀舊 View 並建立新 View。
+- [x] Undo 歷史不能跨題。
+- [x] Search、Visual、Pending Operator 不能跨題。
+- [x] Commit：`fix: isolate editor state between exercises`
 
 ---
 
