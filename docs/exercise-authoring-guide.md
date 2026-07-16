@@ -36,7 +36,17 @@ npx --no-install vite-node --script scripts/validate-seed.ts
       "estimatedMinutes": 20,
       "displayOrder": 8,
       "isPublished": true,
-      "skills": [],
+      "skills": [
+        {
+          "slug": "quoted-text-object",
+          "name": "引號內文字物件",
+          "description": "選取並修改引號內的文字。",
+          "category": "text_object",
+          "difficulty": "advanced",
+          "primary": true,
+          "displayOrder": 1
+        }
+      ],
       "exercises": [
         {
           "slug": "text-objects-01",
@@ -60,8 +70,26 @@ npx --no-install vite-node --script scripts/validate-seed.ts
           "skills": [
             { "skillSlug": "quoted-text-object", "weight": 1, "primary": true }
           ],
-          "solutions": [],
-          "hints": []
+          "solutions": [
+            {
+              "sequence": "ci\"approved<Esc>",
+              "normalizedActions": [
+                { "type": "vim_command", "command": "ci\"" },
+                { "type": "insert_text", "text": "approved", "textLength": 8 },
+                { "type": "mode_change", "mode": "normal" }
+              ],
+              "keystrokeCount": 12,
+              "recommended": true,
+              "explanation": "使用文字物件取代引號內的內容。",
+              "displayOrder": 1
+            }
+          ],
+          "hints": [
+            { "level": 1, "content": "先定位要修改的引號內文字。", "commandPreview": null },
+            { "level": 2, "content": "使用變更指令搭配引號文字物件。", "commandPreview": "c + i + \"" },
+            { "level": 3, "content": "輸入 approved 後回到 Normal Mode。", "commandPreview": "ci\"approved<Esc>" },
+            { "level": 4, "content": "完整操作是 ci\"approved<Esc>。", "commandPreview": "ci\"approved<Esc>" }
+          ]
         }
       ]
     }

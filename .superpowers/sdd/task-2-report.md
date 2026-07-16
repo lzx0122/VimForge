@@ -74,3 +74,36 @@ vite build passed
   this verified baseline.
 - No production export, diff, migration, or publish behavior was started; those
   remain deferred to later Tasks.
+
+## Review-fix report (2026-07-17)
+
+- Replaced the authoring-guide placeholder arrays with a copyable minimal
+  example containing one declared skill, one recommended solution, and hint
+  levels 1 through 4.
+- Narrowed `tsconfig.node.json` to the explicit catalog contract, canonicalizer,
+  catalog types, and transitively required type modules instead of including
+  every file under `src/content` and `src/types`.
+
+## Review-fix verification
+
+```text
+npx vitest run scripts/content-validate.test.ts scripts/validate-seed.test.ts
+Test Files  2 passed (2)
+Tests  12 passed (12)
+
+npm run content:validate -- content/catalog.json
+Validated 10 units and 100 exercises.
+
+npm run type-check
+passed
+
+npm run lint
+passed
+
+npm run test
+Test Files  45 passed (45)
+Tests  298 passed (298)
+
+npm run build
+vite build passed
+```
