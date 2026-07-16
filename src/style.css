@@ -57,11 +57,30 @@ textarea {
   color: #9ca3af;
 }
 
+.app-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1rem;
+}
+
+.app-header-actions .google-auth-control {
+  flex: none;
+}
+
 .brand-link {
   color: #f9fafb;
   font-size: 1.25rem;
   font-weight: 800;
   text-decoration: none;
+}
+
+@media (max-width: 48rem) {
+  .app-header,
+  .app-header-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 .app-navigation {

@@ -662,10 +662,10 @@ export function calculateAttemptScore(
 - Create: `tests/e2e/auth-sync.spec.ts`
 - Create: `tests/e2e/deep-linking.spec.ts`
 
-- [ ] 覆蓋 acceptance criteria 主要流程。
-- [ ] Chrome、Firefox、WebKit。
-- [ ] 修正所有 flaky test。
-- [ ] Commit：`test: cover mvp user journeys`
+- [x] 覆蓋 acceptance criteria 主要流程。
+- [x] Chrome、Firefox、WebKit。
+- [x] 修正所有 flaky test。
+- [x] Commit：`test: cover mvp user journeys`
 
 ### Task 10.3：Production Readiness
 
