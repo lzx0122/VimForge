@@ -263,13 +263,13 @@ export function evaluateExercise(
 ): ExerciseEvaluation;
 ```
 
-- [ ] exact content success/failure。
-- [ ] unchanged content success/failure。
-- [ ] CRLF 正規化為 LF。
-- [ ] cursor ignore/exact/range。
-- [ ] requiredMode。
-- [ ] unmetConditions 可供 UI 顯示。
-- [ ] Commit：`feat: evaluate exercise completion`
+- [x] exact content success/failure。
+- [x] unchanged content success/failure。
+- [x] CRLF 正規化為 LF。
+- [x] cursor ignore/exact/range。
+- [x] requiredMode。
+- [x] unmetConditions 可供 UI 顯示。
+- [x] Commit：`feat: evaluate exercise completion`
 
 ### Task 3.3：SolutionMatcher
 
