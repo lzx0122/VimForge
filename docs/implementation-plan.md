@@ -572,11 +572,11 @@ export function calculateAttemptScore(
 - Modify: `src/features/review/pages/ReviewPage.vue`
 - Test: `src/features/review/pages/ReviewPage.test.ts`
 
-- [ ] 顯示到期數。
-- [ ] 顯示主要加強技能。
-- [ ] 可選 5/10/20。
-- [ ] 無紀錄時推薦基礎題組。
-- [ ] Commit：`feat: add daily adaptive review flow`
+- [x] 顯示到期數。
+- [x] 顯示主要加強技能。
+- [x] 可選 5/10/20。
+- [x] 無紀錄時推薦基礎題組。
+- [x] Commit：`feat: add daily adaptive review flow`
 
 ### Task 8.3：指定主題練習
 
