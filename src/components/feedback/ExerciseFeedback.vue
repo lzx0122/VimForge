@@ -117,6 +117,9 @@ const formattedKeystrokeGap = computed(() =>
           :description="accuracySummary"
           :accessibility-label="`準確：${accuracyScore} 分，${accuracySummary}`"
         />
+        <p class="metric-definition">
+          準確：是否一次到位；Undo、重新開始與提示會扣分，按鍵較多不會重複扣分。
+        </p>
       </section>
 
       <section
@@ -129,6 +132,9 @@ const formattedKeystrokeGap = computed(() =>
           :description="speedSummary"
           :accessibility-label="speedAccessibilityLabel"
         />
+        <p class="metric-definition">
+          速度：按鍵精簡度 60% 加上完成時間 40%，並依學習模式提供時間寬限。
+        </p>
         <p
           v-if="learningMode === 'efficiency'"
           class="keystroke-gap"
@@ -148,8 +154,32 @@ const formattedKeystrokeGap = computed(() =>
           :description="masterySummary"
           :accessibility-label="`熟練：${previousMasteryLevel} 到 ${nextMasteryLevel}，${masterySummary}`"
         />
+        <p class="metric-definition">
+          熟練：跨題目、跨時間累積的 0–5 長期程度，不是單題分數。
+        </p>
       </section>
     </div>
+
+    <details class="metric-explanation">
+      <summary>查看計算方式</summary>
+      <div class="metric-explanation-grid">
+        <section>
+          <h3>準確</h3>
+          <p>從 100 分開始：一般誤操作 -5、Undo -3、重新開始 -12。</p>
+          <p>最高提示：Level 1 -3、Level 2 -8、Level 3 -15、Level 4 -30；提示只套用最高層級。</p>
+        </section>
+        <section>
+          <h3>速度</h3>
+          <p>按鍵精簡度 60% + 時間效率 40%。</p>
+          <p>模式寬限：beginner ×2.0、memory_review ×1.3、efficiency ×1.0。</p>
+        </section>
+        <section>
+          <h3>熟練</h3>
+          <p>0 未學習、1 不熟、2 練習中、3 熟悉、4 熟練、5 已掌握。</p>
+          <p>熟練是跨題目、跨時間累積的長期指標，不是單題分數。</p>
+        </section>
+      </div>
+    </details>
 
     <section
       class="exercise-feedback-solutions"
@@ -231,6 +261,56 @@ h2 {
   background: #18202d;
 }
 
+.metric-definition {
+  margin: 0.65rem 0 0;
+  color: #d1d5db;
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.metric-explanation {
+  border: 1px solid #374151;
+  border-radius: 0.75rem;
+  background: #18202d;
+}
+
+.metric-explanation summary {
+  padding: 0.85rem 1rem;
+  color: #f9fafb;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.metric-explanation summary:focus-visible {
+  outline: 2px solid #facc15;
+  outline-offset: 2px;
+}
+
+.metric-explanation-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  padding: 0 1rem 1rem;
+}
+
+.metric-explanation-grid section {
+  display: grid;
+  align-content: start;
+  gap: 0.45rem;
+}
+
+.metric-explanation-grid h3 {
+  color: #facc15;
+  font-size: 1rem;
+}
+
+.metric-explanation-grid p {
+  margin: 0;
+  color: #d1d5db;
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
 .keystroke-gap {
   margin: 0.65rem 0 0;
   color: #fbbf24;
@@ -288,7 +368,8 @@ h2 {
 
 @media (max-width: 44rem) {
   .exercise-feedback-metrics,
-  .solution-grid {
+  .solution-grid,
+  .metric-explanation-grid {
     grid-template-columns: 1fr;
   }
 
