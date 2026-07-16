@@ -102,11 +102,11 @@
 - Create: `src/features/errors/pages/NotFoundPage.vue`
 - Test: `src/app/router/router.test.ts`
 
-- [ ] 寫 Router Test，驗證所有規格路由存在。
-- [ ] 建立 Layout 與 Placeholder Pages。
-- [ ] 404 Route 必須在最後。
-- [ ] 執行 Playwright 深層路由 Smoke Test。
-- [ ] Commit：`feat: add application shell and routes`
+- [x] 寫 Router Test，驗證所有規格路由存在。
+- [x] 建立 Layout 與 Placeholder Pages。
+- [x] 404 Route 必須在最後。
+- [x] 執行 Playwright 深層路由 Smoke Test。
+- [x] Commit：`feat: add application shell and routes`
 
 ---
 
