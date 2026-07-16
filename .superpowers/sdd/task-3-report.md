@@ -42,3 +42,20 @@ environment; tests use injected process execution only. The export query
 expects the private release-state relation and canonical nested catalog shape
 introduced by the later release-state task.
 
+## Review follow-up
+
+- Production unit arrays are ordered by numeric `display_order` in SQL and
+  normalized numerically before hashing, preventing lexicographic ordering from
+  changing the canonical hash.
+- Export now requires a present, strictly validated `releaseState` object and
+  reads revision/hash only from that object; payload and snapshot metadata are
+  never used as release-state fallbacks.
+- The default CLI runner is pinned to Supabase CLI `2.33.9` through
+  `npx --no-install`, with a matching `supabase:cli` package script so no
+  network download is attempted implicitly.
+- Production export requires `expectedProjectRef` (or
+  `SUPABASE_PROJECT_REF`) before invoking the CLI, passes it as an explicit
+  project flag, and rejects mismatched query output.
+
+Focused review tests: `npx vitest run src/content/catalog-diff.test.ts scripts/content-export.test.ts` — 8 passed.
+Full verification: `npm run type-check`, `npm run lint`, `npm run test` (306 passed), and `npm run build` — all passed.

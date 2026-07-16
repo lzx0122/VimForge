@@ -99,7 +99,7 @@ select jsonb_build_object(
   'releaseState', (select to_jsonb(state) from private.catalog_release_state as state limit 1),
   'snapshot', jsonb_build_object(
     'schemaVersion', 1,
-    'units', coalesce((select jsonb_agg(unit_json order by unit_json->>'displayOrder') from unit_payload), '[]'::jsonb)
+    'units', coalesce((select jsonb_agg(unit_json order by (unit_json->>'displayOrder')::integer) from unit_payload), '[]'::jsonb)
   )
 ) as catalog_export;
 `;
@@ -158,6 +158,21 @@ function readInteger(record: JsonRecord, ...keys: string[]): number | undefined 
   return undefined;
 }
 
+function parseReleaseState(value: unknown): { revision: number; hash: string } {
+  if (!isRecord(value)) {
+    throw new Error("Production output did not include a release state object.");
+  }
+  const rawRevision = value.revision ?? value.catalogRevision ?? value.catalog_revision;
+  if (typeof rawRevision !== "number" || !Number.isInteger(rawRevision) || rawRevision <= 0) {
+    throw new Error("Production release state has an invalid revision.");
+  }
+  const hash = readString(value, "catalogHash", "catalog_hash", "hash");
+  if (hash === undefined || !/^sha256:[0-9a-f]{64}$/u.test(hash)) {
+    throw new Error("Production release state has an invalid catalog hash.");
+  }
+  return { revision: rawRevision, hash };
+}
+
 function parseJsonOutput(raw: string): unknown {
   const trimmed = raw.trim();
   try {
@@ -189,40 +204,33 @@ function unwrapPayload(value: unknown): JsonRecord {
   return value;
 }
 
-function productionSnapshot(payload: JsonRecord, release: JsonRecord, now: () => Date): CatalogSnapshot {
+function productionSnapshot(payload: JsonRecord, releaseState: unknown, now: () => Date): CatalogSnapshot {
+  const release = parseReleaseState(releaseState);
   const rawSnapshot = payload.snapshot ?? payload.catalog;
   const snapshot = isRecord(rawSnapshot)
     ? rawSnapshot
     : payload;
-  const revision = readInteger(release, "revision", "catalogRevision", "catalog_revision")
-    ?? readInteger(snapshot, "catalogRevision", "catalog_revision")
-    ?? readInteger(payload, "catalogRevision", "catalog_revision");
-  if (revision === undefined) {
-    throw new Error("Production output did not identify a catalog release state.");
-  }
   const units = snapshot.units;
   if (!Array.isArray(units)) {
     throw new Error("Production output did not include catalog units and relations.");
   }
   const candidate = {
     schemaVersion: 1 as const,
-    catalogRevision: revision,
+    catalogRevision: release.revision,
     catalogHash: "sha256:" + "0".repeat(64),
     exportedAt: now().toISOString(),
     units,
   };
   const parsed = parseCatalogSnapshot(candidate);
-  const canonicalHash = hashCatalog(parsed);
-  const releaseHash = readString(release, "catalogHash", "catalog_hash", "hash")
-    ?? readString(snapshot, "catalogHash", "catalog_hash")
-    ?? readString(payload, "catalogHash", "catalog_hash");
-  if (releaseHash === undefined) {
-    throw new Error("Production output did not identify the catalog release hash.");
-  }
-  if (releaseHash !== canonicalHash) {
+  const ordered = {
+    ...parsed,
+    units: [...parsed.units].sort((left, right) => left.displayOrder - right.displayOrder),
+  } satisfies CatalogSnapshot;
+  const canonicalHash = hashCatalog(ordered);
+  if (release.hash !== canonicalHash) {
     throw new Error("Production release hash does not match the exported catalog.");
   }
-  const withHash = { ...parsed, catalogHash: canonicalHash };
+  const withHash = { ...ordered, catalogHash: canonicalHash };
   const errors = validateCatalogSnapshot(withHash);
   if (errors.length > 0) {
     throw new Error(`Production catalog is invalid: ${errors.map((error) => `${error.path}: ${error.message}`).join("; ")}`);
@@ -252,11 +260,14 @@ function loadExpectedMetadata(options: ProductionExportOptions): { revision: num
 export async function exportProductionCatalog(
   options: ProductionExportOptions = {},
 ): Promise<ProductionExportResult> {
-  const expected = loadExpectedMetadata(options);
   const expectedProjectRef = options.expectedProjectRef ?? process.env.SUPABASE_PROJECT_REF;
+  if (typeof expectedProjectRef !== "string" || expectedProjectRef.trim().length === 0) {
+    throw new Error("Expected production project ref is required before querying.");
+  }
+  const expected = loadExpectedMetadata(options);
   const invoke = options.runSupabase ?? options.run ?? defaultRunSupabase;
   const raw = await invoke(
-    ["db", "query", "--linked", "--output", "json"],
+    ["--project-ref", expectedProjectRef, "db", "query", "--linked", "--output", "json"],
     { ...options.cliOptions, stdin: PRODUCTION_EXPORT_QUERY },
   );
   const payload = unwrapPayload(parseJsonOutput(raw));
@@ -265,12 +276,11 @@ export async function exportProductionCatalog(
   if (projectRef === undefined) {
     throw new Error("Production output did not identify the linked project.");
   }
-  if (expectedProjectRef !== undefined && projectRef !== expectedProjectRef) {
+  if (projectRef !== expectedProjectRef) {
     throw new Error("Production linked project does not match the expected project.");
   }
   const rawRelease = payload.releaseState ?? payload.release_state;
-  const release = isRecord(rawRelease) ? rawRelease : payload;
-  const snapshot = productionSnapshot(payload, release, options.now ?? (() => new Date()));
+  const snapshot = productionSnapshot(payload, rawRelease, options.now ?? (() => new Date()));
   if (snapshot.catalogRevision !== expected.revision) {
     throw new Error("Production catalog revision does not match the repository base snapshot.");
   }

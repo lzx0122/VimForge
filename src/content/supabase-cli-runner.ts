@@ -28,6 +28,14 @@ export interface CliOptions {
   timeoutMs?: number;
 }
 
+/** Keep production tooling on a known CLI release and never download it implicitly. */
+export const SUPABASE_CLI_VERSION = "2.33.9";
+export const DEFAULT_SUPABASE_CLI_COMMAND = "npx";
+export const DEFAULT_SUPABASE_CLI_PREFIX = [
+  "--no-install",
+  `supabase@${SUPABASE_CLI_VERSION}`,
+] as const;
+
 function spawnSupabase(
   command: string,
   args: readonly string[],
@@ -84,8 +92,11 @@ export async function runSupabase(
   args: readonly string[],
   options: CliOptions = {},
 ): Promise<string> {
-  const command = options.command ?? "supabase";
+  const command = options.command ?? DEFAULT_SUPABASE_CLI_COMMAND;
   const runner = options.runner ?? spawnSupabase;
+  const commandArgs = options.command === undefined
+    ? [...DEFAULT_SUPABASE_CLI_PREFIX, ...args]
+    : [...args];
   let result: SupabaseProcessResult;
   try {
     const processOptions: SupabaseProcessOptions = {};
@@ -93,7 +104,7 @@ export async function runSupabase(
     if (options.env !== undefined) processOptions.env = options.env;
     if (options.stdin !== undefined) processOptions.stdin = options.stdin;
     if (options.timeoutMs !== undefined) processOptions.timeoutMs = options.timeoutMs;
-    result = await runner(command, args, processOptions);
+    result = await runner(command, commandArgs, processOptions);
   } catch {
     throw new Error("Supabase CLI command could not be executed.");
   }

@@ -15,6 +15,7 @@
     "test:watch": "vitest",
     "content:validate": "vite-node --script scripts/content-validate.ts",
     "test:e2e": "playwright test",
+    "supabase:cli": "npx --no-install supabase@2.33.9",
     "content:export:production": "vite-node --script scripts/content-export-production.ts",
     "content:diff": "vite-node --script scripts/content-diff.ts"
   },
