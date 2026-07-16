@@ -74,12 +74,12 @@
 
 - Produces: `LearningMode`, `QuestionCount`, `VimMode`, `ExerciseSource`, `CursorPosition`, `ExerciseDefinition`, `AttemptDraft`.
 
-- [ ] 寫型別編譯測試與 runtime validation 測試。
-- [ ] 建立固定 Union Types。
-- [ ] 建立 Completion Rule discriminated unions。
-- [ ] 禁止 `any`。
-- [ ] 執行驗證。
-- [ ] Commit：`feat: define shared learning types`
+- [x] 寫型別編譯測試與 runtime validation 測試。
+- [x] 建立固定 Union Types。
+- [x] 建立 Completion Rule discriminated unions。
+- [x] 禁止 `any`。
+- [x] 執行驗證。
+- [x] Commit：`feat: define shared learning types`
 
 ### Task 0.3：建立 App Shell 與 Router
 
