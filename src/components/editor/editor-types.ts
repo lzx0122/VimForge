@@ -13,6 +13,7 @@ export interface VimEditorProps {
   language: SupportedLanguage;
   showLineNumbers: boolean;
   showKeypresses: boolean;
+  autoFocus?: boolean;
   readOnly?: boolean;
 }
 

@@ -23,6 +23,7 @@ import {
   type VimEditorProps,
 } from "./editor-types";
 import { loadLanguageExtension } from "./language-loader";
+import { vimEditorTheme } from "./vim-editor-theme";
 
 const props = defineProps<VimEditorProps>();
 const emit = defineEmits<VimEditorEmits>();
@@ -93,6 +94,7 @@ onMounted(async () => {
     minimalSetup,
     ...(props.showLineNumbers ? [lineNumbers()] : []),
     languageExtension,
+    ...vimEditorTheme,
     EditorState.readOnly.of(props.readOnly ?? false),
     EditorView.editable.of(!(props.readOnly ?? false)),
     focusHandlers,
@@ -104,11 +106,12 @@ onMounted(async () => {
     extensions: orderEditorExtensions(vim(), remainingExtensions),
   });
 
-  editorView = new EditorView({
+  const view = new EditorView({
     parent: editorHost.value,
     state,
   });
-  vimBridge = getCM(editorView);
+  editorView = view;
+  vimBridge = getCM(view);
   if (vimBridge) {
     vimModeHandler = (event: unknown) => {
       const mode = modeFromEvent(event);
@@ -120,6 +123,9 @@ onMounted(async () => {
       emit("modeChanged", mode);
     };
     vimBridge.on("vim-mode-change", vimModeHandler);
+  }
+  if (props.autoFocus && !(props.readOnly ?? false)) {
+    view.focus();
   }
   emit("modeChanged", currentMode.value);
   emit("editorReady");

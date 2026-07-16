@@ -114,6 +114,52 @@ describe("VimEditor", () => {
     wrapper.unmount();
   });
 
+  it("autofocuses an editable view without moving its initial cursor", async () => {
+    const wrapper = mount(VimEditor, {
+      props: {
+        ...defaultProps,
+        autoFocus: true,
+      },
+      attachTo: document.body,
+    });
+    await flushPromises();
+
+    try {
+      const view = getEditorView(wrapper);
+      const cursorLine = view.state.doc.lineAt(view.state.selection.main.head);
+
+      expect(document.activeElement).toBe(view.contentDOM);
+      expect({
+        line: cursorLine.number - 1,
+        column: view.state.selection.main.head - cursorLine.from,
+      }).toEqual(defaultProps.initialCursor);
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
+  it("does not autofocus a readonly view", async () => {
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    outside.focus();
+    const wrapper = mount(VimEditor, {
+      props: {
+        ...defaultProps,
+        autoFocus: true,
+        readOnly: true,
+      },
+      attachTo: document.body,
+    });
+    await flushPromises();
+
+    try {
+      expect(document.activeElement).toBe(outside);
+    } finally {
+      wrapper.unmount();
+      outside.remove();
+    }
+  });
+
   it("emits content and cursor changes from real editor transactions", async () => {
     const wrapper = await mountEditor();
     const view = getEditorView(wrapper);
