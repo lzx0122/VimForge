@@ -56,7 +56,10 @@ const mode = computed<LearningMode>(() => {
     <PracticeSourceSelector v-model="practiceSource" />
     <div v-if="practiceSource === 'topic_practice'">
       <h2>指定主題</h2>
-      <TopicSelector v-model="selectedTopics" />
+      <TopicSelector
+        v-model="selectedTopics"
+        required
+      />
     </div>
   </section>
 

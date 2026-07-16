@@ -19,6 +19,7 @@ const topicOptions: readonly TopicOption[] = [
 
 const props = defineProps<{
   modelValue: readonly string[];
+  required?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -42,6 +43,10 @@ function toggleTopic(slug: string) {
   <fieldset
     class="option-fieldset"
     data-testid="topic-selector"
+    :aria-describedby="required && modelValue.length === 0
+      ? 'topic-selection-error'
+      : undefined"
+    :aria-invalid="required && modelValue.length === 0"
   >
     <legend>主題</legend>
     <div class="topic-grid">
@@ -59,5 +64,20 @@ function toggleTopic(slug: string) {
         <span>{{ topic.label }}</span>
       </label>
     </div>
+    <p
+      v-if="required && modelValue.length === 0"
+      id="topic-selection-error"
+      class="selection-error"
+      role="alert"
+    >
+      至少選擇一個主題。
+    </p>
   </fieldset>
 </template>
+
+<style scoped>
+.selection-error {
+  margin: 0.75rem 0 0;
+  color: #fca5a5;
+}
+</style>

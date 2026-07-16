@@ -53,6 +53,20 @@ describe("PracticeSetupPage", () => {
     await wrapper.get('input[value="topic_practice"]').setValue();
 
     expect(wrapper.find('[data-testid="topic-selector"]').exists()).toBe(true);
+    expect(wrapper.get('[role="alert"]').text()).toContain(
+      "至少選擇一個主題",
+    );
+
+    await wrapper.get('input[value="search"]').setValue();
+    await wrapper.get('input[value="text-objects"]').setValue();
+
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+    expect(wrapper.get('input[value="search"]').element).toMatchObject({
+      checked: true,
+    });
+    expect(wrapper.get('input[value="text-objects"]').element).toMatchObject({
+      checked: true,
+    });
   });
 
   it("shows question count and optional topics for efficiency mode", async () => {

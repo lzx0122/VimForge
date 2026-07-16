@@ -586,11 +586,11 @@ export function calculateAttemptScore(
 - Create: `src/features/review/services/topic-practice-service.ts`
 - Test: `src/features/review/services/topic-practice-service.test.ts`
 
-- [ ] 一個或多個主題。
-- [ ] 不清除到期題。
-- [ ] 優先尚未熟練題。
-- [ ] 同日重複提升倍率遞減。
-- [ ] Commit：`feat: add topic-focused practice`
+- [x] 一個或多個主題。
+- [x] 不清除到期題。
+- [x] 優先尚未熟練題。
+- [x] 同日重複提升倍率遞減。
+- [x] Commit：`feat: add topic-focused practice`
 
 ---
 
