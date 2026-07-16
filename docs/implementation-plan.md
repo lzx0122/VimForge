@@ -503,11 +503,11 @@ export function calculateAttemptScore(
 - Modify: `src/features/auth/pages/AuthCallbackPage.vue`
 - Test: `src/features/auth/services/auth-service.test.ts`
 
-- [ ] 使用 Supabase `signInWithOAuth({ provider: "google" })`。
-- [ ] Redirect URL 使用目前 origin + `/auth/callback`。
-- [ ] 維持 Session。
-- [ ] 登出清除雲端身分但不刪本機資料。
-- [ ] Commit：`feat: add google authentication`
+- [x] 使用 Supabase `signInWithOAuth({ provider: "google" })`。
+- [x] Redirect URL 使用目前 origin + `/auth/callback`。
+- [x] 維持 Session。
+- [x] 登出清除雲端身分但不刪本機資料。
+- [x] Commit：`feat: add google authentication`
 
 ### Task 7.2：Record Attempt Function
 
