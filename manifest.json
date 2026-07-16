@@ -1,0 +1,16 @@
+{
+  "name": "Vim Practice Platform Vibe Coding Spec",
+  "generated_at": "2026-07-16",
+  "files": [
+    "README.md",
+    "docs/acceptance-criteria.md",
+    "docs/agent-prompt.md",
+    "docs/architecture.md",
+    "docs/database-schema.md",
+    "docs/decisions.md",
+    "docs/implementation-plan.md",
+    "docs/product-spec.md",
+    "docs/testing-strategy.md"
+  ],
+  "primary_entry": "README.md"
+}
