@@ -10,6 +10,7 @@ import {
   matchSolution,
   type SolutionMatch,
 } from "../../../domain/exercise/solution-matcher";
+import { formatActionSequence } from "../../../domain/exercise/action-sequence-formatter";
 import type {
   HintLevel,
   NormalizedAction,
@@ -109,6 +110,7 @@ export function createAttemptOutcome(
     })),
   });
   const recommendedSequence = recommended?.sequence ?? "—";
+  const userSequence = formatActionSequence(normalizedActions);
 
   return {
     solutionMatch,
@@ -141,10 +143,7 @@ export function createAttemptOutcome(
       score,
       previousMasteryLevel: 0,
       nextMasteryLevel: input.completed ? 1 : 0,
-      userSequence:
-        solutionMatch === "unknown_valid"
-          ? "未收錄的有效操作"
-          : recommendedSequence,
+      userSequence,
       recommendedSequence,
       improvementReason: feedbackReason(
         solutionMatch,

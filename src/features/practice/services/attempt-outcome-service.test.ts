@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { NormalizedAction } from "../../../types";
 import type { PracticeExercise } from "../repositories/exercise-repository";
 import { createAttemptOutcome } from "./attempt-outcome-service";
 
@@ -51,7 +52,11 @@ const baseInput = {
   undoCount: 0,
   resetCount: 0,
   highestHintLevel: 0 as const,
-  normalizedActions: [],
+  normalizedActions: [
+    { type: "vim_command", command: "a" },
+    { type: "insert_text", text: "x", textLength: 1 },
+    { type: "mode_change", mode: "normal" },
+  ] satisfies NormalizedAction[],
 };
 
 describe("createAttemptOutcome", () => {
@@ -73,7 +78,7 @@ describe("createAttemptOutcome", () => {
       completed: true,
       previousMasteryLevel: 0,
       nextMasteryLevel: 1,
-      userSequence: "未收錄的有效操作",
+      userSequence: "ax<Esc>",
       recommendedSequence: "ix<Esc>",
     });
     expect(outcome.feedback.improvementReason).toContain("操作未收錄於題庫");
