@@ -621,14 +621,14 @@ export function calculateAttemptScore(
 - Modify: `src/features/settings/pages/SettingsPage.vue`
 - Test: `src/features/settings/pages/SettingsPage.test.ts`
 
-- [ ] 字體大小 12–28。
-- [ ] 行號。
-- [ ] 按鍵顯示。
-- [ ] 音效。
-- [ ] 預設題量。
-- [ ] 訪客保存 IndexedDB。
-- [ ] 登入使用者同步 Supabase。
-- [ ] Commit：`feat: add editor and practice settings`
+- [x] 字體大小 12–28。
+- [x] 行號。
+- [x] 按鍵顯示。
+- [x] 音效。
+- [x] 預設題量。
+- [x] 訪客保存 IndexedDB。
+- [x] 登入使用者同步 Supabase。
+- [x] Commit：`feat: add editor and practice settings`
 
 ---
 

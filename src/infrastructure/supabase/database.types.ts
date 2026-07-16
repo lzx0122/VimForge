@@ -93,6 +93,34 @@ type ExerciseHintRow = {
   created_at: string;
 };
 
+type UserSettingsRow = {
+  user_id: string;
+  editor_font_size: number;
+  show_line_numbers: boolean;
+  show_keypresses: boolean;
+  sound_enabled: boolean;
+  preferred_question_count: number;
+  last_learning_mode: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type UserSettingsTable = {
+  Row: UserSettingsRow;
+  Insert: {
+    user_id: string;
+    editor_font_size: number;
+    show_line_numbers: boolean;
+    show_keypresses: boolean;
+    sound_enabled: boolean;
+    preferred_question_count: number;
+    last_learning_mode: string | null;
+    updated_at: string;
+  };
+  Update: Partial<Omit<UserSettingsRow, "user_id" | "created_at">>;
+  Relationships: [];
+};
+
 export interface Database {
   public: {
     Tables: {
@@ -103,6 +131,7 @@ export interface Database {
       exercise_skills: CatalogTable<ExerciseSkillRow>;
       exercise_solutions: CatalogTable<ExerciseSolutionRow>;
       exercise_hints: CatalogTable<ExerciseHintRow>;
+      user_settings: UserSettingsTable;
     };
     Views: Record<string, never>;
     Functions: {
