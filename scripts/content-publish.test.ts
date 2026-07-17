@@ -9,6 +9,7 @@ import { publishProduction, type PublishProductionInput } from "./content-publis
 const base = parseCatalogSnapshot(JSON.parse(readFileSync("content/catalog.json", "utf8")) as unknown);
 const migrationSql = "begin;\ncommit;\n";
 const migrationPath = "supabase/migrations/20260717000000_catalog_release.sql";
+const targetPath = "content/catalog.json";
 
 function input(runSupabase: PublishProductionInput["runSupabase"]): PublishProductionInput {
   return {
@@ -21,6 +22,7 @@ function input(runSupabase: PublishProductionInput["runSupabase"]): PublishProdu
     migrationSql,
     migrationPath,
     manifest: {
+      targetPath,
       baseRevision: base.catalogRevision,
       targetRevision: base.catalogRevision + 1,
       targetHash: hashCatalog(base),
@@ -29,6 +31,7 @@ function input(runSupabase: PublishProductionInput["runSupabase"]): PublishProdu
       counts: { added: 0, changed: 0, unpublished: 0, unchanged: base.units.reduce((count, unit) => count + unit.exercises.length, 0) },
     },
     runSupabase,
+    finalConfirmation: "PUBLISH",
   };
 }
 
@@ -49,5 +52,36 @@ describe("production publisher", () => {
     });
     await expect(publishProduction(input(run))).rejects.toThrow(/safe|publish failed|not applied/i);
     await expect(publishProduction(input(run))).rejects.not.toThrow(/secret|raw database/i);
+  });
+
+  it("prints counts and requires a separate final confirmation before db push", async () => {
+    const run = vi.fn(async (args: readonly string[]) => args.includes("query")
+      ? JSON.stringify({ release_state: { revision: base.catalogRevision + 1, catalog_hash: hashCatalog(base) } })
+      : "");
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    try {
+      await expect(publishProduction({ ...input(run), finalConfirmation: "NO" })).rejects.toThrow(/PUBLISH/);
+      expect(run.mock.calls.some(([args]) => args.includes("db") && args.includes("push") && !args.includes("dry-run"))).toBe(false);
+      expect(log).toHaveBeenCalledWith(expect.stringContaining("added 0, changed 0, unpublished 0, unchanged"));
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("asks for project-ref confirmation and then a distinct final confirmation", async () => {
+    const run = vi.fn(async (args: readonly string[]) => args.includes("query")
+      ? JSON.stringify({ release_state: { revision: base.catalogRevision + 1, catalog_hash: hashCatalog(base) } })
+      : "");
+    const prompt = vi.fn(async (question: string) => question.includes("PUBLISH") ? "PUBLISH" : "prod-ref");
+    const result = await publishProduction({
+      ...input(run),
+      typedProjectRef: undefined,
+      finalConfirmation: undefined,
+      prompt,
+    });
+
+    expect(result.success).toBe(true);
+    expect(prompt).toHaveBeenCalledTimes(2);
+    expect(prompt.mock.calls[1]?.[0]).toMatch(/PUBLISH/);
   });
 });

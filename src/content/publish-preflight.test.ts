@@ -24,6 +24,7 @@ function input(overrides: Partial<PublishInput> = {}): PublishInput {
     migrationSql,
     pendingMigrations: ["20260717000000_catalog_release.sql"],
     manifest: {
+      targetPath: "content/catalog.json",
       baseRevision: base.catalogRevision,
       targetRevision: base.catalogRevision + 1,
       targetHash: hashCatalog(target),

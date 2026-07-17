@@ -14,6 +14,7 @@ export interface PublishManifestCounts {
 
 export interface PublishManifest {
   schemaVersion?: 1;
+  targetPath: string;
   baseRevision: number;
   targetRevision: number;
   targetHash: string;
@@ -69,6 +70,9 @@ function assertProject(input: PublishInput): void {
 
 function assertManifest(input: PublishInput, diff: CatalogDiff, migrationHash: string): void {
   const manifest = input.manifest;
+  if (typeof manifest.targetPath !== "string" || manifest.targetPath.trim().length === 0) {
+    throw new Error("Release manifest target snapshot path is missing.");
+  }
   if (!/^sha256:[0-9a-f]{64}$/u.test(manifest.targetHash)) {
     throw new Error("Release manifest target hash is missing or invalid.");
   }

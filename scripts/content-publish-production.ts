@@ -29,6 +29,9 @@ export interface PublishProductionInput {
   confirmProjectRef?: string;
   projectRefConfirmation?: string;
   confirmation?: string;
+  /** Exact text entered for the final, independent publish confirmation. */
+  finalConfirmation?: string;
+  publishConfirmation?: string;
   /** Test and embedding hook for mocked migration inspection. */
   linkedProjectRef?: string;
   pendingMigrations?: readonly string[];
@@ -49,6 +52,7 @@ export interface PublishResult {
 }
 
 const RELEASE_STATE_QUERY = `select json_build_object('revision', revision, 'catalogHash', catalog_hash) as release_state from private.catalog_release_state where singleton = true;`;
+const FINAL_PUBLISH_CONFIRMATION = "PUBLISH";
 
 function parseJson(raw: string): unknown {
   const text = raw.trim();
@@ -130,6 +134,15 @@ async function interactiveProjectConfirmation(expected: string): Promise<string>
   }
 }
 
+async function interactiveFinalConfirmation(expected: string): Promise<string> {
+  const reader = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return await reader.question(`Type ${FINAL_PUBLISH_CONFIRMATION} to apply this catalog release to ${expected}: `);
+  } finally {
+    reader.close();
+  }
+}
+
 function safeError(message: string): Error {
   return new Error(message);
 }
@@ -177,6 +190,16 @@ export async function publishProduction(input: PublishProductionInput): Promise<
     confirmLargeChange: input.confirmLargeChange ?? false,
   };
   const preflight = preflightProductionPublish(preflightInput);
+  const { added, changed, unpublished, unchanged } = preflight.summary;
+  console.log(`Catalog release summary: added ${added}, changed ${changed}, unpublished ${unpublished}, unchanged ${unchanged}.`);
+  const finalConfirmation = input.finalConfirmation
+    ?? input.publishConfirmation
+    ?? (input.prompt === undefined
+      ? await interactiveFinalConfirmation(input.expectedProjectRef)
+      : await input.prompt(`Type ${FINAL_PUBLISH_CONFIRMATION} to apply this catalog release to ${input.expectedProjectRef}: `));
+  if (finalConfirmation !== FINAL_PUBLISH_CONFIRMATION) {
+    throw safeError(`Final publish confirmation must be exactly ${FINAL_PUBLISH_CONFIRMATION}.`);
+  }
   let pushError = false;
   try {
     await invoke(["db", "push", "--linked"], input.cliOptions);
@@ -212,7 +235,10 @@ function loadCliInput(): PublishProductionInput {
   const manifestPath = resolve(process.argv[2] ?? "content/release-manifest.json");
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as PublishManifest;
   const baseSnapshot = parseCatalogSnapshot(JSON.parse(readFileSync("content/catalog.json", "utf8")) as unknown);
-  const targetPath = process.argv[3] ?? "content/catalog.json";
+  const targetPath = process.argv[3] ?? manifest.targetPath;
+  if (typeof targetPath !== "string" || targetPath.trim().length === 0) {
+    throw safeError("Release manifest target snapshot path is missing.");
+  }
   const targetSnapshot = parseCatalogSnapshot(JSON.parse(readFileSync(targetPath, "utf8")) as unknown);
   const migrationPath = resolve(manifest.migrationPath);
   return {

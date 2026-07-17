@@ -23,6 +23,8 @@ export interface PrepareReleaseOptions {
 
 export interface ReleaseManifest {
   schemaVersion: 1;
+  /** Repository-relative path to the modified target snapshot used for this release. */
+  targetPath: string;
   baseRevision: number;
   targetRevision: number;
   targetHash: string;
@@ -83,8 +85,10 @@ export function prepareRelease(options: PrepareReleaseOptions): PrepareReleaseRe
   }
   writeFileSync(migrationPath, migrationSql, "utf8");
   const migrationRelativePath = relative(process.cwd(), migrationPath);
+  const targetRelativePath = relative(process.cwd(), targetPath);
   const manifest: ReleaseManifest = {
     schemaVersion: 1,
+    targetPath: targetRelativePath,
     baseRevision: base.catalogRevision,
     targetRevision: plan.targetRevision,
     targetHash: target.catalogHash,
