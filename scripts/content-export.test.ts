@@ -131,7 +131,8 @@ describe("production catalog export", () => {
       expectedHash: "sha256:" + "0".repeat(64),
       runSupabase: run,
     })).rejects.toThrow(/release state/i);
-    expect(run.mock.calls[0]?.[0]).toEqual(["--project-ref", "expected-project", "db", "query", "--help"]);
+    expect(run.mock.calls[0]?.[0]).toEqual(["db", "query", "--help"]);
+    expect(run.mock.calls.every(([args]) => !args.includes("--project-ref"))).toBe(true);
     expect(run.mock.calls[1]?.[0]).toContain("--output");
   });
 

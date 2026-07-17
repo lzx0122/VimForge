@@ -297,12 +297,12 @@ export async function exportProductionCatalog(
     throw new Error("Production linked project does not match the expected project.");
   }
   const capabilityOutput = await invoke(
-    ["--project-ref", expectedProjectRef, "db", "query", "--help"],
+    ["db", "query", "--help"],
     options.cliOptions,
   );
   assertDbQueryCapability(capabilityOutput);
   const raw = await invoke(
-    ["--project-ref", expectedProjectRef, "db", "query", "--linked", "--output", "json"],
+    ["db", "query", "--linked", "--output", "json"],
     { ...options.cliOptions, stdin: PRODUCTION_EXPORT_QUERY },
   );
   const parsedOutput = parseJsonOutput(raw);
