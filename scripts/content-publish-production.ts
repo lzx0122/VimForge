@@ -83,6 +83,11 @@ function records(value: unknown): unknown[] {
 }
 
 export function pendingFromDryRun(raw: string): string[] {
+  const listedMigrations = raw.split(/Would push these migrations:\s*/iu)[1];
+  if (listedMigrations !== undefined) {
+    const listed = listedMigrations.match(/\b\d{8,}[^\s,)]*\.sql\b/gu) ?? [];
+    return [...new Set(listed.map((value) => basename(value)))];
+  }
   const values: string[] = [];
   for (const item of records(parseJson(raw))) {
     if (typeof item !== "object" || item === null) continue;
