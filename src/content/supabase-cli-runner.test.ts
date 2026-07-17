@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { readLinkedProjectRef } from "./supabase-cli-runner";
+import { readLinkedProjectRef, runSupabase } from "./supabase-cli-runner";
 
 describe("Supabase CLI linked project discovery", () => {
   it("reads the project ref created by supabase link without requiring local Docker", () => {
@@ -13,5 +13,15 @@ describe("Supabase CLI linked project discovery", () => {
     writeFileSync(resolve(cwd, "supabase", ".temp", "project-ref"), "prod-ref\n", "utf8");
 
     expect(readLinkedProjectRef(cwd)).toBe("prod-ref");
+  });
+
+  it("uses successful CLI stderr when informational output is not written to stdout", async () => {
+    await expect(runSupabase(["db", "push", "--linked", "--dry-run"], {
+      runner: async () => ({
+        stdout: "",
+        stderr: "Would push these migrations:\n • 20260717111721_catalog_release.sql",
+        exitCode: 0,
+      }),
+    })).resolves.toContain("20260717111721_catalog_release.sql");
   });
 });
