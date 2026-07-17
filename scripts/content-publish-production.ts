@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 
 import {
@@ -82,7 +82,7 @@ function records(value: unknown): unknown[] {
   return children.length > 0 ? children : [value];
 }
 
-function pendingFromDryRun(raw: string): string[] {
+export function pendingFromDryRun(raw: string): string[] {
   const values: string[] = [];
   for (const item of records(parseJson(raw))) {
     if (typeof item !== "object" || item === null) continue;
@@ -92,8 +92,8 @@ function pendingFromDryRun(raw: string): string[] {
       if (typeof value === "string" && /\d{8,}.*\.sql$/u.test(value)) values.push(value);
     }
   }
-  if (values.length > 0) return [...new Set(values)];
-  return [...new Set(raw.match(/\b\d{8,}[^\s,)]*\.sql\b/gu) ?? [])];
+  if (values.length > 0) return [...new Set(values.map((value) => basename(value)))];
+  return [...new Set((raw.match(/\b\d{8,}[^\s,)]*\.sql\b/gu) ?? []).map((value) => basename(value)))];
 }
 
 function releaseState(raw: string): { revision: number; hash: string } {
@@ -146,7 +146,7 @@ export async function publishProduction(input: PublishProductionInput): Promise<
   if (pending === undefined) {
     let dryRun: string;
     try {
-      dryRun = await invoke(["db", "push", "--linked", "--dry-run", "--output", "json"], input.cliOptions);
+      dryRun = await invoke(["db", "push", "--linked", "--dry-run"], input.cliOptions);
     } catch {
       throw safeError("Unable to inspect pending Supabase migrations.");
     }

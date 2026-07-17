@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 import { hashCatalog, parseCatalogSnapshot } from "../src/content/catalog-contract";
-import { publishProduction, type PublishProductionInput } from "./content-publish-production";
+import { pendingFromDryRun, publishProduction, type PublishProductionInput } from "./content-publish-production";
 
 const base = parseCatalogSnapshot(JSON.parse(readFileSync("content/catalog.json", "utf8")) as unknown);
 const migrationSql = "begin;\ncommit;\n";
@@ -84,5 +84,18 @@ describe("production publisher", () => {
     expect(result.success).toBe(true);
     expect(prompt).toHaveBeenCalledTimes(2);
     expect(prompt.mock.calls[1]?.[0]).toMatch(/PUBLISH/);
+  });
+
+  it("uses the standard dry-run output when discovering pending migrations", async () => {
+    const dryRunOutput = `DRY RUN: migrations will *not* be pushed to the database.\nWould push these migrations:\n • ${migrationPath.split("/").pop()}`;
+    expect(pendingFromDryRun(dryRunOutput)).toEqual([migrationPath.split("/").pop()]);
+    const run = vi.fn(async (args: readonly string[]) => {
+      if (args.includes("--dry-run")) return dryRunOutput;
+      if (args.includes("query")) return JSON.stringify({ release_state: { revision: base.catalogRevision + 1, catalog_hash: hashCatalog(base) } });
+      return "";
+    });
+
+    await expect(publishProduction({ ...input(run), pendingMigrations: undefined })).resolves.toMatchObject({ success: true });
+    expect(run.mock.calls[0]?.[0]).toEqual(["db", "push", "--linked", "--dry-run"]);
   });
 });
