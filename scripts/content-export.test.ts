@@ -169,4 +169,30 @@ describe("production catalog export", () => {
     expect(PRODUCTION_EXPORT_QUERY).toContain("row_number() over");
     expect(PRODUCTION_EXPORT_QUERY).not.toContain("e.display_order");
   });
+
+  it("unwraps the rows envelope returned by supabase db query", async () => {
+    const base = JSON.parse(readFileSync(resolve(process.cwd(), "content/catalog.json"), "utf8")) as CatalogSnapshot;
+    const run = vi.fn(async (args: readonly string[]) => args.includes("--help")
+      ? "Usage: supabase db query [flags]\n  --linked\n  --output string"
+      : JSON.stringify({
+        rows: [{
+          catalog_export: {
+            releaseState: {
+              revision: base.catalogRevision,
+              catalog_hash: base.catalogHash,
+            },
+            snapshot: { schemaVersion: 1, units: base.units },
+          },
+        }],
+      }));
+
+    await expect(exportProductionCatalog({
+      expectedProjectRef: "expected-project",
+      linkedProjectRef: "expected-project",
+      expectedRevision: base.catalogRevision,
+      expectedHash: base.catalogHash,
+      runSupabase: run,
+      outputDirectory: mkdtempSync(resolve(tmpdir(), "vimforge-export-")),
+    })).resolves.toMatchObject({ exerciseCount: 100 });
+  });
 });

@@ -201,9 +201,9 @@ function unwrapPayload(value: unknown): JsonRecord {
     return isRecord(first) ? unwrapPayload(first) : {};
   }
   if (!isRecord(value)) return {};
-  for (const key of ["catalog_export", "catalogExport", "export"]) {
+  for (const key of ["catalog_export", "catalogExport", "export", "rows", "data", "result"]) {
     const nested = value[key];
-    if (isRecord(nested)) return nested;
+    if (isRecord(nested) || Array.isArray(nested)) return unwrapPayload(nested);
   }
   return value;
 }
