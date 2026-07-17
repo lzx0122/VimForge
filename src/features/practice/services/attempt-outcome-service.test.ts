@@ -80,9 +80,14 @@ describe("createAttemptOutcome", () => {
       nextMasteryLevel: 1,
       userSequence: "ax<Esc>",
       recommendedSequence: "ix<Esc>",
-      normalizedActions: baseInput.normalizedActions,
+      recommendedActions: exercise.solutions[0]?.normalizedActions,
     });
-    expect(outcome.feedback.normalizedActions).not.toBe(baseInput.normalizedActions);
+    expect(outcome.feedback.recommendedActions).not.toBe(
+      baseInput.normalizedActions,
+    );
+    expect(outcome.feedback.recommendedActions).not.toBe(
+      exercise.solutions[0]?.normalizedActions,
+    );
     expect(outcome.feedback.improvementReason).toContain("操作未收錄於題庫");
   });
 

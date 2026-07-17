@@ -138,13 +138,13 @@ describe("catalog contract", () => {
     expect(errors.some((error) => error.path.endsWith("skills"))).toBe(true);
   });
 
-  it("reports a missing level-four hint", () => {
+  it("accepts hints without requiring all four levels", () => {
     const snapshot = copyFixture();
     getExercise(snapshot).hints = getExercise(snapshot).hints.slice(0, 3);
 
     const errors = validateCatalogSnapshot(snapshot);
 
-    expect(errors.some((error) => error.path.endsWith("hints[4]"))).toBe(true);
+    expect(errors.filter((error) => error.path.includes("hints"))).toEqual([]);
   });
 
   it("reports a renamed slug when comparing a base and next exercise", () => {

@@ -91,7 +91,7 @@ function addCommandTokens(
   }
 }
 
-export function explainUsedVimKeys(
+export function explainExpectedVimKeys(
   actions: readonly NormalizedAction[],
 ): VimKeyExplanation[] {
   const result: VimKeyExplanation[] = [];

@@ -97,7 +97,7 @@ npx --no-install vite-node --script scripts/validate-seed.ts
 }
 ```
 
-`skills` 關係的 weights 必須總和為 `1` 且恰有一個 `primary: true`。`solutions` 至少一筆且恰有一筆 `recommended: true`；每筆都要有正整數 `keystrokeCount` 與合法的 `normalizedActions`。`hints` 必須各有 level 1、2、3、4，不能重複或缺漏。stable slug 只能使用小寫字母、數字與連字號；既有 slug 不可改名。
+`skills` 關係的 weights 必須總和為 `1` 且恰有一個 `primary: true`。`solutions` 至少一筆且恰有一筆 `recommended: true`；每筆都要有正整數 `keystrokeCount` 與合法的 `normalizedActions`。`hints` 可為空或提供 level 1–4 的任意子集合，但不能重複；stable slug 只能使用小寫字母、數字與連字號；既有 slug 不可改名。
 
 ## 給 ChatGPT 的編輯提示
 
@@ -107,7 +107,7 @@ npx --no-install vite-node --script scripts/validate-seed.ts
 2. 保留未修改 unit、exercise、skill、solution、hint 的所有欄位與順序。
 3. 新題目使用新的 stable slug；不要重新編號既有題目，也不要用 ordinal-only 的重複情境充數。
 4. 不要使用 Markdown code fence、註解或 JSON 以外的文字。
-5. 新增或修改題目時，維持合法語言、模式、完成條件、技能權重、解法與四層提示。
+5. 新增或修改題目時，維持合法語言、模式、完成條件、技能權重、解法與實際需要的提示層級。
 
 ## 離線驗證
 

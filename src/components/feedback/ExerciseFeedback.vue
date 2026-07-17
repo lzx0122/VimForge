@@ -15,7 +15,7 @@ export interface ExerciseFeedbackProps {
   improvementReason: string;
   actualKeystrokeCount: number;
   recommendedKeystrokeCount: number;
-  normalizedActions: readonly NormalizedAction[];
+  recommendedActions: readonly NormalizedAction[];
 }
 </script>
 
@@ -207,7 +207,7 @@ const formattedKeystrokeGap = computed(() =>
       </p>
     </section>
 
-    <VimKeyGuide :actions="normalizedActions" />
+    <VimKeyGuide :expected-actions="recommendedActions" />
 
     <button
       type="button"

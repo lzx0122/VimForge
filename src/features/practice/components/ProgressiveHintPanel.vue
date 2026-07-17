@@ -27,9 +27,7 @@ const unlockedHints = computed(() =>
   orderedHints.value.filter((hint) => hint.level <= highestLevel.value),
 );
 const nextHint = computed(() =>
-  orderedHints.value.find(
-    (hint) => hint.level === highestLevel.value + 1,
-  ),
+  orderedHints.value.find((hint) => hint.level > highestLevel.value),
 );
 const canRevealNext = computed(() => nextHint.value !== undefined);
 
@@ -59,7 +57,7 @@ function revealNextHint() {
         </h2>
       </div>
       <span class="progressive-hint-progress">
-        已解鎖 {{ highestLevel }} / 4
+        已解鎖 {{ unlockedHints.length }} / {{ orderedHints.length }}
       </span>
     </header>
 

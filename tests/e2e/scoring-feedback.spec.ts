@@ -110,7 +110,6 @@ async function mockExerciseCatalog(
     } else if (table === "exercise_hints") {
       body = [
         { level: 1, content: "先進入可輸入文字的模式。", command_preview: null },
-        { level: 2, content: "使用 Insert Mode。", command_preview: "i" },
         { level: 3, content: "輸入 x 後離開 Insert Mode。", command_preview: "ix" },
         { level: 4, content: "完整操作如下。", command_preview: "ix<Esc>" },
       ];
@@ -213,6 +212,8 @@ test("automatically completes after every target condition matches", async ({ pa
   const sessionId = await startPracticeSession(page);
   const editor = page.locator(".cm-content");
   await expect(editor).toBeFocused();
+  await page.keyboard.press("h");
+  await page.keyboard.press("l");
   await page.keyboard.press("i");
   await page.keyboard.type("x");
 
@@ -257,8 +258,11 @@ test("automatically completes after every target condition matches", async ({ pa
   await expect(keyGuide).toBeVisible();
   await expect(keyGuide).not.toHaveAttribute("open", "");
   await keyGuide.locator("summary").click();
+  await expect(keyGuide.locator("kbd")).toHaveText(["i", "Esc"]);
   await expect(keyGuide).toContainText("i");
   await expect(keyGuide).toContainText("Esc");
+  await expect(keyGuide).not.toContainText("h：向左移動");
+  await expect(keyGuide).not.toContainText("l：向右移動");
   await expect(keyGuide).not.toContainText("u：復原上一個變更");
   await page.getByText("查看計算方式", { exact: true }).click();
   await expect(page.locator("details.metric-explanation")).toContainText(
@@ -267,6 +271,9 @@ test("automatically completes after every target condition matches", async ({ pa
   await expect(page.getByText("推薦操作", { exact: true })).toBeVisible();
   await expect(
     page.locator('[data-feedback-section="solutions"] code').first(),
+  ).toHaveText("hlix<Esc>");
+  await expect(
+    page.locator('[data-feedback-section="solutions"] code').last(),
   ).toHaveText("ix<Esc>");
   await expect.poll(() => readAttemptCount(page)).toBe(1);
 
@@ -327,26 +334,17 @@ test("autofocuses the target and restarts without creating an attempt", async ({
   expect(await readAttemptCount(page)).toBe(0);
 });
 
-test("reveals four hints in order and resets after playback without an attempt", async ({ page }) => {
+test("reveals available hints in order without playback or an attempt", async ({ page }) => {
   await startPracticeSession(page);
 
-  for (const level of [1, 2, 3, 4]) {
+  for (const level of [1, 3, 4]) {
     await page.getByRole("button", { name: `顯示提示 ${level}` }).click();
     await expect(page.getByText(`提示 ${level}`, { exact: true })).toBeVisible();
   }
-  await expect(page.getByText("已解鎖 4 / 4")).toBeVisible();
+  await expect(page.getByText("已解鎖 3 / 3")).toBeVisible();
   await expect(page.getByRole("button", { name: "顯示提示 4" })).toHaveCount(0);
-  await expect(
-    page.locator(".practice-editor-frame [data-testid=\"playback-completed-content\"]"),
-  ).toContainText("const xname = true;");
-
-  await page.getByRole("button", { name: "播放操作" }).click();
-  await expect(
-    page.locator('.practice-editor-frame kbd[aria-current="step"]'),
-  ).toBeVisible();
-  await expect(
-    page.getByText("示範已結束，題目已重設，請親自完成。"),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "播放操作" })).toHaveCount(0);
+  await expect(page.locator('[data-testid="playback-completed-content"]')).toHaveCount(0);
   await expect.poll(() => readAttemptCount(page)).toBe(0);
   await expect(page.getByRole("article", { name: "完成！" })).toHaveCount(0);
   await expect(page.locator(".practice-workspace")).toBeVisible();

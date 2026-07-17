@@ -46,7 +46,7 @@ export interface AttemptFeedback {
   improvementReason: string;
   actualKeystrokeCount: number;
   recommendedKeystrokeCount: number;
-  normalizedActions: NormalizedAction[];
+  recommendedActions: NormalizedAction[];
 }
 
 export interface AttemptOutcome {
@@ -101,6 +101,10 @@ export function createAttemptOutcome(
   const normalizedActions = input.normalizedActions.map((action) => ({
     ...action,
   }));
+  const recommendedActions =
+    recommended?.normalizedActions.map((action) => ({
+      ...action,
+    })) ?? [];
   const solutionMatch = matchSolution({
     actions: normalizedActions,
     completed: input.completed,
@@ -152,7 +156,7 @@ export function createAttemptOutcome(
       ),
       actualKeystrokeCount,
       recommendedKeystrokeCount,
-      normalizedActions,
+      recommendedActions,
     },
   };
 }

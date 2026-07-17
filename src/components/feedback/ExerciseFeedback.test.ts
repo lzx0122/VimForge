@@ -13,13 +13,13 @@ const defaultProps: ExerciseFeedbackProps = {
   speedScore: 78,
   previousMasteryLevel: 2,
   nextMasteryLevel: 3,
-  userSequence: "wwciwcustomerName<Esc>",
+  userSequence: "hliciwcustomerName<Esc>",
   recommendedSequence: "ciwcustomerName<Esc>",
   improvementReason: "起始游標已位於變數名稱內，因此不需要先按 ww。",
   actualKeystrokeCount: 6,
   recommendedKeystrokeCount: 3,
-  normalizedActions: [
-    { type: "vim_command", command: "wwciw" },
+  recommendedActions: [
+    { type: "vim_command", command: "ciw" },
     { type: "insert_text", text: "customerName", textLength: 12 },
     { type: "mode_change", mode: "normal" },
   ] satisfies NormalizedAction[],
@@ -126,14 +126,17 @@ describe("ExerciseFeedback", () => {
     expect(wrapper.emitted("requestNext")).toHaveLength(1);
   });
 
-  it("renders a collapsed key guide containing only keys used in the attempt", () => {
+  it("renders a collapsed key guide containing only expected solution keys", () => {
     const wrapper = mount(ExerciseFeedback, { props: defaultProps });
     const guide = wrapper.get('[data-testid="vim-key-guide"]');
 
     expect(guide.attributes("open")).toBeUndefined();
     expect(guide.text()).toContain("本題按鍵解說");
+    expect(guide.text()).toContain("c");
     expect(guide.text()).toContain("w");
     expect(guide.text()).toContain("Esc");
+    expect(guide.text()).not.toContain("h：向左移動");
+    expect(guide.text()).not.toContain("l：向右移動");
     expect(guide.text()).not.toContain("u：復原上一個變更");
   });
 });

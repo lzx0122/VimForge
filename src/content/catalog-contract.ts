@@ -595,7 +595,7 @@ function validateExercise(
   }
 
   if (!Array.isArray(value.hints)) {
-    addError(errors, `${path}.hints`, "exactly one hint for each level 1 through 4 is required.");
+    addError(errors, `${path}.hints`, "expected an array of hints.");
   } else {
     const levels = new Set<number>();
     value.hints.forEach((hint, index) => {
@@ -610,9 +610,6 @@ function validateExercise(
       if (!isNonEmptyString(hint.content)) addError(errors, `${hintPath}.content`, "expected a non-empty string.");
       if (hint.commandPreview !== null && typeof hint.commandPreview !== "string") addError(errors, `${hintPath}.commandPreview`, "expected a string or null.");
     });
-    for (const level of [1, 2, 3, 4] as const) {
-      if (!levels.has(level)) addError(errors, `${path}.hints[${level}]`, `missing hint level ${level}.`);
-    }
   }
 }
 

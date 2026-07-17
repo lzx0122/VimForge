@@ -4,10 +4,10 @@ import { describe, expect, it } from "vitest";
 import VimKeyGuide from "./VimKeyGuide.vue";
 
 describe("VimKeyGuide", () => {
-  it("is collapsed by default and only lists used keys after opening", async () => {
+  it("is collapsed by default and only lists expected keys after opening", async () => {
     const wrapper = mount(VimKeyGuide, {
       props: {
-        actions: [
+        expectedActions: [
           { type: "vim_command", command: "ciw" },
           { type: "insert_text", text: "name", textLength: 4 },
           { type: "mode_change", mode: "normal" },
@@ -33,7 +33,7 @@ describe("VimKeyGuide", () => {
   });
 
   it("shows a message when the attempt has no Vim keys", () => {
-    const wrapper = mount(VimKeyGuide, { props: { actions: [] } });
+    const wrapper = mount(VimKeyGuide, { props: { expectedActions: [] } });
 
     expect(wrapper.text()).toContain("本題沒有可解說的 Vim 按鍵。");
   });

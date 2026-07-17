@@ -2,13 +2,13 @@
 import { computed } from "vue";
 
 import type { NormalizedAction } from "../../../types";
-import { explainUsedVimKeys } from "../services/vim-key-guide";
+import { explainExpectedVimKeys } from "../services/vim-key-guide";
 
 const props = defineProps<{
-  actions: readonly NormalizedAction[];
+  expectedActions: readonly NormalizedAction[];
 }>();
 
-const explanations = computed(() => explainUsedVimKeys(props.actions));
+const explanations = computed(() => explainExpectedVimKeys(props.expectedActions));
 </script>
 
 <template>

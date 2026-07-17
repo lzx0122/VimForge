@@ -25,7 +25,6 @@ import type { VimMode } from "../../../types/learning";
 import type { PracticeSession } from "../../../types/session";
 import type { ExerciseRepository, PracticeExercise } from "../repositories/exercise-repository";
 import PracticeEditorStatusBar from "../components/PracticeEditorStatusBar.vue";
-import EditorPlayback from "../components/EditorPlayback.vue";
 import ProgressiveHintPanel from "../components/ProgressiveHintPanel.vue";
 import ResumeSessionDialog from "../components/ResumeSessionDialog.vue";
 import { useAttemptElapsedTime } from "../composables/use-attempt-elapsed-time";
@@ -80,19 +79,6 @@ let autoEvaluationQueued = false;
 const restoredAttemptContent = computed(
   () => practiceStore.attemptDraft?.currentContent ?? null,
 );
-
-const levelFourPlayback = computed(() => {
-  const activeExercise = exercise.value;
-  const hint = activeExercise?.hints.find((item) => item.level === 4);
-  if (!activeExercise || !hint || hint.commandPreview === null) {
-    return null;
-  }
-
-  return {
-    command: hint.commandPreview,
-    completedContent: activeExercise.expectedContent,
-  };
-});
 
 function requireResumeState(): ResumeState {
   if (persistedState.value === null) {
@@ -568,12 +554,6 @@ onUnmounted(() => {
           @mode-changed="updateMode"
           @action-recorded="recordAction"
         />
-        <EditorPlayback
-          v-if="highestHintLevel === 4 && levelFourPlayback"
-          :command="levelFourPlayback.command"
-          :completed-content="levelFourPlayback.completedContent"
-          @playback-complete="resetExercise"
-        />
         <p
           v-if="exercise.completionRule.cursorMatch.type !== 'ignore'"
           class="cursor-target-note"
@@ -638,7 +618,7 @@ onUnmounted(() => {
       :improvement-reason="feedback.improvementReason"
       :actual-keystroke-count="feedback.actualKeystrokeCount"
       :recommended-keystroke-count="feedback.recommendedKeystrokeCount"
-      :normalized-actions="feedback.normalizedActions"
+      :recommended-actions="feedback.recommendedActions"
       @request-next="goToNext"
     />
 

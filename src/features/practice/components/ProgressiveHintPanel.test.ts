@@ -54,7 +54,7 @@ describe("ProgressiveHintPanel", () => {
     expect(wrapper.find('[data-testid="reveal-hint"]').exists()).toBe(false);
   });
 
-  it("stops when the next sequential level is missing", async () => {
+  it("reveals available hint levels without requiring every level", async () => {
     const wrapper = mount(ProgressiveHintPanel, {
       props: {
         hints: [hints[0], hints[2], hints[3]].filter(
@@ -63,21 +63,22 @@ describe("ProgressiveHintPanel", () => {
       },
     });
 
+    expect(wrapper.text()).toContain("已解鎖 0 / 3");
+    expect(wrapper.get('[data-testid="reveal-hint"]').text()).toBe("顯示提示 1");
+
     await wrapper.get('[data-testid="reveal-hint"]').trigger("click");
 
     expect(wrapper.find('[data-hint-level="1"]').exists()).toBe(true);
-    expect(wrapper.find('[data-hint-level="3"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain("已解鎖 1 / 3");
+    expect(wrapper.get('[data-testid="reveal-hint"]').text()).toBe("顯示提示 3");
+
+    await wrapper.get('[data-testid="reveal-hint"]').trigger("click");
+    expect(wrapper.find('[data-hint-level="3"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="reveal-hint"]').text()).toBe("顯示提示 4");
+
+    await wrapper.get('[data-testid="reveal-hint"]').trigger("click");
+    expect(wrapper.find('[data-hint-level="4"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain("已解鎖 3 / 3");
     expect(wrapper.find('[data-testid="reveal-hint"]').exists()).toBe(false);
-  });
-
-  it("leaves Level 4 playback rendering to the practice page", async () => {
-    const wrapper = mount(ProgressiveHintPanel, { props: { hints } });
-
-    for (let level = 1; level <= 4; level += 1) {
-      await wrapper.get('[data-testid="reveal-hint"]').trigger("click");
-    }
-
-    expect(wrapper.text()).toContain("提示 4");
-    expect(wrapper.find('[data-testid="start-playback"]').exists()).toBe(false);
   });
 });

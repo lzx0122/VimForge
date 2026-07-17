@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { NormalizedAction } from "../../../types";
-import { explainUsedVimKeys } from "./vim-key-guide";
+import { explainExpectedVimKeys } from "./vim-key-guide";
 
-describe("explainUsedVimKeys", () => {
+describe("explainExpectedVimKeys", () => {
   it("returns unique Vim keys in first-use order", () => {
     expect(
-      explainUsedVimKeys([
+      explainExpectedVimKeys([
         { type: "vim_command", command: "ciw" },
         { type: "insert_text", text: "name", textLength: 4 },
         { type: "mode_change", mode: "normal" },
@@ -23,7 +23,7 @@ describe("explainUsedVimKeys", () => {
 
   it("does not turn inserted program text into Vim key explanations", () => {
     expect(
-      explainUsedVimKeys([
+      explainExpectedVimKeys([
         { type: "insert_text", text: "customerName", textLength: 12 },
       ]),
     ).toEqual([]);
@@ -31,7 +31,7 @@ describe("explainUsedVimKeys", () => {
 
   it("keeps unknown valid command keys as labels without failing", () => {
     expect(
-      explainUsedVimKeys([
+      explainExpectedVimKeys([
         { type: "vim_command", command: "z" },
       ]),
     ).toEqual([{ key: "z", description: "本題使用的 Vim 按鍵" }]);
@@ -42,7 +42,7 @@ describe("explainUsedVimKeys", () => {
       { type: "search", query: "TODO", direction: "forward" },
     ] satisfies NormalizedAction[];
 
-    expect(explainUsedVimKeys(actions)).toEqual([
+    expect(explainExpectedVimKeys(actions)).toEqual([
       { key: "/", description: "向前搜尋" },
       { key: "Enter", description: "送出搜尋" },
     ]);

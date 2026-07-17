@@ -1,4 +1,6 @@
-# Practice Playback Feedback Implementation Plan
+# Practice Playback Feedback Implementation Plan（已取代）
+
+> 本計畫已被 `2026-07-17-practice-feedback-simplification.md` 取代。播放功能已移除，請以新計畫與簡化回饋設計為準。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

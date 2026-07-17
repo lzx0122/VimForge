@@ -751,27 +751,29 @@ npm run test:e2e
 
 ---
 
-## Phase 12：播放可見性與完成回饋 UX
+## Phase 12：練習回饋簡化與提示彈性
 
-### Task 12.1：改善練習播放與完成後回饋
+### Task 12.1：移除播放並以推薦解法提供完成回饋
 
 **Files:**
 
 - Create: `src/features/practice/services/vim-key-guide.ts`
 - Create: `src/features/practice/components/VimKeyGuide.vue`
-- Create: `src/features/practice/components/EditorPlayback.test.ts`
 - Modify: `src/features/practice/services/attempt-outcome-service.ts`
+- Modify: `src/features/practice/services/vim-key-guide.ts`
+- Modify: `src/features/practice/components/VimKeyGuide.vue`
 - Modify: `src/components/feedback/ExerciseFeedback.vue`
 - Modify: `src/features/practice/pages/PracticePage.vue`
-- Modify: `src/features/practice/components/EditorPlayback.vue`
 - Modify: `src/features/practice/components/ProgressiveHintPanel.vue`
+- Modify: `src/content/catalog-contract.ts`
 - Modify: `tests/e2e/scoring-feedback.spec.ts`
 
-- [x] 播放區顯示在編輯器附近，按下播放時平滑捲動至播放區。
-- [x] 播放預設以 600ms 間隔逐顆高亮按鍵，並只顯示完成後內容。
-- [x] 播放完成後重設題目，不建立 Attempt。
+- [x] 移除播放區、播放按鈕、按鍵高亮與播放後重設流程。
+- [x] 漸進提示依題庫實際存在的層級由小到大解鎖，缺號不會阻塞。
 - [x] 題目成功後保留編輯器與完成後內容，回饋顯示在下方。
-- [x] 完成回饋的按鍵解說預設收合，且只列出本次實際使用的 Vim 按鍵。
-- [x] 已加入元件、服務與 E2E 回歸測試。
+- [x] 完成回饋的按鍵解說預設收合，且只列出題目推薦解法中的 Vim 按鍵。
+- [x] 插入文字內容與使用者額外按鍵不會被分析為按鍵解說。
+- [x] 題庫驗證允許提示層級為 1–4 的任意子集合。
+- [x] 已加入服務、元件、題庫契約與 E2E 回歸測試。
 - [x] 執行所有必要驗證。
-- [x] Commit：`feat: improve practice playback visibility`
+- [x] Commit：`feat: simplify practice feedback flow`
