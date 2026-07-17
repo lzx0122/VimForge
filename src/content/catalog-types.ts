@@ -102,6 +102,11 @@ export interface CatalogValidationError {
   message: string;
 }
 
+export interface CatalogContentWarning {
+  path: string;
+  message: string;
+}
+
 export type CatalogValue =
   | null
   | boolean

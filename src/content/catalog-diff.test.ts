@@ -104,4 +104,14 @@ describe("diffCatalog", () => {
     const next = snapshot([exercise("one")], 2);
     expect(() => diffCatalog(base, next)).toThrow(/revision/i);
   });
+
+  it("rejects omitted base units but treats missing exercises as unpublishes", () => {
+    const base = snapshot([exercise("one")]);
+    const omittedUnitDraft = { ...base, units: [] } satisfies CatalogSnapshot;
+    const omittedUnit = { ...omittedUnitDraft, catalogHash: hashCatalog(omittedUnitDraft) };
+    expect(() => diffCatalog(base, omittedUnit)).toThrow(/base unit.*omitted/i);
+
+    const unpublishedDraft = snapshot([exercise("replacement")]);
+    expect(diffCatalog(base, unpublishedDraft).removed).toHaveLength(1);
+  });
 });

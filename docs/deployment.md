@@ -22,12 +22,12 @@ npm run build
 
 ## 2. Supabase 資料庫
 
-Production content tooling is pinned to Supabase CLI `2.33.9`; use the
+Production content tooling is pinned to Supabase CLI `2.79.0`; use the
 repository script so an unpinned global binary cannot accidentally apply a
 migration:
 
 ```bash
-npx --no-install supabase@2.33.9 --version
+npx --no-install supabase@2.79.0 --version
 npm run supabase:cli -- --version
 ```
 
@@ -37,9 +37,9 @@ tooling, then link the checkout to the intended project and verify the link
 before running any push:
 
 ```bash
-npx --no-install supabase@2.33.9 login
-npx --no-install supabase@2.33.9 link --project-ref <production-project-ref>
-npx --no-install supabase@2.33.9 status --linked --output json
+npx --no-install supabase@2.79.0 login
+npx --no-install supabase@2.79.0 link --project-ref <production-project-ref>
+npx --no-install supabase@2.79.0 status --linked --output json
 ```
 
 The status output must identify the exact production project ref. Do not use a
@@ -47,14 +47,19 @@ local Supabase instance for the catalog release workflow; local database/RLS
 tests are a separate disposable verification step described in
 [operations.md](operations.md#rls-與資料庫驗證).
 
-連結目標 project，再依 migration 檔名順序套用 Schema、RLS 與 database function；`--include-seed` 同時載入已驗證的 MVP 題庫。
+連結目標 project，再依 migration 檔名順序套用 Schema、RLS 與 database function。Production schema migration is the `supabase db push` workflow shown below; 題庫不得以 seed 或 `--include-seed` 推送，catalog 必須透過 reviewed migration workflow 發布。
 
 ```bash
-supabase login
-supabase link --project-ref <project-ref>
-npx vite-node --script scripts/validate-seed.ts
-supabase db push --include-seed
+npx --no-install supabase@2.79.0 db push --linked
+
+# Production catalog releases: validate, prepare, and publish the reviewed migration.
+npm run content:validate -- content/catalog-modified.json
+npm run content:prepare-release -- content/catalog-modified.json
+npm run content:publish:production -- content/release-manifest.json
 ```
+
+`supabase/seed.sql` is for disposable local/bootstrap verification only; do not
+run `db push --include-seed` against production.
 
 推送後必須依[維運手冊](operations.md#rls-與資料庫驗證)驗證 RLS。不要以 service-role 身分判斷 RLS 是否有效；測試需使用 anon／authenticated 角色。
 

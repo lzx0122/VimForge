@@ -41,6 +41,9 @@ npm run content:diff -- --base content/catalog.json content/catalog-modified.jso
 ```
 
 - [ ] Both validators report success and leave their input files unchanged.
+- [ ] Review any ordinal-only or suspicious-similarity warnings. For a release
+      requiring zero diversity warnings, rerun with
+      `--strict-content-diversity`; exact duplicate content is always an error.
 - [ ] Review every `Added`, `Changed`, and `Unpublish` entry and the field-level
       details. A missing exercise is unpublished (`is_published = false`), not
       deleted, so historical attempts keep their foreign keys.

@@ -13,7 +13,9 @@ import { exportProductionCatalog } from "./content-export-production";
 
 describe("production catalog export", () => {
   it("rejects output that does not identify the expected linked project or release state", async () => {
-    const run = vi.fn(async () => JSON.stringify({ projectRef: "other-project" }));
+    const run = vi.fn(async (args: readonly string[]) => args.includes("--help")
+      ? "Usage: supabase db query [flags]\n      --linked\n      --output string"
+      : JSON.stringify({ projectRef: "other-project" }));
 
     await expect(exportProductionCatalog({
       expectedProjectRef: "expected-project",
@@ -26,7 +28,9 @@ describe("production catalog export", () => {
   });
 
   it("requires a releaseState object instead of falling back to snapshot metadata", async () => {
-    const run = vi.fn(async () => JSON.stringify({
+    const run = vi.fn(async (args: readonly string[]) => args.includes("--help")
+      ? "Usage: supabase db query [flags]\n      --linked\n      --output string"
+      : JSON.stringify({
       projectRef: "expected-project",
       catalogRevision: 1,
       catalogHash: "sha256:" + "0".repeat(64),
@@ -44,7 +48,9 @@ describe("production catalog export", () => {
   it("orders production units numerically before hashing the snapshot", async () => {
     const base = JSON.parse(readFileSync(resolve(process.cwd(), "content/catalog.json"), "utf8")) as CatalogSnapshot;
     const unsortedUnits = [...base.units].sort((left, right) => right.displayOrder - left.displayOrder);
-    const run = vi.fn(async () => JSON.stringify({
+    const run = vi.fn(async (args: readonly string[]) => args.includes("--help")
+      ? "Usage: supabase db query [flags]\n      --linked\n      --output string"
+      : JSON.stringify({
       projectRef: "expected-project",
       releaseState: {
         revision: base.catalogRevision,
@@ -91,5 +97,33 @@ describe("production catalog export", () => {
       ["--no-install", `supabase@${SUPABASE_CLI_VERSION}`, "status", "--linked"],
       expect.objectContaining({}),
     );
+  });
+
+  it("checks db query capabilities before executing the export query", async () => {
+    const run = vi.fn(async (args: readonly string[]) => {
+      if (args.includes("--help")) return "Usage: supabase db query [flags]\n  --linked\n  --output string";
+      return JSON.stringify({ projectRef: "expected-project" });
+    });
+
+    await expect(exportProductionCatalog({
+      expectedProjectRef: "expected-project",
+      expectedRevision: 1,
+      expectedHash: "sha256:" + "0".repeat(64),
+      runSupabase: run,
+    })).rejects.toThrow(/release state/i);
+    expect(run.mock.calls[0]?.[0]).toEqual(["--project-ref", "expected-project", "db", "query", "--help"]);
+    expect(run.mock.calls[1]?.[0]).toContain("--output");
+  });
+
+  it("fails safe when the pinned CLI lacks required db query flags", async () => {
+    const run = vi.fn(async () => "Usage: supabase db query [flags]");
+
+    await expect(exportProductionCatalog({
+      expectedProjectRef: "expected-project",
+      expectedRevision: 1,
+      expectedHash: "sha256:" + "0".repeat(64),
+      runSupabase: run,
+    })).rejects.toThrow(/required flags/i);
+    expect(run).toHaveBeenCalledTimes(1);
   });
 });

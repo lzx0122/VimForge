@@ -29,7 +29,7 @@ export interface CliOptions {
 }
 
 /** Keep production tooling on a known CLI release and never download it implicitly. */
-export const SUPABASE_CLI_VERSION = "2.33.9";
+export const SUPABASE_CLI_VERSION = "2.79.0";
 export const DEFAULT_SUPABASE_CLI_COMMAND = "npx";
 export const DEFAULT_SUPABASE_CLI_PREFIX = [
   "--no-install",

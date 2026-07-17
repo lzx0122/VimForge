@@ -5,6 +5,7 @@ import {
   exerciseVersionChanged,
   hashCatalog,
   parseCatalogSnapshot,
+  reviewCatalogContent,
   validateCatalogSnapshot,
   type CatalogSnapshot,
 } from "./catalog-contract";
@@ -167,6 +168,14 @@ describe("catalog contract", () => {
     ).toBe(true);
   });
 
+  it("rejects a likely slug rename even when content was edited", () => {
+    const before = copyFixture();
+    const after = copyFixture();
+    getExercise(after).slug = "text-objects-renamed";
+    getExercise(after).expectedContent = "const approvedName = true;";
+    expect(validateCatalogSnapshot(after, before).some((error) => error.message.includes("changed content"))).toBe(true);
+  });
+
   it("allows an independent removal and addition with equal slug counts", () => {
     const before = copyFixture();
     getExercise(before).slug = "text-objects-removed";
@@ -178,6 +187,56 @@ describe("catalog contract", () => {
     const errors = validateCatalogSnapshot(after, before);
 
     expect(errors.some((error) => error.message.includes("renamed"))).toBe(false);
+  });
+
+  it("rejects an omitted base unit while allowing an explicitly omitted exercise", () => {
+    const before = copyFixture();
+    const after = copyFixture();
+    after.units = [];
+    expect(validateCatalogSnapshot(after, before).some((error) => error.message.includes("base unit"))).toBe(true);
+
+    const exerciseUnpublished = copyFixture();
+    exerciseUnpublished.units[0]!.exercises = [];
+    expect(validateCatalogSnapshot(exerciseUnpublished, before).some((error) => error.message.includes("base unit"))).toBe(false);
+  });
+
+  it("rejects an exercise relationship that references a missing unit skill", () => {
+    const before = copyFixture();
+    const after = copyFixture();
+    after.units.push({
+      slug: "second-unit",
+      title: "Second unit",
+      description: "Another unit",
+      difficulty: "beginner",
+      estimatedMinutes: 5,
+      displayOrder: 2,
+      isPublished: true,
+      skills: [],
+      exercises: [getExercise(after)],
+    });
+    after.units[0]!.exercises = [];
+    expect(validateCatalogSnapshot(after, before).some((error) => error.message.includes("not declared by the unit"))).toBe(true);
+  });
+
+  it("rejects exact duplicate content even when stable slugs differ", () => {
+    const snapshot = copyFixture();
+    snapshot.units[0]!.exercises.push({ ...getExercise(snapshot), slug: "text-objects-02" });
+    expect(validateCatalogSnapshot(snapshot).some((error) => error.message.includes("exact duplicate exercise content"))).toBe(true);
+  });
+
+  it("reports ordinal-only content as a warning without invalidating the catalog", () => {
+    const snapshot = copyFixture();
+    snapshot.units[0]!.exercises.push({
+      ...getExercise(snapshot),
+      slug: "text-objects-02",
+      title: "Change a word 2",
+      instruction: "Change the word under the cursor 2.",
+      initialContent: "const oldName2 = true;",
+      expectedContent: "const newName2 = true;",
+    });
+    snapshot.catalogHash = hashCatalog(snapshot);
+    expect(validateCatalogSnapshot(snapshot)).not.toContainEqual(expect.objectContaining({ message: expect.stringContaining("exact duplicate") }));
+    expect(reviewCatalogContent(snapshot).warnings.some((warning) => warning.message.includes("ordinal-only"))).toBe(true);
   });
 
   it("sorts object keys recursively while preserving array order", () => {

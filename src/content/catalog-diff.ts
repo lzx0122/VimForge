@@ -126,11 +126,9 @@ export function diffCatalog(base: CatalogSnapshot, next: CatalogSnapshot): Catal
   }
   assertValidSnapshot(base, "base");
   assertValidSnapshot(next, "next");
-  const renameErrors = validateCatalogSnapshot(next, base).filter((error) =>
-    error.message.includes("renamed"),
-  );
-  if (renameErrors.length > 0) {
-    throw new Error(renameErrors.map((error) => `${error.path}: ${error.message}`).join("; "));
+  const comparisonErrors = validateCatalogSnapshot(next, base);
+  if (comparisonErrors.length > 0) {
+    throw new Error(comparisonErrors.map((error) => `${error.path}: ${error.message}`).join("; "));
   }
 
   const beforeBySlug = exerciseMap(base);

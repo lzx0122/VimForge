@@ -117,7 +117,13 @@ npx --no-install vite-node --script scripts/validate-seed.ts
 npm run content:validate -- content/catalog.json
 ```
 
-成功輸出固定為 `Validated 10 units and 100 exercises.`。錯誤會列出 JSON path 並以 nonzero exit code 結束；validator 只讀取檔案，不啟動或連線任何 Supabase，也不會修改輸入檔案。提交前仍需依 Task protocol 執行完整的 `npm run type-check`、`npm run lint`、`npm run test` 與 `npm run build`。
+validator 會將 ordinal-only 或高度相似的題目列為 warnings，讓既有 100 題基線仍可通過；完全相同的題目內容是 validation error。若要在發版時把所有多樣性警告升級為錯誤，使用：
+
+```bash
+npm run content:validate -- --strict-content-diversity content/catalog.json
+```
+
+Warnings 會連同 JSON path 印出；錯誤或 strict mode warnings 會以 nonzero exit code 結束。validator 只讀取檔案，不啟動或連線任何 Supabase，也不會修改輸入檔案。提交前仍需依 Task protocol 執行完整的 `npm run type-check`、`npm run lint`、`npm run test` 與 `npm run build`。
 
 ## Production snapshot editing workflow
 

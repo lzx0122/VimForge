@@ -95,7 +95,6 @@ with unit_payload as (
   from public.learning_units u
 )
 select jsonb_build_object(
-  'projectRef', current_setting('app.settings.project_ref', true),
   'releaseState', (select to_jsonb(state) from private.catalog_release_state as state limit 1),
   'snapshot', jsonb_build_object(
     'schemaVersion', 1,
@@ -195,6 +194,14 @@ function unwrapPayload(value: unknown): JsonRecord {
   return value;
 }
 
+function assertDbQueryCapability(helpOutput: string): void {
+  const requiredFlags = ["--linked", "--output"];
+  const missing = requiredFlags.filter((flag) => !helpOutput.includes(flag));
+  if (missing.length > 0) {
+    throw new Error(`Supabase CLI db query does not support required flags: ${missing.join(", ")}.`);
+  }
+}
+
 function productionSnapshot(payload: JsonRecord, releaseState: unknown, now: () => Date): CatalogSnapshot {
   const release = parseReleaseState(releaseState);
   const rawSnapshot = payload.snapshot ?? payload.catalog;
@@ -257,11 +264,25 @@ export async function exportProductionCatalog(
   }
   const expected = loadExpectedMetadata(options);
   const invoke = options.runSupabase ?? options.run ?? defaultRunSupabase;
+  const capabilityOutput = await invoke(
+    ["--project-ref", expectedProjectRef, "db", "query", "--help"],
+    options.cliOptions,
+  );
+  assertDbQueryCapability(capabilityOutput);
   const raw = await invoke(
     ["--project-ref", expectedProjectRef, "db", "query", "--linked", "--output", "json"],
     { ...options.cliOptions, stdin: PRODUCTION_EXPORT_QUERY },
   );
-  const payload = unwrapPayload(parseJsonOutput(raw));
+  const parsedPayload = unwrapPayload(parseJsonOutput(raw));
+  const observedProjectRef = readString(parsedPayload, "projectRef", "project_ref")
+    ?? (isRecord(parsedPayload.project) ? readString(parsedPayload.project, "ref", "projectRef", "project_ref") : undefined);
+  if (observedProjectRef !== undefined && observedProjectRef !== expectedProjectRef) {
+    throw new Error("Production linked project does not match the expected project.");
+  }
+  // The project ref is validated before either command runs. Attach it to the
+  // parsed payload instead of trusting a database session setting that may not
+  // exist on every Supabase installation.
+  const payload: JsonRecord = { ...parsedPayload, projectRef: expectedProjectRef };
   const projectRef = readString(payload, "projectRef", "project_ref")
     ?? (isRecord(payload.project) ? readString(payload.project, "ref", "projectRef", "project_ref") : undefined);
   if (projectRef === undefined) {

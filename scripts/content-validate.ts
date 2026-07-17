@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import {
   hashCatalog,
   parseCatalogSnapshot,
+  reviewCatalogContent,
   validateCatalogSnapshot,
   type CatalogExercise,
   type CatalogHint,
@@ -12,6 +13,7 @@ import {
   type CatalogSolution,
   type CatalogUnit,
   type CatalogValidationError,
+  type CatalogContentWarning,
 } from "../src/content/catalog-contract";
 import type { NormalizedAction } from "../src/types/attempt";
 import type {
@@ -88,6 +90,7 @@ export interface CatalogValidationReport {
   path: string;
   valid: boolean;
   errors: readonly CatalogValidationError[];
+  warnings: readonly CatalogContentWarning[];
   unitCount: number;
   exerciseCount: number;
   summary: CatalogValidationSummary;
@@ -281,6 +284,7 @@ function emptyLanguageCounts(): Record<SupportedLanguage, number> {
 function makeReport(
   path: string,
   errors: readonly CatalogValidationError[],
+  warnings: readonly CatalogContentWarning[] = [],
   snapshot?: CatalogSnapshot,
 ): CatalogValidationReport {
   const units = snapshot?.units ?? [];
@@ -298,6 +302,7 @@ function makeReport(
     path,
     valid: errors.length === 0,
     errors,
+    warnings,
     unitCount: summary.unitCount,
     exerciseCount: summary.exerciseCount,
     summary,
@@ -338,13 +343,15 @@ export function validateCatalogFile(path: string): CatalogValidationReport {
       message: "does not match the canonical catalog content.",
     });
   }
-  return makeReport(path, validationErrors, snapshot);
+  return makeReport(path, validationErrors, reviewCatalogContent(snapshot).warnings, snapshot);
 }
 
 function runCli(): void {
-  const inputPath = process.argv[2];
+  const argumentsValue = process.argv.slice(2);
+  const strictContentDiversity = argumentsValue.includes("--strict-content-diversity");
+  const inputPath = argumentsValue.find((argument) => !argument.startsWith("--"));
   if (inputPath === undefined) {
-    console.error("Usage: npm run content:validate -- <catalog.json>");
+    console.error("Usage: npm run content:validate -- [--strict-content-diversity] <catalog.json>");
     process.exitCode = 1;
     return;
   }
@@ -354,6 +361,15 @@ function runCli(): void {
     for (const error of report.errors) {
       console.error(`${error.path}: ${error.message}`);
     }
+    process.exitCode = 1;
+    return;
+  }
+
+  for (const warning of report.warnings) {
+    console.warn(`${warning.path}: warning: ${warning.message}`);
+  }
+  if (strictContentDiversity && report.warnings.length > 0) {
+    console.error("Content diversity warnings are errors under --strict-content-diversity.");
     process.exitCode = 1;
     return;
   }

@@ -112,4 +112,18 @@ describe("catalog file validation", () => {
       rmSync(temporaryDirectory, { recursive: true, force: true });
     }
   });
+
+  it("returns diversity warnings while keeping ordinal variants valid", () => {
+    const snapshot = expandSeedCatalog([seedFixture], "2026-07-17T00:00:00.000Z");
+    const temporaryDirectory = mkdtempSync(join(tmpdir(), "vimforge-content-warning-"));
+    const filePath = join(temporaryDirectory, "catalog.json");
+    writeFileSync(filePath, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
+    try {
+      const report = validateCatalogFile(filePath);
+      expect(report.valid).toBe(true);
+      expect(report.warnings.length).toBeGreaterThan(0);
+    } finally {
+      rmSync(temporaryDirectory, { recursive: true, force: true });
+    }
+  });
 });

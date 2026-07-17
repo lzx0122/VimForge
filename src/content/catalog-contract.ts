@@ -13,6 +13,7 @@ import type { NormalizedAction } from "../types/attempt";
 import {
   SKILL_CATEGORIES,
   type CatalogExercise,
+  type CatalogContentWarning,
   type CatalogExerciseSkill,
   type CatalogHint,
   type CatalogSkill,
@@ -28,6 +29,7 @@ import {
 export { canonicalizeCatalog, hashCatalog } from "./catalog-canonicalizer";
 export type {
   CatalogExercise,
+  CatalogContentWarning,
   CatalogExerciseSkill,
   CatalogHint,
   CatalogSkill,
@@ -674,8 +676,89 @@ function validateUnit(
 }
 
 function canonicalExerciseWithoutSlug(exercise: CatalogExercise): string {
-  const entries = Object.entries(exercise).filter(([key]) => key !== "slug");
+  const entries = Object.entries(exercise).filter(([key]) => key !== "slug" && key !== "displayOrder");
   return canonicalizeValue(Object.fromEntries(entries));
+}
+
+function normalizedContent(value: string): string {
+  return value
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/\d+/gu, "")
+    .replace(/[^\p{L}\p{N}#]+/gu, " ")
+    .trim()
+    .replace(/\s+/gu, " ");
+}
+
+function tokenSimilarity(left: string, right: string): number {
+  const leftTokens = new Set(normalizedContent(left).split(" ").filter(Boolean));
+  const rightTokens = new Set(normalizedContent(right).split(" ").filter(Boolean));
+  if (leftTokens.size === 0 && rightTokens.size === 0) return 1;
+  if (leftTokens.size === 0 || rightTokens.size === 0) return 0;
+  let overlap = 0;
+  for (const token of leftTokens) if (rightTokens.has(token)) overlap += 1;
+  return overlap / new Set([...leftTokens, ...rightTokens]).size;
+}
+
+function stableExerciseMetadata(exercise: CatalogExercise): string {
+  return canonicalizeValue({
+    language: exercise.language,
+    exerciseType: exercise.exerciseType,
+    difficulty: exercise.difficulty,
+    initialCursor: exercise.initialCursor,
+    completionRule: exercise.completionRule,
+    supportedModes: exercise.supportedModes,
+    targetDurationMs: exercise.targetDurationMs,
+    skills: exercise.skills,
+  });
+}
+
+function likelyChangedContentRename(before: CatalogExercise, after: CatalogExercise): boolean {
+  if (stableExerciseMetadata(before) !== stableExerciseMetadata(after)) return false;
+  const similarity = [
+    tokenSimilarity(before.title, after.title),
+    tokenSimilarity(before.instruction, after.instruction),
+    tokenSimilarity(before.initialContent, after.initialContent),
+    tokenSimilarity(before.expectedContent, after.expectedContent),
+  ];
+  const average = similarity.reduce((sum, value) => sum + value, 0) / similarity.length;
+  return similarity[0] !== undefined && similarity[0] >= 0.35 && average >= 0.66;
+}
+
+/** Review content diversity without making intentional ordinal variants invalid. */
+export function reviewCatalogContent(snapshot: CatalogSnapshot): {
+  warnings: readonly CatalogContentWarning[];
+} {
+  const warnings: CatalogContentWarning[] = [];
+  const exercises = snapshot.units.flatMap((unit, unitIndex) =>
+    unit.exercises.map((exercise, exerciseIndex) => ({ exercise, unitIndex, exerciseIndex })),
+  );
+  for (let leftIndex = 0; leftIndex < exercises.length; leftIndex += 1) {
+    const left = exercises[leftIndex];
+    if (left === undefined) continue;
+    for (let rightIndex = leftIndex + 1; rightIndex < exercises.length; rightIndex += 1) {
+      const right = exercises[rightIndex];
+      if (right === undefined) continue;
+      if (canonicalExerciseWithoutSlug(left.exercise) === canonicalExerciseWithoutSlug(right.exercise)) continue;
+      const normalizedFields = ["title", "instruction", "initialContent", "expectedContent"] as const;
+      const ordinalOnly = normalizedFields.every((field) =>
+        normalizedContent(left.exercise[field]) === normalizedContent(right.exercise[field]),
+      );
+      const similarity = normalizedFields.reduce(
+        (sum, field) => sum + tokenSimilarity(left.exercise[field], right.exercise[field]),
+        0,
+      ) / normalizedFields.length;
+      if (ordinalOnly || similarity >= 0.82) {
+        warnings.push({
+          path: `units[${right.unitIndex}].exercises[${right.exerciseIndex}]`,
+          message: ordinalOnly
+            ? `exercise content is an ordinal-only duplicate of '${left.exercise.slug}'; create a distinct scenario or use --strict-content-diversity to reject warnings.`
+            : `exercise content is suspiciously similar to '${left.exercise.slug}'; review scenario diversity or use --strict-content-diversity to reject warnings.`,
+        });
+      }
+    }
+  }
+  return { warnings };
 }
 
 export function validateCatalogSnapshot(
@@ -702,6 +785,12 @@ export function validateCatalogSnapshot(
   }
 
   if (previous !== undefined) {
+    const nextUnitSlugs = new Set(snapshot.units.map((unit) => unit.slug));
+    for (const unit of previous.units) {
+      if (!nextUnitSlugs.has(unit.slug)) {
+        addError(errors, "units", `base unit '${unit.slug}' is omitted; keep every base unit and unpublish exercises explicitly.`);
+      }
+    }
     const beforeExercises = previous.units.flatMap((unit) => unit.exercises);
     const afterExercises = snapshot.units.flatMap((unit) => unit.exercises);
     const beforeSlugs = new Set(beforeExercises.map((exercise) => exercise.slug));
@@ -712,6 +801,37 @@ export function validateCatalogSnapshot(
     if (removed.some((exercise) => addedIdentities.has(canonicalExerciseWithoutSlug(exercise)))) {
       addError(errors, "units", "renamed existing exercise slugs are not supported.");
     }
+    const addedByUnit = new Map<string, CatalogExercise[]>();
+    const removedByUnit = new Map<string, CatalogExercise[]>();
+    for (const unit of snapshot.units) addedByUnit.set(unit.slug, unit.exercises.filter((exercise) => added.some((item) => item.slug === exercise.slug)));
+    for (const unit of previous.units) removedByUnit.set(unit.slug, unit.exercises.filter((exercise) => removed.some((item) => item.slug === exercise.slug)));
+    for (const [unitSlug, removedExercises] of removedByUnit) {
+      const addedExercises = addedByUnit.get(unitSlug) ?? [];
+      for (const before of removedExercises) {
+        for (const after of addedExercises) {
+          if (likelyChangedContentRename(before, after)) {
+            addError(errors, `units[${snapshot.units.findIndex((unit) => unit.slug === unitSlug)}].exercises`, `exercise '${before.slug}' appears to have been renamed to '${after.slug}' with changed content; preserve the original slug, or document an intentional remove-and-add with clearly different metadata.`);
+          }
+        }
+      }
+    }
+  }
+  const contentKeys = new Map<string, string>();
+  if (Array.isArray(root.units)) {
+    root.units.forEach((unit, unitIndex) => {
+      if (!isRecord(unit) || !Array.isArray(unit.exercises)) return;
+      unit.exercises.forEach((exercise, exerciseIndex) => {
+        if (!isRecord(exercise)) return;
+        const parsedExercise = exercise as unknown as CatalogExercise;
+        const key = canonicalExerciseWithoutSlug(parsedExercise);
+        const previousPath = contentKeys.get(key);
+        if (previousPath !== undefined) {
+          addError(errors, `units[${unitIndex}].exercises[${exerciseIndex}]`, `exact duplicate exercise content; already defined at ${previousPath}. Use a distinct scenario and stable slug.`);
+        } else {
+          contentKeys.set(key, `units[${unitIndex}].exercises[${exerciseIndex}]`);
+        }
+      });
+    });
   }
   return errors;
 }
