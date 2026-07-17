@@ -46,6 +46,7 @@ export interface AttemptFeedback {
   improvementReason: string;
   actualKeystrokeCount: number;
   recommendedKeystrokeCount: number;
+  normalizedActions: NormalizedAction[];
 }
 
 export interface AttemptOutcome {
@@ -151,6 +152,7 @@ export function createAttemptOutcome(
       ),
       actualKeystrokeCount,
       recommendedKeystrokeCount,
+      normalizedActions,
     },
   };
 }
