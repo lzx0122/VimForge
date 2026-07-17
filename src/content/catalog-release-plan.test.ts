@@ -96,7 +96,7 @@ describe("catalog release planning", () => {
     expect(sql).toContain("begin;");
     expect(sql).toContain("commit;");
     expect(sql).toMatch(/catalog_release_state[\s\S]*for update/i);
-    expect(sql).toContain("update public.learning_units set display_order = -display_order;");
+    expect(sql).toContain("update public.learning_units set display_order = display_order + 1000;");
     expect(sql).toMatch(/expected.*revision|revision.*expected/i);
     expect(sql.toLowerCase()).not.toContain("truncate");
     expect(sql.toLowerCase()).not.toContain("delete from public.exercises");
