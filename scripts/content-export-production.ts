@@ -302,8 +302,8 @@ export async function exportProductionCatalog(
   );
   assertDbQueryCapability(capabilityOutput);
   const raw = await invoke(
-    ["db", "query", "--linked", "--output", "json"],
-    { ...options.cliOptions, stdin: PRODUCTION_EXPORT_QUERY },
+    ["db", "query", "--linked", "--output", "json", PRODUCTION_EXPORT_QUERY],
+    options.cliOptions,
   );
   const parsedOutput = parseJsonOutput(raw);
   const observedProjectRef = projectRefFromPayload(parsedOutput);

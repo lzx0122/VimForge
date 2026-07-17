@@ -43,6 +43,7 @@ describe("production publisher", () => {
     const result = await publishProduction(input(run));
     expect(result.success).toBe(true);
     expect(run.mock.calls.some(([args]) => args.includes("push") && !args.includes("dry-run"))).toBe(true);
+    expect(run.mock.calls.some(([args]) => args.some((value) => value.includes("private.catalog_release_state")))).toBe(true);
   });
 
   it("returns a safe error when db push fails without exposing CLI output", async () => {

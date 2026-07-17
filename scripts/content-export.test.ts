@@ -9,7 +9,7 @@ import {
   runSupabase,
   SUPABASE_CLI_VERSION,
 } from "../src/content/supabase-cli-runner";
-import { exportProductionCatalog } from "./content-export-production";
+import { exportProductionCatalog, PRODUCTION_EXPORT_QUERY } from "./content-export-production";
 
 describe("production catalog export", () => {
   it("rejects output that does not identify the expected linked project or release state", async () => {
@@ -147,5 +147,20 @@ describe("production catalog export", () => {
       runSupabase: run,
     })).rejects.toThrow(/required flags/i);
     expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes the export SQL as the db query argument supported by the pinned CLI", async () => {
+    const run = vi.fn(async (args: readonly string[]) => args.includes("--help")
+      ? "Usage: supabase db query [flags]\n  --linked\n  --output string"
+      : JSON.stringify({ projectRef: "expected-project" }));
+
+    await expect(exportProductionCatalog({
+      expectedProjectRef: "expected-project",
+      linkedProjectRef: "expected-project",
+      expectedRevision: 1,
+      expectedHash: "sha256:" + "0".repeat(64),
+      runSupabase: run,
+    })).rejects.toThrow(/release state/i);
+    expect(run.mock.calls[1]?.[0]).toContain(PRODUCTION_EXPORT_QUERY);
   });
 });

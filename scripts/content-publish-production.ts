@@ -192,10 +192,7 @@ export async function publishProduction(input: PublishProductionInput): Promise<
   }
   let rawState: string;
   try {
-    rawState = await invoke(["db", "query", "--linked", "--output", "json"], {
-      ...input.cliOptions,
-      stdin: RELEASE_STATE_QUERY,
-    });
+    rawState = await invoke(["db", "query", "--linked", "--output", "json", RELEASE_STATE_QUERY], input.cliOptions);
   } catch {
     throw safeError("Production publish could not be verified; retain the migration evidence and prepare a forward fix.");
   }
