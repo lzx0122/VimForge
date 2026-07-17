@@ -49,7 +49,7 @@ export function explainUsedVimKeys(
 
 `AttemptFeedback` adds `normalizedActions: NormalizedAction[]` for presentation only. The persisted `AttemptSyncInput` remains unchanged.
 
-- [ ] **Step 1: Write the failing service tests**
+- [x] **Step 1: Write the failing service tests**
 
 Add tests for:
 
@@ -84,7 +84,7 @@ it("keeps unknown valid command keys as labels without failing", () => {
 
 Add an outcome test asserting `feedback.normalizedActions` is a copied array and the existing Attempt payload is unchanged.
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -94,13 +94,13 @@ npm run test -- src/features/practice/services/vim-key-guide.test.ts src/feature
 
 Expected: FAIL because `vim-key-guide.ts` does not exist and `AttemptFeedback` does not yet expose `normalizedActions`.
 
-- [ ] **Step 3: Implement the minimal key explanation service**
+- [x] **Step 3: Implement the minimal key explanation service**
 
 Implement `explainUsedVimKeys` with a stable ordered `Map` of known Vim key descriptions. Tokenize `vim_command` strings into individual keys, treat `<Esc>` as `Esc`, convert `mode_change` to the mode key (`Esc` for Normal and the existing display label for other modes), convert `undo` to `u`, and convert search actions to `/`, `?`, and `Enter`. Ignore `insert_text` and `reset`. De-duplicate by `key` while preserving first occurrence. Return the fallback description for a key not present in the map.
 
 Extend `AttemptFeedback` with a copied `normalizedActions` array and populate it from the existing normalized action copy in `createAttemptOutcome`. Do not add it to `AttemptSyncInput`.
 
-- [ ] **Step 4: Run the focused tests and verify GREEN**
+- [x] **Step 4: Run the focused tests and verify GREEN**
 
 Run:
 
@@ -110,14 +110,14 @@ npm run test -- src/features/practice/services/vim-key-guide.test.ts src/feature
 
 Expected: PASS with all existing outcome assertions unchanged.
 
-- [ ] **Step 5: Commit the task**
+- [x] **Step 5: Commit the task**
 
 ```bash
 git add src/features/practice/services/vim-key-guide.ts src/features/practice/services/vim-key-guide.test.ts src/features/practice/services/attempt-outcome-service.ts src/features/practice/services/attempt-outcome-service.test.ts
 git commit -m "feat: explain used vim keys in feedback"
 ```
 
-- [ ] **Step 6: Run task verification**
+- [x] **Step 6: Run task verification**
 
 Run:
 
@@ -147,13 +147,13 @@ Expected: all commands exit 0.
 - Consumes: `AttemptFeedback.normalizedActions`, `VimKeyExplanation[]`, and the existing `PracticePage` snapshot state.
 - Produces: a collapsed `VimKeyGuide` section in completed feedback; the existing editor workspace remains rendered while feedback is present.
 
-- [ ] **Step 1: Write failing component tests**
+- [x] **Step 1: Write failing component tests**
 
 Add `VimKeyGuide.test.ts` tests that mount with two repeated keys and one unused key, assert the `<details>` element is closed by default, and assert only the two used keys render after reading the guide content. Add `ExerciseFeedback.test.ts` assertions that the guide is present but closed and does not render a key that is absent from `normalizedActions`.
 
 Add a practice-page regression assertion through the existing E2E fixture or a focused component harness: when `feedback` exists, `.practice-workspace`, `.cm-content`, and the completion feedback article all exist together.
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -163,7 +163,7 @@ npm run test -- src/features/practice/components/VimKeyGuide.test.ts src/compone
 
 Expected: FAIL because `VimKeyGuide` does not exist, `ExerciseFeedback` has no normalized action prop, and the practice workspace is currently hidden when feedback is shown.
 
-- [ ] **Step 3: Implement the key guide and feedback integration**
+- [x] **Step 3: Implement the key guide and feedback integration**
 
 Create `VimKeyGuide.vue` with props:
 
@@ -179,7 +179,7 @@ Add `normalizedActions: readonly NormalizedAction[]` to `ExerciseFeedbackProps` 
 
 Change the workspace condition from `exercise && snapshot && !feedback` to `exercise && snapshot`. Keep the editor state and completed snapshot visible while feedback renders below it. Disable the restart control when `feedback !== null` and hide the skip action while feedback exists so the completed result cannot be mutated through practice controls. Keep the existing `feedback !== null` auto-completion guard and next-question flow.
 
-- [ ] **Step 4: Run focused tests and verify GREEN**
+- [x] **Step 4: Run focused tests and verify GREEN**
 
 Run:
 
@@ -189,14 +189,14 @@ npm run test -- src/features/practice/components/VimKeyGuide.test.ts src/compone
 
 Expected: PASS, including all existing feedback ordering, accessibility, and metric explanation tests.
 
-- [ ] **Step 5: Commit the task**
+- [x] **Step 5: Commit the task**
 
 ```bash
 git add src/features/practice/components/VimKeyGuide.vue src/features/practice/components/VimKeyGuide.test.ts src/components/feedback/ExerciseFeedback.vue src/components/feedback/ExerciseFeedback.test.ts src/features/practice/pages/PracticePage.vue
 git commit -m "feat: keep editor visible in completed feedback"
 ```
 
-- [ ] **Step 6: Run task verification**
+- [x] **Step 6: Run task verification**
 
 Run:
 
@@ -227,7 +227,7 @@ Expected: all commands exit 0.
 - Consumes: Level 4 hint command, `PracticeExercise.expectedContent`, existing `highestLevelChanged`, and existing reset event flow.
 - Produces: `EditorPlayback` with `command`, `completedContent`, optional `stepDelayMs`, and `playbackComplete`; playback is rendered by `PracticePage` within `.practice-editor-frame`.
 
-- [ ] **Step 1: Write failing playback tests**
+- [x] **Step 1: Write failing playback tests**
 
 Create `EditorPlayback.test.ts` with fake timers and a `scrollIntoView` spy. Assert:
 
@@ -256,7 +256,7 @@ it("scrolls the playback block into view before starting", async () => {
 
 Assert the default playback does not finish before `600ms * tokenCount`, and accepts a shorter `stepDelayMs` in tests. Update `ProgressiveHintPanel.test.ts` to assert Level 4 still unlocks but no longer mounts `EditorPlayback`.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run:
 
@@ -266,7 +266,7 @@ npm run test -- src/features/practice/components/EditorPlayback.test.ts src/feat
 
 Expected: FAIL because `completedContent`, scrolling, the 600ms default, and the new parent-owned playback placement do not exist.
 
-- [ ] **Step 3: Implement the playback behavior**
+- [x] **Step 3: Implement the playback behavior**
 
 Update `EditorPlayback.vue`:
 
@@ -279,7 +279,7 @@ Remove the nested `EditorPlayback` import and render from `ProgressiveHintPanel.
 
 In `PracticePage.vue`, compute the Level 4 hint, render `EditorPlayback` inside `.practice-editor-frame` when `highestHintLevel === 4`, pass `completedContent="exercise.expectedContent"`, and handle `@playback-complete="resetExercise"`. This keeps the highlighted keys and completed preview next to the active editor. The existing reset function remains the only post-playback reset path.
 
-- [ ] **Step 4: Run focused tests and verify GREEN**
+- [x] **Step 4: Run focused tests and verify GREEN**
 
 Run:
 
@@ -289,7 +289,7 @@ npm run test -- src/features/practice/components/EditorPlayback.test.ts src/feat
 
 Expected: PASS with no Attempt behavior changes.
 
-- [ ] **Step 5: Update and run the end-to-end regression**
+- [x] **Step 5: Update and run the end-to-end regression**
 
 Update `tests/e2e/scoring-feedback.spec.ts` to verify:
 
@@ -308,14 +308,14 @@ npm run test:e2e -- tests/e2e/scoring-feedback.spec.ts
 
 Expected: PASS in the configured Playwright browser projects.
 
-- [ ] **Step 6: Commit the task**
+- [x] **Step 6: Commit the task**
 
 ```bash
 git add src/features/practice/components/EditorPlayback.vue src/features/practice/components/EditorPlayback.test.ts src/features/practice/components/ProgressiveHintPanel.vue src/features/practice/components/ProgressiveHintPanel.test.ts src/features/practice/pages/PracticePage.vue tests/e2e/scoring-feedback.spec.ts
 git commit -m "feat: improve practice playback visibility"
 ```
 
-- [ ] **Step 7: Run complete verification**
+- [x] **Step 7: Run complete verification**
 
 Run:
 
@@ -342,11 +342,11 @@ Expected: all commands exit 0 with no skipped or newly flaky tests.
 - Consumes: verified behavior from Tasks 1–3.
 - Produces: a checked-off Phase 12 UX task with the actual commit references and verification status recorded in the completion report.
 
-- [ ] **Step 1: Add the verified Phase 12 checkbox block**
+- [x] **Step 1: Add the verified Phase 12 checkbox block**
 
 Append a Phase 12 task describing the playback visibility, completed-editor retention, and used-key guide requirements. Mark its checkboxes only after Task 3's complete verification passes.
 
-- [ ] **Step 2: Re-run the full required commands after documentation update**
+- [x] **Step 2: Re-run the full required commands after documentation update**
 
 Run:
 
@@ -360,7 +360,7 @@ npm run test:e2e
 
 Expected: all commands exit 0.
 
-- [ ] **Step 3: Commit the plan synchronization**
+- [x] **Step 3: Commit the plan synchronization**
 
 ```bash
 git add docs/implementation-plan.md
@@ -369,10 +369,10 @@ git commit -m "docs: track practice playback feedback UX"
 
 ## Completion Checklist
 
-- [ ] Playback auto-scrolls smoothly and uses the 600ms default delay.
-- [ ] Playback shows only completed content and keeps the highlighted keys near the editor.
-- [ ] Playback completion resets the exercise without an Attempt.
-- [ ] Successful feedback leaves the editor visible with completed content.
-- [ ] Completed feedback has a collapsed key guide containing only used Vim keys.
-- [ ] Type-check, lint, unit tests, build, and E2E all pass.
-- [ ] Existing user worktree changes remain unstaged and unmodified.
+- [x] Playback auto-scrolls smoothly and uses the 600ms default delay.
+- [x] Playback shows only completed content and keeps the highlighted keys near the editor.
+- [x] Playback completion resets the exercise without an Attempt.
+- [x] Successful feedback leaves the editor visible with completed content.
+- [x] Completed feedback has a collapsed key guide containing only used Vim keys.
+- [x] Type-check, lint, unit tests, build, and E2E all pass.
+- [x] Existing user worktree changes remain unstaged and unmodified.

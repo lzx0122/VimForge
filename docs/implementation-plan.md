@@ -748,3 +748,30 @@ npm run test:e2e
 - [x] `npm run type-check`、`npm run lint`、`npm run test`、`npm run build` 通過。
 - [x] `npm run test:e2e` 在 Chromium、Firefox、WebKit 通過。
 - [x] Commit：`docs: specify automatic practice feedback`
+
+---
+
+## Phase 12：播放可見性與完成回饋 UX
+
+### Task 12.1：改善練習播放與完成後回饋
+
+**Files:**
+
+- Create: `src/features/practice/services/vim-key-guide.ts`
+- Create: `src/features/practice/components/VimKeyGuide.vue`
+- Create: `src/features/practice/components/EditorPlayback.test.ts`
+- Modify: `src/features/practice/services/attempt-outcome-service.ts`
+- Modify: `src/components/feedback/ExerciseFeedback.vue`
+- Modify: `src/features/practice/pages/PracticePage.vue`
+- Modify: `src/features/practice/components/EditorPlayback.vue`
+- Modify: `src/features/practice/components/ProgressiveHintPanel.vue`
+- Modify: `tests/e2e/scoring-feedback.spec.ts`
+
+- [x] 播放區顯示在編輯器附近，按下播放時平滑捲動至播放區。
+- [x] 播放預設以 600ms 間隔逐顆高亮按鍵，並只顯示完成後內容。
+- [x] 播放完成後重設題目，不建立 Attempt。
+- [x] 題目成功後保留編輯器與完成後內容，回饋顯示在下方。
+- [x] 完成回饋的按鍵解說預設收合，且只列出本次實際使用的 Vim 按鍵。
+- [x] 已加入元件、服務與 E2E 回歸測試。
+- [x] 執行所有必要驗證。
+- [x] Commit：`feat: improve practice playback visibility`
