@@ -9,6 +9,7 @@ import {
 } from "../src/content/catalog-contract";
 import {
   runSupabase as defaultRunSupabase,
+  readLinkedProjectRef,
   type CliOptions,
 } from "../src/content/supabase-cli-runner";
 
@@ -113,6 +114,8 @@ export interface ProductionExportOptions {
   /** Alias accepted by callers that use the shorter name. */
   basePath?: string;
   expectedProjectRef?: string;
+  /** Test/embedding override; CLI entry points read supabase/.temp/project-ref. */
+  linkedProjectRef?: string;
   expectedRevision?: number;
   expectedHash?: string;
   outputDirectory?: string;
@@ -286,19 +289,18 @@ export async function exportProductionCatalog(
   }
   const expected = loadExpectedMetadata(options);
   const invoke = options.runSupabase ?? options.run ?? defaultRunSupabase;
+  const linkedProjectRef = options.linkedProjectRef ?? readLinkedProjectRef(options.cliOptions?.cwd);
+  if (linkedProjectRef === undefined) {
+    throw new Error("Linked Supabase project could not be identified. Run supabase link first.");
+  }
+  if (linkedProjectRef !== expectedProjectRef) {
+    throw new Error("Production linked project does not match the expected project.");
+  }
   const capabilityOutput = await invoke(
     ["--project-ref", expectedProjectRef, "db", "query", "--help"],
     options.cliOptions,
   );
   assertDbQueryCapability(capabilityOutput);
-  const statusRaw = await invoke(
-    ["status", "--linked", "--output", "json"],
-    options.cliOptions,
-  );
-  const observedStatusProjectRef = projectRefFromPayload(parseJsonOutput(statusRaw));
-  if (observedStatusProjectRef !== undefined && observedStatusProjectRef !== expectedProjectRef) {
-    throw new Error("Production linked project does not match the expected project.");
-  }
   const raw = await invoke(
     ["--project-ref", expectedProjectRef, "db", "query", "--linked", "--output", "json"],
     { ...options.cliOptions, stdin: PRODUCTION_EXPORT_QUERY },
@@ -309,13 +311,7 @@ export async function exportProductionCatalog(
   if (observedProjectRef !== undefined && observedProjectRef !== expectedProjectRef) {
     throw new Error("Production linked project does not match the expected project.");
   }
-  const projectRef = observedProjectRef ?? observedStatusProjectRef;
-  if (projectRef === undefined) {
-    throw new Error("Production CLI output did not identify the linked project.");
-  }
-  if (projectRef !== expectedProjectRef) {
-    throw new Error("Production linked project does not match the expected project.");
-  }
+  const projectRef = linkedProjectRef;
   const payload: JsonRecord = parsedPayload;
   const rawRelease = payload.releaseState ?? payload.release_state;
   const snapshot = productionSnapshot(payload, rawRelease, options.now ?? (() => new Date()));

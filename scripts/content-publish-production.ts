@@ -12,6 +12,7 @@ import {
   type PublishManifest,
 } from "../src/content/publish-preflight";
 import {
+  readLinkedProjectRef,
   runSupabase as defaultRunSupabase,
   type CliOptions,
 } from "../src/content/supabase-cli-runner";
@@ -81,20 +82,6 @@ function records(value: unknown): unknown[] {
   return children.length > 0 ? children : [value];
 }
 
-function projectRefFromStatus(raw: string): string | undefined {
-  const parsed = parseJson(raw);
-  for (const item of records(parsed)) {
-    if (typeof item !== "object" || item === null) continue;
-    const record = item as Record<string, unknown>;
-    for (const key of ["projectRef", "project_ref", "ref"]) {
-      const value = record[key];
-      if (typeof value === "string" && value.trim().length > 0) return value.trim();
-    }
-  }
-  const match = raw.match(/(?:project[_ -]?ref|ref)\s*[:=]\s*([A-Za-z0-9-]+)/iu);
-  return match?.[1];
-}
-
 function pendingFromDryRun(raw: string): string[] {
   const values: string[] = [];
   for (const item of records(parseJson(raw))) {
@@ -152,13 +139,7 @@ export async function publishProduction(input: PublishProductionInput): Promise<
   const invoke = input.runSupabase ?? defaultRunSupabase;
   let linkedProjectRef = input.linkedProjectRef;
   if (linkedProjectRef === undefined) {
-    let status: string;
-    try {
-      status = await invoke(["status", "--linked", "--output", "json"], input.cliOptions);
-    } catch {
-      throw safeError("Unable to inspect the linked Supabase project.");
-    }
-    linkedProjectRef = projectRefFromStatus(status);
+    linkedProjectRef = readLinkedProjectRef(input.cliOptions?.cwd);
     if (linkedProjectRef === undefined) throw safeError("Linked Supabase project could not be identified.");
   }
   let pending = input.pendingMigrations;

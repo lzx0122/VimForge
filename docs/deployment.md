@@ -39,12 +39,13 @@ before running any push:
 ```bash
 npx --no-install supabase@2.79.0 login
 npx --no-install supabase@2.79.0 link --project-ref <production-project-ref>
-npx --no-install supabase@2.79.0 status --linked --output json
+cat supabase/.temp/project-ref
 ```
 
-The status output must identify the exact production project ref. Do not use a
-local Supabase instance for the catalog release workflow; local database/RLS
-tests are a separate disposable verification step described in
+The file must contain the exact production project ref. `supabase status` is a
+local Docker-stack inspection command and is not used to identify a linked
+hosted project. Do not use a local Supabase instance for the catalog release
+workflow; local database/RLS tests are a separate disposable verification step described in
 [operations.md](operations.md#rls-與資料庫驗證).
 
 連結目標 project，再依 migration 檔名順序套用 Schema、RLS 與 database function。Production schema migration is the `supabase db push` workflow shown below; 題庫不得以 seed 或 `--include-seed` 推送，catalog 必須透過 reviewed migration workflow 發布。

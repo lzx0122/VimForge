@@ -1,4 +1,6 @@
 import { spawn, type SpawnOptionsWithoutStdio } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 export interface SupabaseProcessResult {
   stdout: string;
@@ -35,6 +37,19 @@ export const DEFAULT_SUPABASE_CLI_PREFIX = [
   "--no-install",
   `supabase@${SUPABASE_CLI_VERSION}`,
 ] as const;
+
+/**
+ * `supabase status` inspects the local Docker stack, not the linked hosted
+ * project. `supabase link` records the hosted project ref in this file.
+ */
+export function readLinkedProjectRef(cwd = process.cwd()): string | undefined {
+  try {
+    const value = readFileSync(resolve(cwd, "supabase", ".temp", "project-ref"), "utf8").trim();
+    return value.length > 0 ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function spawnSupabase(
   command: string,

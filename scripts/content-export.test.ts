@@ -19,6 +19,7 @@ describe("production catalog export", () => {
 
     await expect(exportProductionCatalog({
       expectedProjectRef: "expected-project",
+      linkedProjectRef: "expected-project",
       expectedRevision: 1,
       expectedHash: "sha256:" + "0".repeat(64),
       runSupabase: run,
@@ -39,6 +40,7 @@ describe("production catalog export", () => {
 
     await expect(exportProductionCatalog({
       expectedProjectRef: "expected-project",
+      linkedProjectRef: "expected-project",
       expectedRevision: 1,
       expectedHash: "sha256:" + "0".repeat(64),
       runSupabase: run,
@@ -61,6 +63,7 @@ describe("production catalog export", () => {
 
     const result = await exportProductionCatalog({
       expectedProjectRef: "expected-project",
+      linkedProjectRef: "expected-project",
       expectedRevision: base.catalogRevision,
       expectedHash: base.catalogHash,
       runSupabase: run,
@@ -84,7 +87,7 @@ describe("production catalog export", () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-  it("requires an observed linked project ref from CLI output", async () => {
+  it("uses the linked project ref recorded by supabase link instead of local status", async () => {
     const run = vi.fn(async (args: readonly string[]) => {
       if (args.includes("--help")) return "Usage: supabase db query [flags]\n  --linked\n  --output string";
       return JSON.stringify({});
@@ -92,11 +95,12 @@ describe("production catalog export", () => {
 
     await expect(exportProductionCatalog({
       expectedProjectRef: "expected-project",
+      linkedProjectRef: "expected-project",
       expectedRevision: 1,
       expectedHash: "sha256:" + "0".repeat(64),
       runSupabase: run,
-    })).rejects.toThrow(/identify the linked project|project ref/i);
-    expect(run.mock.calls.some(([args]) => args.includes("status"))).toBe(true);
+    })).rejects.toThrow(/release state/i);
+    expect(run.mock.calls.some(([args]) => args.includes("status"))).toBe(false);
   });
 
   it("runs the CLI through the injectable runner without exposing command output", async () => {
@@ -122,6 +126,7 @@ describe("production catalog export", () => {
 
     await expect(exportProductionCatalog({
       expectedProjectRef: "expected-project",
+      linkedProjectRef: "expected-project",
       expectedRevision: 1,
       expectedHash: "sha256:" + "0".repeat(64),
       runSupabase: run,
@@ -135,6 +140,7 @@ describe("production catalog export", () => {
 
     await expect(exportProductionCatalog({
       expectedProjectRef: "expected-project",
+      linkedProjectRef: "expected-project",
       expectedRevision: 1,
       expectedHash: "sha256:" + "0".repeat(64),
       runSupabase: run,
