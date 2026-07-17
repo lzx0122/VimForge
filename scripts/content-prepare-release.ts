@@ -108,14 +108,16 @@ export function prepareRelease(options: PrepareReleaseOptions): PrepareReleaseRe
 }
 
 function runCli(): void {
-  const targetPath = process.argv[2];
-  if (targetPath === undefined || targetPath.startsWith("-")) {
-    console.error("Usage: npm run content:prepare-release -- <modified-catalog.json>");
+  const argumentsValue = process.argv.slice(2);
+  const targetPath = argumentsValue.find((argument) => !argument.startsWith("-"));
+  const confirmLargeChange = argumentsValue.includes("--confirm-large-change");
+  if (targetPath === undefined) {
+    console.error("Usage: npm run content:prepare-release -- [--confirm-large-change] <modified-catalog.json>");
     process.exitCode = 1;
     return;
   }
   try {
-    const result = prepareRelease({ targetPath });
+    const result = prepareRelease({ targetPath, confirmLargeChange });
     console.log(`Prepared ${basename(result.migrationPath)} with target ${result.manifest.targetHash}`);
   } catch (error: unknown) {
     console.error(error instanceof Error ? error.message : "Release preparation failed.");

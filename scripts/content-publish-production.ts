@@ -210,10 +210,12 @@ export async function publishProduction(input: PublishProductionInput): Promise<
 }
 
 function loadCliInput(): PublishProductionInput {
-  const manifestPath = resolve(process.argv[2] ?? "content/release-manifest.json");
+  const argumentsValue = process.argv.slice(2);
+  const positionalArguments = argumentsValue.filter((argument) => !argument.startsWith("-"));
+  const manifestPath = resolve(positionalArguments[0] ?? "content/release-manifest.json");
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as PublishManifest;
   const baseSnapshot = parseCatalogSnapshot(JSON.parse(readFileSync("content/catalog.json", "utf8")) as unknown);
-  const targetPath = process.argv[3] ?? manifest.targetPath;
+  const targetPath = positionalArguments[1] ?? manifest.targetPath;
   if (typeof targetPath !== "string" || targetPath.trim().length === 0) {
     throw safeError("Release manifest target snapshot path is missing.");
   }
@@ -226,7 +228,7 @@ function loadCliInput(): PublishProductionInput {
     manifest,
     migrationSql: readFileSync(migrationPath, "utf8"),
     migrationPath: manifest.migrationPath,
-    confirmLargeChange: false,
+    confirmLargeChange: argumentsValue.includes("--confirm-large-change"),
   };
 }
 

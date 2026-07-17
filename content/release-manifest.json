@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "targetPath": ".tmp-vimforge-prepare-large-Aaei3h/catalog-large.json",
+  "baseRevision": 1,
+  "targetRevision": 2,
+  "targetHash": "sha256:e489f77bc705132dc70b681736a8092b7f5270a79361d671cd881404753920b4",
+  "migrationPath": ".tmp-vimforge-prepare-large-Aaei3h/migrations/20260717010204_catalog_release.sql",
+  "migrationHash": "sha256:3c041f0aac24b2c18574910cf4a67265cb4e4ee5a5b181cacc2587a7915b23fb",
+  "counts": {
+    "added": 0,
+    "changed": 30,
+    "unpublished": 0,
+    "unchanged": 70
+  }
+}

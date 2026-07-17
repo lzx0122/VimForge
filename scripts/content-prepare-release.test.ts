@@ -48,4 +48,32 @@ describe("content release preparation", () => {
     expect(manifest.migrationPath).toBe(result.migrationPath);
     expect(manifest.counts).toEqual(expect.objectContaining({ changed: 1 }));
   });
+
+  it("requires explicit confirmation for a large catalog change", () => {
+    const directory = mkdtempSync(join(process.cwd(), ".tmp-vimforge-prepare-large-"));
+    temporaryDirectories.push(directory);
+    const targetPath = join(directory, "catalog-large.json");
+    const migrationDirectory = join(directory, "migrations");
+    let changedCount = 0;
+    const target = {
+      ...base,
+      units: base.units.map((unit) => ({
+        ...unit,
+        exercises: unit.exercises.map((exercise) => {
+          const shouldChange = changedCount < 30;
+          changedCount += 1;
+          return shouldChange ? { ...exercise, title: `${exercise.title} (重新設計)` } : exercise;
+        }),
+      })),
+    };
+    writeFileSync(targetPath, `${JSON.stringify({ ...target, catalogHash: hashCatalog(target) }, null, 2)}\n`, "utf8");
+
+    expect(() => prepareRelease({ targetPath, migrationDirectory })).toThrow(/25%/i);
+    expect(() => prepareRelease({
+      targetPath,
+      migrationDirectory,
+      confirmLargeChange: true,
+      now: () => new Date("2026-07-17T01:02:04.000Z"),
+    })).not.toThrow();
+  });
 });
