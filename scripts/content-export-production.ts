@@ -149,15 +149,6 @@ function readString(record: JsonRecord, ...keys: string[]): string | undefined {
   return undefined;
 }
 
-function readInteger(record: JsonRecord, ...keys: string[]): number | undefined {
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === "number" && Number.isInteger(value)) return value;
-    if (typeof value === "string" && /^\d+$/u.test(value)) return Number(value);
-  }
-  return undefined;
-}
-
 function parseReleaseState(value: unknown): { revision: number; hash: string } {
   if (!isRecord(value)) {
     throw new Error("Production output did not include a release state object.");

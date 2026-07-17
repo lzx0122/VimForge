@@ -4,6 +4,32 @@
 
 ## Release Checklist
 
+## Catalog content release
+
+Catalog authoring is a local-first, production-only workflow:
+
+```text
+export → ChatGPT edit → validate → diff → prepare → dry-run → publish
+```
+
+Run `npm run content:export:production`, provide the catalog JSON to ChatGPT,
+then validate and review the semantic diff with `content:validate` and
+`content:diff`. `npm run content:prepare-release -- <modified-json>` writes one
+timestamped catalog migration and a hash-bound release manifest. The guarded
+`npm run content:publish:production` command reruns validation, checks that the
+linked project and pending migration match the manifest, displays the counts,
+and requires typing the exact production project ref before it invokes the
+pinned Supabase CLI. It reads the private release state back and succeeds only
+when revision and catalog hash match the manifest. There is no force or bypass
+flag.
+
+This workflow never starts or requires a local Supabase instance. Removing an
+exercise from JSON unpublishes it (`is_published = false`) so historical
+attempts retain their foreign keys; hard deletion is not part of a release.
+If post-publish verification fails, retain the migration and release evidence,
+stop promotion, and prepare a reviewed forward-fix migration after confirming
+the production release state. Do not reset, truncate, or roll back production.
+
 在乾淨 checkout 執行：
 
 ```bash

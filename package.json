@@ -17,7 +17,9 @@
     "test:e2e": "playwright test",
     "supabase:cli": "npx --no-install supabase@2.33.9",
     "content:export:production": "vite-node --script scripts/content-export-production.ts",
-    "content:diff": "vite-node --script scripts/content-diff.ts"
+    "content:diff": "vite-node --script scripts/content-diff.ts",
+    "content:prepare-release": "vite-node --script scripts/content-prepare-release.ts",
+    "content:publish:production": "vite-node --script scripts/content-publish-production.ts"
   },
   "dependencies": {
     "@codemirror/lang-css": "^6.3.1",

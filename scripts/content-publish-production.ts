@@ -1,0 +1,242 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { createInterface } from "node:readline/promises";
+
+import {
+  parseCatalogSnapshot,
+  type CatalogSnapshot,
+} from "../src/content/catalog-contract";
+import {
+  preflightProductionPublish,
+  type PublishInput,
+  type PublishManifest,
+} from "../src/content/publish-preflight";
+import {
+  runSupabase as defaultRunSupabase,
+  type CliOptions,
+} from "../src/content/supabase-cli-runner";
+
+export type PublishInvoker = (args: readonly string[], options?: CliOptions) => Promise<string>;
+
+export interface PublishProductionInput {
+  expectedProjectRef: string;
+  baseSnapshot: CatalogSnapshot;
+  targetSnapshot: CatalogSnapshot;
+  manifest: PublishManifest;
+  migrationSql: string;
+  /** Test and embedding hook; the CLI entry point always prompts interactively. */
+  typedProjectRef?: string;
+  confirmProjectRef?: string;
+  projectRefConfirmation?: string;
+  confirmation?: string;
+  /** Test and embedding hook for mocked migration inspection. */
+  linkedProjectRef?: string;
+  pendingMigrations?: readonly string[];
+  runSupabase?: PublishInvoker;
+  cliOptions?: CliOptions;
+  prompt?: (question: string) => Promise<string>;
+  /** Optional manifest path used only to resolve a relative migration path. */
+  migrationPath?: string;
+  confirmLargeChange?: boolean;
+}
+
+export interface PublishResult {
+  success: true;
+  projectRef: string;
+  revision: number;
+  hash: string;
+  summary: PublishManifest["counts"];
+}
+
+const RELEASE_STATE_QUERY = `select json_build_object('revision', revision, 'catalogHash', catalog_hash) as release_state from private.catalog_release_state where singleton = true;`;
+
+function parseJson(raw: string): unknown {
+  const text = raw.trim();
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(text.slice(start, end + 1)) as unknown;
+      } catch {
+        // Use the safe error below.
+      }
+    }
+    return undefined;
+  }
+}
+
+function records(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value.flatMap((item) => records(item));
+  if (typeof value !== "object" || value === null) return [value];
+  const record = value as Record<string, unknown>;
+  const nested = [record.data, record.result, record.migrations, record.pending, record.release_state, record.releaseState];
+  const children = nested.flatMap((item) => item === undefined ? [] : records(item));
+  return children.length > 0 ? children : [value];
+}
+
+function projectRefFromStatus(raw: string): string | undefined {
+  const parsed = parseJson(raw);
+  for (const item of records(parsed)) {
+    if (typeof item !== "object" || item === null) continue;
+    const record = item as Record<string, unknown>;
+    for (const key of ["projectRef", "project_ref", "ref"]) {
+      const value = record[key];
+      if (typeof value === "string" && value.trim().length > 0) return value.trim();
+    }
+  }
+  const match = raw.match(/(?:project[_ -]?ref|ref)\s*[:=]\s*([A-Za-z0-9-]+)/iu);
+  return match?.[1];
+}
+
+function pendingFromDryRun(raw: string): string[] {
+  const values: string[] = [];
+  for (const item of records(parseJson(raw))) {
+    if (typeof item !== "object" || item === null) continue;
+    const record = item as Record<string, unknown>;
+    for (const key of ["name", "migration", "migrationName", "version"]) {
+      const value = record[key];
+      if (typeof value === "string" && /\d{8,}.*\.sql$/u.test(value)) values.push(value);
+    }
+  }
+  if (values.length > 0) return [...new Set(values)];
+  return [...new Set(raw.match(/\b\d{8,}[^\s,)]*\.sql\b/gu) ?? [])];
+}
+
+function releaseState(raw: string): { revision: number; hash: string } {
+  const parsed = parseJson(raw);
+  for (const item of records(parsed)) {
+    if (typeof item !== "object" || item === null) continue;
+    const record = item as Record<string, unknown>;
+    const nested = record.releaseState ?? record.release_state;
+    const candidate = typeof nested === "object" && nested !== null ? nested as Record<string, unknown> : record;
+    const revision = candidate.revision ?? candidate.catalogRevision ?? candidate.catalog_revision;
+    const hash = candidate.catalogHash ?? candidate.catalog_hash ?? candidate.hash;
+    if (typeof revision === "number" && Number.isInteger(revision) && typeof hash === "string") {
+      return { revision, hash };
+    }
+  }
+  throw new Error("Post-publish release state was missing or invalid.");
+}
+
+async function interactiveProjectConfirmation(expected: string): Promise<string> {
+  const reader = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return await reader.question(`Type the production project ref (${expected}) to continue: `);
+  } finally {
+    reader.close();
+  }
+}
+
+function safeError(message: string): Error {
+  return new Error(message);
+}
+
+/** Guarded production publisher. The db push command is unreachable until all checks and typed confirmation pass. */
+export async function publishProduction(input: PublishProductionInput): Promise<PublishResult> {
+  const invoke = input.runSupabase ?? defaultRunSupabase;
+  let linkedProjectRef = input.linkedProjectRef;
+  if (linkedProjectRef === undefined) {
+    let status: string;
+    try {
+      status = await invoke(["status", "--linked", "--output", "json"], input.cliOptions);
+    } catch {
+      throw safeError("Unable to inspect the linked Supabase project.");
+    }
+    linkedProjectRef = projectRefFromStatus(status);
+    if (linkedProjectRef === undefined) throw safeError("Linked Supabase project could not be identified.");
+  }
+  let pending = input.pendingMigrations;
+  if (pending === undefined) {
+    let dryRun: string;
+    try {
+      dryRun = await invoke(["db", "push", "--linked", "--dry-run", "--output", "json"], input.cliOptions);
+    } catch {
+      throw safeError("Unable to inspect pending Supabase migrations.");
+    }
+    pending = pendingFromDryRun(dryRun);
+  }
+  const typedProjectRef = input.typedProjectRef
+    ?? input.confirmProjectRef
+    ?? input.projectRefConfirmation
+    ?? input.confirmation
+    ?? await (input.prompt ?? interactiveProjectConfirmation)(input.expectedProjectRef);
+  const migrationPath = input.migrationPath ?? input.manifest.migrationPath;
+  const preflightInput: PublishInput = {
+    expectedProjectRef: input.expectedProjectRef,
+    linkedProjectRef,
+    typedProjectRef,
+    baseSnapshot: input.baseSnapshot,
+    targetSnapshot: input.targetSnapshot,
+    migrationPath,
+    migrationSql: input.migrationSql,
+    pendingMigrations: pending,
+    manifest: input.manifest,
+    confirmLargeChange: input.confirmLargeChange ?? false,
+  };
+  const preflight = preflightProductionPublish(preflightInput);
+  let pushError = false;
+  try {
+    await invoke(["db", "push", "--linked"], input.cliOptions);
+  } catch {
+    pushError = true;
+  }
+  if (pushError) {
+    throw safeError("Production publish failed: the catalog migration was not applied. Review Supabase status and retry.");
+  }
+  let rawState: string;
+  try {
+    rawState = await invoke(["db", "query", "--linked", "--output", "json"], {
+      ...input.cliOptions,
+      stdin: RELEASE_STATE_QUERY,
+    });
+  } catch {
+    throw safeError("Production publish could not be verified; retain the migration evidence and prepare a forward fix.");
+  }
+  const state = releaseState(rawState);
+  if (state.revision !== input.manifest.targetRevision || state.hash !== input.manifest.targetHash) {
+    throw safeError("Production publish verification failed: release revision or catalog hash does not match the manifest.");
+  }
+  return {
+    success: true,
+    projectRef: input.expectedProjectRef,
+    revision: state.revision,
+    hash: state.hash,
+    summary: preflight.summary,
+  };
+}
+
+function loadCliInput(): PublishProductionInput {
+  const manifestPath = resolve(process.argv[2] ?? "content/release-manifest.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as PublishManifest;
+  const baseSnapshot = parseCatalogSnapshot(JSON.parse(readFileSync("content/catalog.json", "utf8")) as unknown);
+  const targetPath = process.argv[3] ?? "content/catalog.json";
+  const targetSnapshot = parseCatalogSnapshot(JSON.parse(readFileSync(targetPath, "utf8")) as unknown);
+  const migrationPath = resolve(manifest.migrationPath);
+  return {
+    expectedProjectRef: process.env.SUPABASE_PROJECT_REF ?? "",
+    baseSnapshot,
+    targetSnapshot,
+    manifest,
+    migrationSql: readFileSync(migrationPath, "utf8"),
+    migrationPath: manifest.migrationPath,
+    confirmLargeChange: false,
+  };
+}
+
+async function runCli(): Promise<void> {
+  try {
+    const result = await publishProduction(loadCliInput());
+    console.log(`Published catalog revision ${result.revision} (${result.hash}) to ${result.projectRef}.`);
+  } catch (error: unknown) {
+    console.error(error instanceof Error ? error.message : "Production publish failed.");
+    process.exitCode = 1;
+  }
+}
+
+const entryPath = process.argv[1];
+if (entryPath !== undefined && resolve(entryPath) === resolve(process.cwd(), "scripts/content-publish-production.ts")) {
+  void runCli();
+}
