@@ -88,6 +88,7 @@ export function renderCatalogMigration(plan: CatalogReleasePlan): string {
     "  select revision, catalog_hash into current_revision, current_hash from private.catalog_release_state where singleton = true for update;",
     `  if current_revision is distinct from ${plan.baseRevision} or current_hash is distinct from ${escapeSqlString(plan.baseHash)} then raise exception 'catalog release base revision/hash mismatch (expected revision %, hash %; found revision %, hash %)', ${plan.baseRevision}, ${escapeSqlString(plan.baseHash)}, current_revision, current_hash; end if;`,
     "end $$;",
+    "update public.learning_units set display_order = -display_order;",
   ];
   for (const unit of plan.units) {
     lines.push(

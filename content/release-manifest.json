@@ -5,7 +5,7 @@
   "targetRevision": 2,
   "targetHash": "sha256:a1ea1b9f32fc9b3ed6ef25b8989c7f5c465ad10df10df6af62e2cb2d4aa96467",
   "migrationPath": "supabase/migrations/20260717111721_catalog_release.sql",
-  "migrationHash": "sha256:0031eb77642f1ea3c6b5ab59f89917a1e76c9db6259916480853e663521dbff6",
+  "migrationHash": "sha256:59be4fc633a1b4e32da7141fde81bae56cc22057e0012c2b91cd1ebc35db0194",
   "counts": {
     "added": 144,
     "changed": 100,
