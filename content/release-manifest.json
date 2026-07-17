@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "targetPath": ".tmp-vimforge-prepare-large-Aaei3h/catalog-large.json",
+  "targetPath": "content/catalog-v2.json",
   "baseRevision": 1,
   "targetRevision": 2,
-  "targetHash": "sha256:e489f77bc705132dc70b681736a8092b7f5270a79361d671cd881404753920b4",
-  "migrationPath": ".tmp-vimforge-prepare-large-Aaei3h/migrations/20260717010204_catalog_release.sql",
-  "migrationHash": "sha256:3c041f0aac24b2c18574910cf4a67265cb4e4ee5a5b181cacc2587a7915b23fb",
+  "targetHash": "sha256:a1ea1b9f32fc9b3ed6ef25b8989c7f5c465ad10df10df6af62e2cb2d4aa96467",
+  "migrationPath": "supabase/migrations/20260717111721_catalog_release.sql",
+  "migrationHash": "sha256:0031eb77642f1ea3c6b5ab59f89917a1e76c9db6259916480853e663521dbff6",
   "counts": {
-    "added": 0,
-    "changed": 30,
+    "added": 144,
+    "changed": 100,
     "unpublished": 0,
-    "unchanged": 70
+    "unchanged": 0
   }
 }

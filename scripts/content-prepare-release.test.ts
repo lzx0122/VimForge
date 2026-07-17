@@ -54,6 +54,7 @@ describe("content release preparation", () => {
     temporaryDirectories.push(directory);
     const targetPath = join(directory, "catalog-large.json");
     const migrationDirectory = join(directory, "migrations");
+    const manifestPath = join(directory, "release-manifest.json");
     let changedCount = 0;
     const target = {
       ...base,
@@ -68,10 +69,11 @@ describe("content release preparation", () => {
     };
     writeFileSync(targetPath, `${JSON.stringify({ ...target, catalogHash: hashCatalog(target) }, null, 2)}\n`, "utf8");
 
-    expect(() => prepareRelease({ targetPath, migrationDirectory })).toThrow(/25%/i);
+    expect(() => prepareRelease({ targetPath, migrationDirectory, manifestPath })).toThrow(/25%/i);
     expect(() => prepareRelease({
       targetPath,
       migrationDirectory,
+      manifestPath,
       confirmLargeChange: true,
       now: () => new Date("2026-07-17T01:02:04.000Z"),
     })).not.toThrow();
