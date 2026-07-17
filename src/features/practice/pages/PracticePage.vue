@@ -526,8 +526,9 @@ onUnmounted(() => {
     </section>
 
     <section
-      v-if="exercise && snapshot && !feedback"
+      v-if="exercise && snapshot"
       class="practice-workspace"
+      :class="{ 'is-completed': feedback !== null }"
       @keydown.capture="recordKeydown"
     >
       <header class="exercise-heading">
@@ -563,13 +564,14 @@ onUnmounted(() => {
         <PracticeEditorStatusBar
           :mode="snapshot.mode"
           :elapsed-seconds="elapsedSeconds"
-          :restart-disabled="isSavingOutcome"
+          :restart-disabled="isSavingOutcome || feedback !== null"
           @request-restart="resetExercise"
         />
       </div>
 
       <div class="exercise-actions">
         <button
+          v-if="feedback === null"
           type="button"
           :disabled="isSavingOutcome"
           @click="skipExercise"
@@ -617,6 +619,7 @@ onUnmounted(() => {
       :improvement-reason="feedback.improvementReason"
       :actual-keystroke-count="feedback.actualKeystrokeCount"
       :recommended-keystroke-count="feedback.recommendedKeystrokeCount"
+      :normalized-actions="feedback.normalizedActions"
       @request-next="goToNext"
     />
 

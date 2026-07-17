@@ -1,5 +1,6 @@
 <script lang="ts">
 import type { LearningMode } from "../../types";
+import type { NormalizedAction } from "../../types/attempt";
 import type { MasteryLevel } from "../../domain/mastery/mastery-config";
 
 export interface ExerciseFeedbackProps {
@@ -14,12 +15,14 @@ export interface ExerciseFeedbackProps {
   improvementReason: string;
   actualKeystrokeCount: number;
   recommendedKeystrokeCount: number;
+  normalizedActions: readonly NormalizedAction[];
 }
 </script>
 
 <script setup lang="ts">
 import { computed } from "vue";
 
+import VimKeyGuide from "../../features/practice/components/VimKeyGuide.vue";
 import MetricCard from "./MetricCard.vue";
 
 const props = defineProps<ExerciseFeedbackProps>();
@@ -203,6 +206,8 @@ const formattedKeystrokeGap = computed(() =>
         {{ improvementReason }}
       </p>
     </section>
+
+    <VimKeyGuide :actions="normalizedActions" />
 
     <button
       type="button"
