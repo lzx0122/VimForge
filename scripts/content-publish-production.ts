@@ -77,7 +77,7 @@ function records(value: unknown): unknown[] {
   if (Array.isArray(value)) return value.flatMap((item) => records(item));
   if (typeof value !== "object" || value === null) return [value];
   const record = value as Record<string, unknown>;
-  const nested = [record.data, record.result, record.migrations, record.pending, record.release_state, record.releaseState];
+  const nested = [record.data, record.result, record.rows, record.migrations, record.pending, record.release_state, record.releaseState];
   const children = nested.flatMap((item) => item === undefined ? [] : records(item));
   return children.length > 0 ? children : [value];
 }

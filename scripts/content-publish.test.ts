@@ -98,4 +98,12 @@ describe("production publisher", () => {
     await expect(publishProduction({ ...input(run), pendingMigrations: undefined })).resolves.toMatchObject({ success: true });
     expect(run.mock.calls[0]?.[0]).toEqual(["db", "push", "--linked", "--dry-run"]);
   });
+
+  it("verifies release state when db query returns a rows envelope", async () => {
+    const run = vi.fn(async (args: readonly string[]) => args.includes("query")
+      ? JSON.stringify({ rows: [{ release_state: { revision: base.catalogRevision + 1, catalog_hash: hashCatalog(base) } }] })
+      : "");
+
+    await expect(publishProduction(input(run))).resolves.toMatchObject({ success: true });
+  });
 });
