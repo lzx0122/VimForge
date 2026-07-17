@@ -676,8 +676,33 @@ function validateUnit(
 }
 
 function canonicalExerciseWithoutSlug(exercise: CatalogExercise): string {
-  const entries = Object.entries(exercise).filter(([key]) => key !== "slug" && key !== "displayOrder");
-  return canonicalizeValue(Object.fromEntries(entries));
+  // Slugs identify an exercise, while publication/version/order fields are
+  // administrative metadata. Keep the complete teaching and evaluation
+  // payload in the fingerprint, including solution actions and explanations,
+  // but omit those metadata fields at every relevant level.
+  return canonicalizeValue({
+    title: exercise.title,
+    instruction: exercise.instruction,
+    language: exercise.language,
+    exerciseType: exercise.exerciseType,
+    difficulty: exercise.difficulty,
+    initialContent: exercise.initialContent,
+    expectedContent: exercise.expectedContent,
+    initialCursor: exercise.initialCursor,
+    completionRule: exercise.completionRule,
+    supportedModes: exercise.supportedModes,
+    targetDurationMs: exercise.targetDurationMs,
+    skills: exercise.skills,
+    solutions: Array.isArray(exercise.solutions)
+      ? exercise.solutions.map((solution) => {
+        if (!isRecord(solution)) return solution;
+        return Object.fromEntries(
+          Object.entries(solution).filter(([key]) => key !== "displayOrder"),
+        );
+      })
+      : exercise.solutions,
+    hints: exercise.hints,
+  });
 }
 
 function normalizedContent(value: string): string {
@@ -801,17 +826,16 @@ export function validateCatalogSnapshot(
     if (removed.some((exercise) => addedIdentities.has(canonicalExerciseWithoutSlug(exercise)))) {
       addError(errors, "units", "renamed existing exercise slugs are not supported.");
     }
-    const addedByUnit = new Map<string, CatalogExercise[]>();
-    const removedByUnit = new Map<string, CatalogExercise[]>();
-    for (const unit of snapshot.units) addedByUnit.set(unit.slug, unit.exercises.filter((exercise) => added.some((item) => item.slug === exercise.slug)));
-    for (const unit of previous.units) removedByUnit.set(unit.slug, unit.exercises.filter((exercise) => removed.some((item) => item.slug === exercise.slug)));
-    for (const [unitSlug, removedExercises] of removedByUnit) {
-      const addedExercises = addedByUnit.get(unitSlug) ?? [];
-      for (const before of removedExercises) {
-        for (const after of addedExercises) {
-          if (likelyChangedContentRename(before, after)) {
-            addError(errors, `units[${snapshot.units.findIndex((unit) => unit.slug === unitSlug)}].exercises`, `exercise '${before.slug}' appears to have been renamed to '${after.slug}' with changed content; preserve the original slug, or document an intentional remove-and-add with clearly different metadata.`);
-          }
+    // Compare every removed exercise with every added candidate. A stable slug
+    // rename can move between units, so restricting this heuristic to matching
+    // units would allow changed-content renames to evade review.
+    for (const before of removed) {
+      for (const after of added) {
+        if (likelyChangedContentRename(before, after)) {
+          const afterUnitIndex = snapshot.units.findIndex((unit) =>
+            unit.exercises.some((exercise) => exercise.slug === after.slug),
+          );
+          addError(errors, `units[${afterUnitIndex}].exercises`, `exercise '${before.slug}' appears to have been renamed to '${after.slug}' with changed content; preserve the original slug, or document an intentional remove-and-add with clearly different metadata.`);
         }
       }
     }

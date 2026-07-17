@@ -194,6 +194,28 @@ function unwrapPayload(value: unknown): JsonRecord {
   return value;
 }
 
+function projectRefFromPayload(value: unknown): string | undefined {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const projectRef = projectRefFromPayload(item);
+      if (projectRef !== undefined) return projectRef;
+    }
+    return undefined;
+  }
+  if (!isRecord(value)) return undefined;
+  const direct = readString(value, "projectRef", "project_ref", "projectId", "project_id", "PROJECT_ID", "ref");
+  if (direct !== undefined) return direct;
+  if (isRecord(value.project)) {
+    return projectRefFromPayload(value.project);
+  }
+  for (const key of ["catalog_export", "catalogExport", "export", "data"]) {
+    const nested = value[key];
+    const projectRef = projectRefFromPayload(nested);
+    if (projectRef !== undefined) return projectRef;
+  }
+  return undefined;
+}
+
 function assertDbQueryCapability(helpOutput: string): void {
   const requiredFlags = ["--linked", "--output"];
   const missing = requiredFlags.filter((flag) => !helpOutput.includes(flag));
@@ -269,28 +291,32 @@ export async function exportProductionCatalog(
     options.cliOptions,
   );
   assertDbQueryCapability(capabilityOutput);
+  const statusRaw = await invoke(
+    ["status", "--linked", "--output", "json"],
+    options.cliOptions,
+  );
+  const observedStatusProjectRef = projectRefFromPayload(parseJsonOutput(statusRaw));
+  if (observedStatusProjectRef !== undefined && observedStatusProjectRef !== expectedProjectRef) {
+    throw new Error("Production linked project does not match the expected project.");
+  }
   const raw = await invoke(
     ["--project-ref", expectedProjectRef, "db", "query", "--linked", "--output", "json"],
     { ...options.cliOptions, stdin: PRODUCTION_EXPORT_QUERY },
   );
-  const parsedPayload = unwrapPayload(parseJsonOutput(raw));
-  const observedProjectRef = readString(parsedPayload, "projectRef", "project_ref")
-    ?? (isRecord(parsedPayload.project) ? readString(parsedPayload.project, "ref", "projectRef", "project_ref") : undefined);
+  const parsedOutput = parseJsonOutput(raw);
+  const observedProjectRef = projectRefFromPayload(parsedOutput);
+  const parsedPayload = unwrapPayload(parsedOutput);
   if (observedProjectRef !== undefined && observedProjectRef !== expectedProjectRef) {
     throw new Error("Production linked project does not match the expected project.");
   }
-  // The project ref is validated before either command runs. Attach it to the
-  // parsed payload instead of trusting a database session setting that may not
-  // exist on every Supabase installation.
-  const payload: JsonRecord = { ...parsedPayload, projectRef: expectedProjectRef };
-  const projectRef = readString(payload, "projectRef", "project_ref")
-    ?? (isRecord(payload.project) ? readString(payload.project, "ref", "projectRef", "project_ref") : undefined);
+  const projectRef = observedProjectRef ?? observedStatusProjectRef;
   if (projectRef === undefined) {
-    throw new Error("Production output did not identify the linked project.");
+    throw new Error("Production CLI output did not identify the linked project.");
   }
   if (projectRef !== expectedProjectRef) {
     throw new Error("Production linked project does not match the expected project.");
   }
+  const payload: JsonRecord = parsedPayload;
   const rawRelease = payload.releaseState ?? payload.release_state;
   const snapshot = productionSnapshot(payload, rawRelease, options.now ?? (() => new Date()));
   if (snapshot.catalogRevision !== expected.revision) {

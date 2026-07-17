@@ -176,6 +176,32 @@ describe("catalog contract", () => {
     expect(validateCatalogSnapshot(after, before).some((error) => error.message.includes("changed content"))).toBe(true);
   });
 
+  it("rejects a likely changed-content slug rename across catalog units", () => {
+    const before = copyFixture();
+    const secondUnit = structuredClone(before.units[0]!);
+    secondUnit.slug = "movement-basics";
+    secondUnit.title = "Movement basics";
+    secondUnit.skills[0]!.slug = "word-movement";
+    secondUnit.exercises[0]!.slug = "movement-basics-01";
+    secondUnit.exercises[0]!.skills[0]!.skillSlug = "word-movement";
+    secondUnit.exercises[0]!.title = "Move to a word";
+    secondUnit.exercises[0]!.instruction = "Move to the next word.";
+    secondUnit.exercises[0]!.initialContent = "const first = true;";
+    secondUnit.exercises[0]!.expectedContent = "const second = true;";
+    secondUnit.exercises[0]!.initialCursor = { line: 0, column: 6 };
+    secondUnit.displayOrder = 2;
+    before.units.push(secondUnit);
+
+    const after = structuredClone(before);
+    after.units[0]!.exercises = [];
+    const renamed = structuredClone(getExercise(before));
+    renamed.slug = "movement-basics-renamed";
+    renamed.expectedContent = "const approvedName = true;";
+    after.units[1]!.exercises.push(renamed);
+
+    expect(validateCatalogSnapshot(after, before).some((error) => error.message.includes("changed content"))).toBe(true);
+  });
+
   it("allows an independent removal and addition with equal slug counts", () => {
     const before = copyFixture();
     getExercise(before).slug = "text-objects-removed";
@@ -221,6 +247,19 @@ describe("catalog contract", () => {
   it("rejects exact duplicate content even when stable slugs differ", () => {
     const snapshot = copyFixture();
     snapshot.units[0]!.exercises.push({ ...getExercise(snapshot), slug: "text-objects-02" });
+    expect(validateCatalogSnapshot(snapshot).some((error) => error.message.includes("exact duplicate exercise content"))).toBe(true);
+  });
+
+  it("treats administrative metadata changes as exact duplicate content", () => {
+    const snapshot = copyFixture();
+    const duplicate = structuredClone(getExercise(snapshot));
+    duplicate.slug = "text-objects-02";
+    duplicate.version = 99;
+    duplicate.isPublished = false;
+    duplicate.displayOrder = 42;
+    duplicate.solutions[0]!.displayOrder = 99;
+    snapshot.units[0]!.exercises.push(duplicate);
+
     expect(validateCatalogSnapshot(snapshot).some((error) => error.message.includes("exact duplicate exercise content"))).toBe(true);
   });
 

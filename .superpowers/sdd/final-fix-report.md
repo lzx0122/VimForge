@@ -34,3 +34,25 @@ npm run build       PASS
 ```
 
 No production/local Supabase credentials or linkage were required.
+
+## Residual final-review fixes
+
+- Changed-content slug-rename review now compares every removed exercise with
+  every added candidate, including candidates in different units, while still
+  allowing clearly independent remove-and-add pairs.
+- Exact duplicate fingerprints now omit exercise version/publication/order
+  metadata and nested solution display order while retaining teaching and
+  evaluation content.
+- Production export now requires an observed linked project ref from the CLI
+  status or query output, compares it to the expected ref, and never injects
+  the expected value into an otherwise unverified payload.
+
+Verification for these residual fixes:
+
+```text
+npx vitest run src/content/catalog-contract.test.ts scripts/content-export.test.ts  PASS (24 tests)
+npm run type-check  PASS
+npm run lint        PASS
+npm run test        PASS (52 files, 335 tests)
+npm run build       PASS
+```

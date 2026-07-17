@@ -84,6 +84,21 @@ describe("production catalog export", () => {
     expect(run).not.toHaveBeenCalled();
   });
 
+  it("requires an observed linked project ref from CLI output", async () => {
+    const run = vi.fn(async (args: readonly string[]) => {
+      if (args.includes("--help")) return "Usage: supabase db query [flags]\n  --linked\n  --output string";
+      return JSON.stringify({});
+    });
+
+    await expect(exportProductionCatalog({
+      expectedProjectRef: "expected-project",
+      expectedRevision: 1,
+      expectedHash: "sha256:" + "0".repeat(64),
+      runSupabase: run,
+    })).rejects.toThrow(/identify the linked project|project ref/i);
+    expect(run.mock.calls.some(([args]) => args.includes("status"))).toBe(true);
+  });
+
   it("runs the CLI through the injectable runner without exposing command output", async () => {
     const runner = vi.fn(async (_command: string, args: readonly string[]) => ({
       stdout: args.join(" "),
