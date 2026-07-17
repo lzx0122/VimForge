@@ -118,3 +118,94 @@ npm run content:validate -- content/catalog.json
 ```
 
 成功輸出固定為 `Validated 10 units and 100 exercises.`。錯誤會列出 JSON path 並以 nonzero exit code 結束；validator 只讀取檔案，不啟動或連線任何 Supabase，也不會修改輸入檔案。提交前仍需依 Task protocol 執行完整的 `npm run type-check`、`npm run lint`、`npm run test` 與 `npm run build`。
+
+## Production snapshot editing workflow
+
+Use this sequence for every catalog change. It is intentionally file based: the
+only command that can change production is the separately guarded publish step.
+
+1. Export the complete production snapshot and keep it as the review base:
+
+   ```bash
+   npm run content:export:production -- <production-project-ref>
+   ```
+
+   Confirm that the export revision and hash match `content/catalog.json` before
+   asking ChatGPT to edit anything. Never use a hand-written SQL fragment as the
+   editing source.
+
+2. Give ChatGPT the complete JSON file (all units, skills, exercises, solutions,
+   and hints), not a representative excerpt. Use this prompt:
+
+   ```text
+   Edit the attached VimForge catalog snapshot. Return one complete JSON root
+   object and nothing else: no Markdown fences, comments, or explanation.
+   Preserve schemaVersion, catalogRevision, exportedAt, every unchanged field,
+   and the existing array order. Existing exercise slugs are stable IDs: never
+   rename, renumber, or reuse them. New slugs must be lowercase kebab-case and
+   unique. Keep every exercise valid for its unit, including one primary skill
+   with weights totaling 1, one recommended solution, and exactly hint levels
+   1, 2, 3, and 4. Do not add rankings, XP, badges, an admin feature, or any
+   other non-MVP field. Return the full modified catalog JSON.
+   ```
+
+3. Save ChatGPT's response as a new file such as
+   `content/catalog-modified.json`. Validate both snapshots before reviewing
+   changes:
+
+   ```bash
+   npm run content:validate -- content/catalog.json
+   npm run content:validate -- content/catalog-modified.json
+   npm run content:diff -- --base content/catalog.json content/catalog-modified.json
+   ```
+
+   Read the diff as a release review: `Added` creates a new exercise,
+   `Changed` advances content-owned fields (and the exercise version), and
+   `Unpublish` means the slug is absent from the modified snapshot. Removed
+   exercises are unpublished rather than deleted so historical attempts retain
+   their foreign keys. A diff over 25% requires an explicit large-change
+   confirmation; do not bypass that review casually.
+
+4. Prepare the migration and hash-bound manifest. The command writes one
+   timestamped migration and does not contact Supabase:
+
+   ```bash
+   npm run content:prepare-release -- content/catalog-modified.json
+   ```
+
+   Review the generated SQL and `content/release-manifest.json`. Confirm the
+   manifest counts, target hash, base revision, and migration path are exactly
+   the values shown by the diff. Keep the modified snapshot and migration in
+   the same change for review.
+
+5. Before publishing, verify the production project twice. The linked project
+   must be the intended production ref, and the command requires typing that
+   exact ref followed by the independent confirmation `PUBLISH`:
+
+   ```bash
+   npm run content:publish:production -- content/release-manifest.json
+   ```
+
+   The publisher performs a dry-run pending-migration check, reruns validation,
+   prints the added/changed/unpublished counts, and verifies the private release
+   revision and catalog hash after the migration. It never accepts a force or
+   bypass flag. If the project ref, pending migration list, manifest hash, or
+   post-publish state is unexpected, stop and investigate instead of pushing.
+
+Expected preparation output has this shape (the timestamp and hash vary):
+
+```text
+Prepared 20260717010203_catalog_release.sql with target sha256:<64 lowercase hex>
+```
+
+Expected publish output has this shape:
+
+```text
+Catalog release summary: added 1, changed 1, unpublished 1, unchanged 98.
+Published catalog revision 2 (sha256:<64 lowercase hex>) to <production-project-ref>.
+```
+
+The workflow is locally testable with mocked CLI calls. It does not start a
+local Supabase instance and it must not be used as evidence that production was
+verified; production verification requires the linked project, the typed ref,
+the migration push, and the post-publish release-state query.

@@ -30,6 +30,29 @@ If post-publish verification fails, retain the migration and release evidence,
 stop promotion, and prepare a reviewed forward-fix migration after confirming
 the production release state. Do not reset, truncate, or roll back production.
 
+### Operator checklist
+
+- [ ] Exported a complete snapshot from the intended production project and
+      confirmed its revision and hash match the repository base.
+- [ ] Supplied the complete snapshot to ChatGPT and received complete JSON only;
+      no existing slug was renamed or reused.
+- [ ] Ran `content:validate` on both base and modified files.
+- [ ] Reviewed `content:diff` counts and field-level changes. Any removal is an
+      unpublish operation, never a hard delete.
+- [ ] Ran `content:prepare-release` and reviewed the generated SQL plus the
+      hash-bound release manifest.
+- [ ] Confirmed the linked Supabase project ref and that the dry-run reports
+      exactly one expected pending migration.
+- [ ] Typed the exact production project ref, reviewed the printed summary, and
+      typed `PUBLISH` as a separate final confirmation.
+- [ ] Confirmed post-publish revision/hash match the manifest. If this fails,
+      stop promotion and use a forward-fix migration; do not retry blindly.
+
+The mocked workflow test (`scripts/content-workflow.test.ts`) exercises the
+validate → diff → prepare composition and proves that the CLI invoker is not
+called until the final confirmation. It uses temporary files and a mocked
+publisher only; it is not production verification.
+
 在乾淨 checkout 執行：
 
 ```bash

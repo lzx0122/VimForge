@@ -22,6 +22,31 @@ npm run build
 
 ## 2. Supabase 資料庫
 
+Production content tooling is pinned to Supabase CLI `2.33.9`; use the
+repository script so an unpinned global binary cannot accidentally apply a
+migration:
+
+```bash
+npx --no-install supabase@2.33.9 --version
+npm run supabase:cli -- --version
+```
+
+The `--no-install` flag intentionally fails when the pinned CLI is not already
+available. Install or cache that exact version through the team's approved
+tooling, then link the checkout to the intended project and verify the link
+before running any push:
+
+```bash
+npx --no-install supabase@2.33.9 login
+npx --no-install supabase@2.33.9 link --project-ref <production-project-ref>
+npx --no-install supabase@2.33.9 status --linked --output json
+```
+
+The status output must identify the exact production project ref. Do not use a
+local Supabase instance for the catalog release workflow; local database/RLS
+tests are a separate disposable verification step described in
+[operations.md](operations.md#rls-與資料庫驗證).
+
 連結目標 project，再依 migration 檔名順序套用 Schema、RLS 與 database function；`--include-seed` 同時載入已驗證的 MVP 題庫。
 
 ```bash
