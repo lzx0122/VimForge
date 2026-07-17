@@ -163,4 +163,10 @@ describe("production catalog export", () => {
     })).rejects.toThrow(/release state/i);
     expect(run.mock.calls[1]?.[0]).toContain(PRODUCTION_EXPORT_QUERY);
   });
+
+  it("derives exercise display order from the production schema", () => {
+    expect(PRODUCTION_EXPORT_QUERY).toContain("computed_display_order");
+    expect(PRODUCTION_EXPORT_QUERY).toContain("row_number() over");
+    expect(PRODUCTION_EXPORT_QUERY).not.toContain("e.display_order");
+  });
 });
