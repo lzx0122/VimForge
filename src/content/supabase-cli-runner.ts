@@ -127,5 +127,7 @@ export async function runSupabase(
     const suffix = result.exitCode === null ? "without an exit code" : `with exit code ${result.exitCode}`;
     throw new Error(`Supabase CLI command failed ${suffix}.`);
   }
-  return result.stdout.length > 0 ? result.stdout : result.stderr;
+  if (result.stdout.length === 0) return result.stderr;
+  if (result.stderr.length === 0) return result.stdout;
+  return `${result.stdout}\n${result.stderr}`;
 }

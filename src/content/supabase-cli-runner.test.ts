@@ -24,4 +24,14 @@ describe("Supabase CLI linked project discovery", () => {
       }),
     })).resolves.toContain("20260717111721_catalog_release.sql");
   });
+
+  it("preserves successful output split across stdout and stderr", async () => {
+    await expect(runSupabase(["db", "push", "--linked", "--dry-run"], {
+      runner: async () => ({
+        stdout: "DRY RUN: migrations will *not* be pushed to the database.",
+        stderr: "Would push these migrations:\n • 20260717111721_catalog_release.sql",
+        exitCode: 0,
+      }),
+    })).resolves.toContain("20260717111721_catalog_release.sql");
+  });
 });
