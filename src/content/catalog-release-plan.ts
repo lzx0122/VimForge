@@ -16,6 +16,10 @@ export interface CatalogReleaseExercise {
   version: number;
   isPublished: boolean;
   replaceChildren: boolean;
+  /** True when a content-owned field changed and the exercise version advances. */
+  versionChanged: boolean;
+  /** True when the stable exercise slug moved to a different unit. */
+  unitChanged: boolean;
 }
 
 export interface CatalogReleaseUnit {
@@ -71,6 +75,8 @@ function releaseExercise(
   exercise: CatalogExercise,
   version: number,
   replaceChildren: boolean,
+  versionChanged: boolean,
+  unitChanged: boolean,
 ): CatalogReleaseExercise {
   return {
     action,
@@ -80,20 +86,24 @@ function releaseExercise(
     version,
     isPublished: action === "unpublish" ? false : exercise.isPublished,
     replaceChildren,
+    versionChanged,
+    unitChanged,
   };
 }
 
 function releaseExercises(diff: CatalogDiff, base: CatalogSnapshot, next: CatalogSnapshot) {
-  const added = diff.added.map((entry) => releaseExercise("add", next, entry.exercise, 1, true));
+  const added = diff.added.map((entry) => releaseExercise("add", next, entry.exercise, 1, true, false, false));
   const changed = diff.changed.map((entry) => releaseExercise(
     "change",
     next,
     entry.exercise,
     exerciseVersionChanged(entry.before, entry.after) ? entry.before.version + 1 : entry.before.version,
-    true,
+    exerciseVersionChanged(entry.before, entry.after) || entry.unitChanged,
+    exerciseVersionChanged(entry.before, entry.after),
+    entry.unitChanged,
   ));
-  const unpublished = diff.removed.map((entry) => releaseExercise("unpublish", base, entry.exercise, entry.before.version, false));
-  const unchanged = diff.unchanged.map((entry) => releaseExercise("unchanged", next, entry.exercise, entry.exercise.version, false));
+  const unpublished = diff.removed.map((entry) => releaseExercise("unpublish", base, entry.exercise, entry.before.version, false, false, false));
+  const unchanged = diff.unchanged.map((entry) => releaseExercise("unchanged", next, entry.exercise, entry.exercise.version, false, false, false));
   return { added, changed, unpublished, unchanged };
 }
 

@@ -18,9 +18,19 @@ begin
 end $$;
 
 -- Historical attempts retain their exercise ID; only publication visibility changes.
-update public.exercises
-set is_published = false, updated_at = now()
-where slug = 'line-find-and-jump-1';
+do $$
+declare affected_rows integer;
+begin
+  update public.exercises
+  set is_published = false, updated_at = now()
+  where slug = 'line-find-and-jump-01';
+  get diagnostics affected_rows = row_count;
+  -- The fixture is intentionally fail-fast: a typo or stale slug must never
+  -- silently publish a release that changed zero catalog rows.
+  if affected_rows <> 1 then
+    raise exception 'catalog release fixture expected one line-find-and-jump-01 row, found %', affected_rows;
+  end if;
+end $$;
 
 update private.catalog_release_state
 set revision = 2,

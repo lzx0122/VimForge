@@ -52,6 +52,32 @@ function renderExercise(exercise: CatalogReleaseExercise): string {
   return lines.join("\n");
 }
 
+function renderPublicationUpdate(exercise: CatalogReleaseExercise): string {
+  return `update public.exercises set is_published = ${sqlBoolean(exercise.isPublished)}, updated_at = now() where slug = ${escapeSqlString(exercise.slug)};`;
+}
+
+function renderUnitSkillReconciliation(plan: CatalogReleasePlan): string {
+  if (plan.unitSkills.length === 0) {
+    return "delete from public.unit_skills;";
+  }
+  const desiredValues = [...plan.unitSkills]
+    .sort((a, b) => a.unitSlug.localeCompare(b.unitSlug) || a.skillSlug.localeCompare(b.skillSlug))
+    .map((relation) => `(${escapeSqlString(relation.unitSlug)}, ${escapeSqlString(relation.skillSlug)})`)
+    .join(", ");
+  return [
+    "with desired(unit_slug, skill_slug) as (",
+    `  values ${desiredValues}`,
+    ")",
+    "delete from public.unit_skills existing",
+    "using public.learning_units unit, public.skills skill",
+    "where existing.unit_id = unit.id",
+    "  and existing.skill_id = skill.id",
+    "  and not exists (",
+    "    select 1 from desired where desired.unit_slug = unit.slug and desired.skill_slug = skill.slug",
+    ");",
+  ].join("\n");
+}
+
 /** Render a reviewed, transactional, non-destructive catalog data migration. */
 export function renderCatalogMigration(plan: CatalogReleasePlan): string {
   const lines: string[] = [
@@ -78,12 +104,17 @@ export function renderCatalogMigration(plan: CatalogReleasePlan): string {
       `insert into public.unit_skills (unit_id, skill_id, is_primary, display_order) select u.id, s.id, ${sqlBoolean(relation.isPrimary)}, ${relation.displayOrder} from public.learning_units u, public.skills s where u.slug = ${escapeSqlString(relation.unitSlug)} and s.slug = ${escapeSqlString(relation.skillSlug)} on conflict (unit_id, skill_id) do update set is_primary = excluded.is_primary, display_order = excluded.display_order;`,
     );
   }
-  for (const exercise of [...plan.added, ...plan.changed]) lines.push(renderExercise(exercise));
+  lines.push(renderUnitSkillReconciliation(plan));
+  for (const exercise of plan.added) lines.push(renderExercise(exercise));
+  for (const exercise of plan.changed) {
+    if (!exercise.versionChanged && !exercise.unitChanged) {
+      lines.push(renderPublicationUpdate(exercise));
+    } else {
+      lines.push(renderExercise(exercise));
+    }
+  }
   for (const exercise of plan.unpublished) {
     lines.push(`update public.exercises set is_published = false, updated_at = now() where slug = ${escapeSqlString(exercise.slug)};`);
-  }
-  for (const exercise of plan.unchanged) {
-    lines.push(`update public.exercises set is_published = ${sqlBoolean(exercise.isPublished)}, updated_at = now() where slug = ${escapeSqlString(exercise.slug)};`);
   }
   lines.push(
     `update private.catalog_release_state set revision = ${plan.targetRevision}, catalog_hash = ${escapeSqlString(plan.targetHash)}, published_at = now() where singleton = true;`,

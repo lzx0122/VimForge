@@ -29,6 +29,10 @@ export interface CatalogChangedExercise {
   fields: readonly CatalogFieldChange[];
   /** Alias retained for callers that refer to field-level changes as changes. */
   changes: readonly CatalogFieldChange[];
+  /** True when the stable exercise slug moved to another catalog unit. */
+  unitChanged: boolean;
+  /** True when only publication visibility changed. */
+  publicationChanged: boolean;
 }
 
 export interface CatalogRemovedExercise {
@@ -80,6 +84,10 @@ function exerciseMap(snapshot: CatalogSnapshot): Map<string, CatalogExercise> {
   return new Map(allExercises(snapshot).map((exercise) => [exercise.slug, exercise]));
 }
 
+function exerciseUnitMap(snapshot: CatalogSnapshot): Map<string, string> {
+  return new Map(snapshot.units.flatMap((unit) => unit.exercises.map((exercise) => [exercise.slug, unit.slug] as const)));
+}
+
 function assertSnapshotMetadata(snapshot: CatalogSnapshot, label: "base" | "next"): void {
   if (hashCatalog(snapshot) !== snapshot.catalogHash) {
     throw new Error(`${label} catalog hash is stale or does not match its content.`);
@@ -127,6 +135,8 @@ export function diffCatalog(base: CatalogSnapshot, next: CatalogSnapshot): Catal
 
   const beforeBySlug = exerciseMap(base);
   const afterBySlug = exerciseMap(next);
+  const beforeUnitBySlug = exerciseUnitMap(base);
+  const afterUnitBySlug = exerciseUnitMap(next);
   const added: CatalogAddedExercise[] = [];
   const changed: CatalogChangedExercise[] = [];
   const removed: CatalogRemovedExercise[] = [];
@@ -147,8 +157,15 @@ export function diffCatalog(base: CatalogSnapshot, next: CatalogSnapshot): Catal
       continue;
     }
     const fields = fieldChanges(before, after);
-    if (fields.length > 0) {
-      changed.push({ action: "change", slug, before, exercise: after, after, fields, changes: fields });
+    const unitChanged = beforeUnitBySlug.get(slug) !== afterUnitBySlug.get(slug);
+    const publicationChanged = before.isPublished !== after.isPublished;
+    if (fields.length > 0 || unitChanged || publicationChanged) {
+      const metadataFields = [
+        ...(unitChanged ? [{ field: "unitSlug", before: beforeUnitBySlug.get(slug), after: afterUnitBySlug.get(slug) }] : []),
+        ...(publicationChanged ? [{ field: "isPublished", before: before.isPublished, after: after.isPublished }] : []),
+      ];
+      const allChanges = [...fields, ...metadataFields];
+      changed.push({ action: "change", slug, before, exercise: after, after, fields: allChanges, changes: allChanges, unitChanged, publicationChanged });
     } else {
       unchanged.push({ action: "unchanged", slug, exercise: after });
     }

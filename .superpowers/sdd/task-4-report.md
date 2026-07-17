@@ -48,3 +48,29 @@ printed migration path or generated file. The two migration files therefore
 use timestamped fallback paths and this limitation must be reviewed before
 publishing. No migration was applied and no local or production database was
 contacted.
+
+## Review fixes
+
+- Corrected the unapplied reconciliation fixture to target the canonical
+  zero-padded `line-find-and-jump-01` slug and made the update fail fast unless
+  exactly one row is affected.
+- Extended catalog diff/release planning to detect unit moves and
+  publication-only changes. Publication-only changes keep the existing
+  version and render a visibility-only update; unchanged exercises are not
+  written. Unit moves update `unit_id`, replace child exercise links, and
+  reconcile stale `unit_skills` links.
+- Strengthened the pgTAP catalog checks to retain and compare the affected
+  historical exercise ID and validate attempt, progress, and review foreign
+  key references after reconciliation.
+
+## Review-fix verification
+
+- `npx vitest run src/content/catalog-release-plan.test.ts src/content/catalog-diff.test.ts` — PASS (9 tests).
+- `npm run type-check` — PASS.
+- `npm run test` — PASS (48 files, 311 tests).
+- `npm run build` — PASS.
+- `npm run lint` — BLOCKED by the pre-existing unused `readInteger` in
+  `scripts/content-export-production.ts:152`; changed Task 4 files have no
+  lint errors.
+- Supabase CLI/database tests remain unavailable: no locally installed pinned
+  Supabase CLI or linked database credentials; migrations were not applied.

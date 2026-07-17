@@ -32,23 +32,42 @@ function exercise(slug: string, expectedContent = "before"): CatalogExercise {
   };
 }
 
-function snapshot(exercises: CatalogExercise[], revision = 1): CatalogSnapshot {
+function snapshot(
+  exercises: CatalogExercise[],
+  revision = 1,
+  unitSlug = "unit",
+  additionalUnits: Array<{ slug: string; exercises: CatalogExercise[]; skillSlug?: string }> = [],
+  unitSkillSlug = "movement",
+): CatalogSnapshot {
   const draft: CatalogSnapshot = {
     schemaVersion: 1,
     catalogRevision: revision,
     catalogHash: "sha256:" + "0".repeat(64),
     exportedAt: "2026-07-17T00:00:00.000Z",
-    units: [{
-      slug: "unit",
-      title: "Unit",
-      description: "A unit",
-      difficulty: "beginner",
-      estimatedMinutes: 5,
-      displayOrder: 1,
-      isPublished: true,
-      skills: [{ slug: "movement", name: "Movement", description: "Move", category: "movement", difficulty: "beginner" }],
-      exercises,
-    }],
+    units: [
+      {
+        slug: unitSlug,
+        title: "Unit",
+        description: "A unit",
+        difficulty: "beginner",
+        estimatedMinutes: 5,
+        displayOrder: 1,
+        isPublished: true,
+        skills: [{ slug: unitSkillSlug, name: "Movement", description: "Move", category: "movement", difficulty: "beginner" }],
+        exercises,
+      },
+      ...additionalUnits.map((unit, index) => ({
+        slug: unit.slug,
+        title: unit.slug,
+        description: "A unit",
+        difficulty: "beginner" as const,
+        estimatedMinutes: 5,
+        displayOrder: index + 2,
+        isPublished: true,
+        skills: [{ slug: unit.skillSlug ?? `${unit.slug}-movement`, name: "Movement", description: "Move", category: "movement" as const, difficulty: "beginner" as const }],
+        exercises: unit.exercises,
+      })),
+    ],
   };
   return { ...draft, catalogHash: hashCatalog(draft) };
 }
@@ -83,6 +102,46 @@ describe("catalog release planning", () => {
     expect(sql).toContain("old");
     expect(sql).toContain("is_published = false");
     expect(sql).toContain("Bob''s target");
+    expect(sql).toContain("delete from public.unit_skills");
+  });
+
+  it("models publication-only changes without advancing the exercise version or rewriting content", () => {
+    const base = snapshot([exercise("visibility")]);
+    const next = snapshot([{ ...exercise("visibility"), isPublished: false }]);
+
+    const plan = buildCatalogReleasePlan(base, next);
+    expect(plan.changed[0]).toMatchObject({
+      slug: "visibility",
+      version: 1,
+      versionChanged: false,
+      replaceChildren: false,
+    });
+    const sql = renderCatalogMigration(plan);
+    expect(sql).toContain("update public.exercises set is_published = false");
+    expect(sql).not.toContain("insert into public.exercises");
+    expect(sql).not.toContain("delete from public.exercise_skills");
+  });
+
+  it("detects a unit move, updates unit_id, and replaces stale child links", () => {
+    const movedBefore = { ...exercise("moved"), skills: [{ skillSlug: "unit-a-movement", weight: 1, primary: true }] };
+    const movedAfter = { ...exercise("moved"), skills: [{ skillSlug: "unit-b-movement", weight: 1, primary: true }] };
+    const anchorA = { ...exercise("anchor-a"), skills: [{ skillSlug: "unit-a-movement", weight: 1, primary: true }] };
+    const anchorB = { ...exercise("anchor-b"), skills: [{ skillSlug: "unit-b-movement", weight: 1, primary: true }] };
+    const base = snapshot([movedBefore, anchorA], 1, "unit-a", [{ slug: "unit-b", exercises: [anchorB], skillSlug: "unit-b-movement" }], "unit-a-movement");
+    const next = snapshot([anchorA], 1, "unit-a", [{ slug: "unit-b", exercises: [movedAfter, anchorB], skillSlug: "unit-b-movement" }], "unit-a-movement");
+
+    const plan = buildCatalogReleasePlan(base, next);
+    expect(plan.changed[0]).toMatchObject({
+      slug: "moved",
+      unitChanged: true,
+      version: 2,
+      versionChanged: true,
+      replaceChildren: true,
+    });
+    const sql = renderCatalogMigration(plan);
+    expect(sql).toContain("unit_id = excluded.unit_id");
+    expect(sql).toContain("delete from public.exercise_skills");
+    expect(sql).toContain("delete from public.unit_skills");
   });
 });
 

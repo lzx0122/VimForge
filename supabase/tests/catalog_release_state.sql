@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(14);
+select plan(20);
 
 select has_schema('private', 'private schema exists');
 select has_table('private', 'catalog_release_state', 'private release state exists');
@@ -51,18 +51,93 @@ select throws_ok(
   'a second singleton release row is rejected'
 );
 
-do $$
-declare historical_id uuid;
-begin
-  select id into historical_id from public.exercises order by slug limit 1;
-  if historical_id is null then
-    raise exception 'catalog fixture requires an exercise';
-  end if;
-  update public.exercises set is_published = false where id = historical_id;
-end $$;
+create temporary table catalog_release_fixture (
+  exercise_id uuid primary key,
+  attempts_count integer not null,
+  progress_count integer not null,
+  review_count integer not null
+) on commit drop;
+insert into catalog_release_fixture (exercise_id, attempts_count, progress_count, review_count)
+select exercises.id,
+  (select count(*)::integer from public.exercise_attempts where exercise_id = exercises.id),
+  (select count(*)::integer from public.user_exercise_progress where exercise_id = exercises.id),
+  (select count(*)::integer from public.user_review_items where exercise_id = exercises.id)
+from public.exercises exercises
+where exercises.slug = 'line-find-and-jump-01';
+
+select is(
+  (select count(*)::integer from catalog_release_fixture),
+  1,
+  'the canonical affected exercise exists exactly once'
+);
+
+update public.exercises
+set is_published = false, updated_at = now()
+where id = (select exercise_id from catalog_release_fixture);
+
+select is(
+  (select count(*)::integer
+   from public.exercises
+   join catalog_release_fixture on catalog_release_fixture.exercise_id = public.exercises.id),
+  1,
+  'the affected historical exercise ID remains present after reconciliation'
+);
+select is(
+  (select public.exercises.id
+   from public.exercises
+   join catalog_release_fixture on catalog_release_fixture.exercise_id = public.exercises.id),
+  (select exercise_id from catalog_release_fixture),
+  'reconciliation preserves the affected exercise identity'
+);
 
 select ok(
-  (select count(*) > 0 from public.exercises where is_published = false),
+  (select count(*)::integer
+   from public.exercise_attempts attempts
+   join catalog_release_fixture fixture on fixture.exercise_id = attempts.exercise_id)
+    = (select attempts_count from catalog_release_fixture)
+    and not exists (
+    select 1
+    from public.exercise_attempts attempts
+    join catalog_release_fixture fixture on fixture.exercise_id = attempts.exercise_id
+    left join public.exercises exercises on exercises.id = attempts.exercise_id
+    where exercises.id is null
+  ),
+  'historical attempt references still resolve to the affected exercise'
+);
+select ok(
+  (select count(*)::integer
+   from public.user_exercise_progress progress
+   join catalog_release_fixture fixture on fixture.exercise_id = progress.exercise_id)
+    = (select progress_count from catalog_release_fixture)
+    and not exists (
+    select 1
+    from public.user_exercise_progress progress
+    join catalog_release_fixture fixture on fixture.exercise_id = progress.exercise_id
+    left join public.exercises exercises on exercises.id = progress.exercise_id
+    where exercises.id is null
+  ),
+  'historical progress references still resolve to the affected exercise'
+);
+select ok(
+  (select count(*)::integer
+   from public.user_review_items review
+   join catalog_release_fixture fixture on fixture.exercise_id = review.exercise_id)
+    = (select review_count from catalog_release_fixture)
+    and not exists (
+    select 1
+    from public.user_review_items review
+    join catalog_release_fixture fixture on fixture.exercise_id = review.exercise_id
+    left join public.exercises exercises on exercises.id = review.exercise_id
+    where exercises.id is null
+  ),
+  'historical review references still resolve to the affected exercise'
+);
+
+select ok(
+  (select count(*) = 1
+   from public.exercises
+   join catalog_release_fixture on catalog_release_fixture.exercise_id = public.exercises.id
+   where public.exercises.is_published = false),
   'unpublished historical exercise remains queryable by owner'
 );
 
