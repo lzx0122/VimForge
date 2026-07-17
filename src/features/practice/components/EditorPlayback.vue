@@ -4,10 +4,11 @@ import { computed, onBeforeUnmount, ref } from "vue";
 const props = withDefaults(
   defineProps<{
     command: string;
+    completedContent: string;
     stepDelayMs?: number;
   }>(),
   {
-    stepDelayMs: 300,
+    stepDelayMs: 600,
   },
 );
 
@@ -21,6 +22,7 @@ const commandTokens = computed(
 const activeIndex = ref(-1);
 const isPlaying = ref(false);
 const hasPlayed = ref(false);
+const playbackRoot = ref<HTMLElement | null>(null);
 let timer: ReturnType<typeof setTimeout> | null = null;
 
 function clearTimer() {
@@ -53,6 +55,12 @@ function startPlayback() {
     return;
   }
 
+  if (typeof playbackRoot.value?.scrollIntoView === "function") {
+    playbackRoot.value.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  }
   clearTimer();
   activeIndex.value = commandTokens.value.length > 0 ? 0 : -1;
   isPlaying.value = true;
@@ -69,7 +77,10 @@ onBeforeUnmount(clearTimer);
 </script>
 
 <template>
-  <div class="editor-playback">
+  <div
+    ref="playbackRoot"
+    class="editor-playback"
+  >
     <p class="editor-playback-label">
       完整操作
     </p>
@@ -84,6 +95,12 @@ onBeforeUnmount(clearTimer);
         :class="{ 'is-active': isPlaying && index === activeIndex }"
         :aria-current="isPlaying && index === activeIndex ? 'step' : undefined"
       >{{ token }}</kbd>
+    </div>
+    <div class="editor-playback-result">
+      <p class="editor-playback-result-label">
+        完成後內容
+      </p>
+      <pre data-testid="playback-completed-content"><code>{{ completedContent }}</code></pre>
     </div>
     <button
       type="button"
@@ -119,6 +136,30 @@ onBeforeUnmount(clearTimer);
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
+}
+
+.editor-playback-result {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.editor-playback-result-label {
+  margin: 0;
+  color: #d1d5db;
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+pre {
+  overflow-x: auto;
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid #374151;
+  border-radius: 0.45rem;
+  color: #d1fae5;
+  background: #0b1220;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  line-height: 1.5;
 }
 
 kbd {

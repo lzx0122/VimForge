@@ -10,7 +10,6 @@ export interface ProgressiveHint {
 import { computed, ref } from "vue";
 
 import type { HintLevel } from "../../../types";
-import EditorPlayback from "./EditorPlayback.vue";
 
 const props = defineProps<{
   hints: readonly ProgressiveHint[];
@@ -18,7 +17,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   highestLevelChanged: [level: HintLevel];
-  requestReset: [];
 }>();
 
 const highestLevel = ref<HintLevel>(0);
@@ -44,9 +42,6 @@ function revealNextHint() {
   emit("highestLevelChanged", highestLevel.value);
 }
 
-function handlePlaybackComplete() {
-  emit("requestReset");
-}
 </script>
 
 <template>
@@ -101,11 +96,6 @@ function handlePlaybackComplete() {
           v-if="hint.commandPreview && hint.level === 3"
           class="progressive-hint-preview"
         >{{ hint.commandPreview }}</code>
-        <EditorPlayback
-          v-if="hint.level === 4"
-          :command="hint.commandPreview ?? ''"
-          @playback-complete="handlePlaybackComplete"
-        />
       </li>
     </ol>
   </section>

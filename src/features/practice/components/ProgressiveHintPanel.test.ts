@@ -1,7 +1,6 @@
 import { mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import EditorPlayback from "./EditorPlayback.vue";
 import ProgressiveHintPanel, {
   type ProgressiveHint,
 } from "./ProgressiveHintPanel.vue";
@@ -71,26 +70,14 @@ describe("ProgressiveHintPanel", () => {
     expect(wrapper.find('[data-testid="reveal-hint"]').exists()).toBe(false);
   });
 
-  it("requests a reset only after Level 4 playback completes", async () => {
-    vi.useFakeTimers();
+  it("leaves Level 4 playback rendering to the practice page", async () => {
     const wrapper = mount(ProgressiveHintPanel, { props: { hints } });
 
     for (let level = 1; level <= 4; level += 1) {
       await wrapper.get('[data-testid="reveal-hint"]').trigger("click");
     }
 
-    const playback = wrapper.getComponent(EditorPlayback);
-    expect(playback.text()).toContain('di"');
-
-    await playback.get('[data-testid="start-playback"]').trigger("click");
-
-    expect(wrapper.emitted("requestReset")).toBeUndefined();
-    expect(playback.get('kbd[aria-current="step"]').text()).toBe("d");
-    await vi.runAllTimersAsync();
-
-    expect(wrapper.emitted("requestReset")).toHaveLength(1);
-    expect(wrapper.emitted("complete")).toBeUndefined();
-    expect(playback.emitted("playbackComplete")).toHaveLength(1);
-    expect(playback.emitted("complete")).toBeUndefined();
+    expect(wrapper.text()).toContain("提示 4");
+    expect(wrapper.find('[data-testid="start-playback"]').exists()).toBe(false);
   });
 });

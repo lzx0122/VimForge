@@ -251,6 +251,15 @@ test("automatically completes after every target condition matches", async ({ pa
       { exact: true },
     ),
   ).toBeVisible();
+  await expect(page.locator(".practice-workspace")).toBeVisible();
+  await expect(page.locator(".cm-content")).toContainText("const xname = true;");
+  const keyGuide = page.locator('[data-testid="vim-key-guide"]');
+  await expect(keyGuide).toBeVisible();
+  await expect(keyGuide).not.toHaveAttribute("open", "");
+  await keyGuide.locator("summary").click();
+  await expect(keyGuide).toContainText("i");
+  await expect(keyGuide).toContainText("Esc");
+  await expect(keyGuide).not.toContainText("u：復原上一個變更");
   await page.getByText("查看計算方式", { exact: true }).click();
   await expect(page.locator("details.metric-explanation")).toContainText(
     "按鍵精簡度 60% + 時間效率 40%",
@@ -327,11 +336,18 @@ test("reveals four hints in order and resets after playback without an attempt",
   }
   await expect(page.getByText("已解鎖 4 / 4")).toBeVisible();
   await expect(page.getByRole("button", { name: "顯示提示 4" })).toHaveCount(0);
+  await expect(
+    page.locator(".practice-editor-frame [data-testid=\"playback-completed-content\"]"),
+  ).toContainText("const xname = true;");
 
   await page.getByRole("button", { name: "播放操作" }).click();
+  await expect(
+    page.locator('.practice-editor-frame kbd[aria-current="step"]'),
+  ).toBeVisible();
   await expect(
     page.getByText("示範已結束，題目已重設，請親自完成。"),
   ).toBeVisible();
   await expect.poll(() => readAttemptCount(page)).toBe(0);
   await expect(page.getByRole("article", { name: "完成！" })).toHaveCount(0);
+  await expect(page.locator(".practice-workspace")).toBeVisible();
 });
