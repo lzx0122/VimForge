@@ -98,13 +98,12 @@ And 使用者必須親自完成題目
 
 ## AC-014：推薦按鍵解說
 
-Given 題目有作者定義的推薦解法
+Given 題目有作者定義的推薦解法 explanation
 And 使用者以不同但有效的按鍵完成題目
 When 顯示完成回饋
-Then 按鍵解說預設收合
-And 只顯示推薦解法中的 Vim 按鍵
-And 不分析使用者輸入的單字或程式碼文字
-And 使用者額外按鍵不會出現在按鍵解說
+Then「本題按鍵解說」逐字顯示該 explanation
+And 不由前端固定按鍵字典或使用者實際輸入的操作序列產生描述
+And explanation 為空白時不顯示此區塊
 
 ## AC-015：速度
 
@@ -246,13 +245,14 @@ And 背景分頁造成 interval 延遲時，時間仍以壁鐘差值為準
 
 ## AC-034：重新開始本題
 
-Given 使用者已修改題目內容並經過部分練習時間\
+Given 使用者已修改題目內容、揭露提示並經過部分練習時間\
 When 點擊「重新開始本題」\
 Then 內容與游標還原為題目初始值\
 And Vim Mode 回到 Normal\
-And resetCount 增加一次\
-And 已練習時間不得倒退或歸零\
-And 不建立成功或失敗 Attempt\
+And 建立新的 clientAttemptId 與 startedAt\
+And 已練習時間在一秒容差內回到 00:00\
+And 按鍵數、操作、提示與 resetCount 歸零\
+And 不建立成功、失敗或中止 Attempt\
 And outcome 保存中控制項不可操作
 
 ## AC-035：操作後自動完成
@@ -288,3 +288,52 @@ Then 看得到準確、速度、熟練的簡短定義
 When 使用者展開「查看計算方式」
 Then 看得到準確扣分、速度 60%／40% 權重與模式寬限
 And 看得到熟練 0–5 等級及其長期指標定義
+And 不得顯示「重新開始」相關的扣分說明
+
+## AC-039：匯入式解題說明
+
+Given 題目的推薦 solution 有 explanation\
+When 使用者查看單題回饋\
+Then「本題按鍵解說」逐字顯示該 explanation\
+And 不顯示由固定按鍵字典推測的描述\
+Given explanation 在執行期為空白\
+Then 不顯示「本題按鍵解說」區塊
+
+## AC-040：單題再試一次與前進
+
+Given 使用者完成或跳過目前題目並看見單題回饋\
+Then session 仍指向目前題目\
+When 點擊「再試一次」\
+Then 保留已保存的 Attempt\
+And 以新的 attempt ID 與 startedAt 重做同一題\
+When 再次完成後點擊「下一題」\
+Then session 只前進一次\
+And 最後一題在此時才完成 session 並導向結果頁
+
+## AC-041：完成與保存期間鎖定編輯器
+
+Given 使用者已完成題目並看見單題回饋，或 outcome 正在保存、或下一題正在載入\
+When 使用者嘗試在編輯器輸入\
+Then 編輯器維持唯讀且內容不變\
+And 不建立或更新 attemptDraft\
+And 不新增 Attempt 紀錄\
+And 重新整理後不得恢復已完成 Attempt 的未完成 draft
+
+## AC-042：下一題載入失敗時的復原
+
+Given 使用者已看見單題回饋且點擊「下一題」\
+When 下一題的題目資料載入失敗\
+Then 單題回饋與 pendingOutcome 維持顯示\
+And session 不得前進或持久化前進狀態\
+And 舊題編輯器維持唯讀，不重新顯示「跳過這題」或啟用重新開始\
+And 顯示可重試「下一題」的錯誤訊息\
+When 之後再次點擊「下一題」且載入成功\
+Then 正確進入下一題且不建立錯誤 exerciseId 的 Attempt
+
+## AC-043：Attempt 與 session／draft 原子提交
+
+Given 使用者完成或跳過題目\
+When 系統保存 Attempt 並清空 attemptDraft\
+Then 兩者在同一個 IndexedDB transaction 中提交\
+And 任一步失敗時兩者皆不生效，不留下 Attempt 已存在但 draft 仍可恢復的中間狀態\
+And 本機 transaction 成功後才觸發背景／遠端同步

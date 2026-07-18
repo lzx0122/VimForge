@@ -99,6 +99,10 @@ npx --no-install vite-node --script scripts/validate-seed.ts
 
 `skills` 關係的 weights 必須總和為 `1` 且恰有一個 `primary: true`。`solutions` 至少一筆且恰有一筆 `recommended: true`；每筆都要有正整數 `keystrokeCount` 與合法的 `normalizedActions`。`hints` 可為空或提供 level 1–4 的任意子集合，但不能重複；stable slug 只能使用小寫字母、數字與連字號；既有 slug 不可改名。
 
+### Solution explanation 是使用者可見內容
+
+推薦 solution 的 `explanation` 會在單題完成回饋的「本題按鍵解說」中直接顯示。內容必須以學習者可理解的方式說明整套推薦操作與選擇原因，不得填入內部備註、系統判斷文字或只重複按鍵序列。每題恰有一筆 `recommended: true` solution，因此該筆 `explanation` 是回饋頁唯一的解題說明來源。
+
 ## 給 ChatGPT 的編輯提示
 
 每次請附上完整的 `content/catalog.json`（或由 production export 取得的完整 snapshot）與以下要求：

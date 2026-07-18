@@ -247,9 +247,12 @@ Vim Extension 必須排在其他 Insert Mode keymap 之前。
 練習功能負責編輯器外的 orchestration：
 
 - `PracticeEditorStatusBar.vue` 只呈現 Mode、elapsed time 與 restart event，不持有 timer 或 attempt state。
-- elapsed-time composable 從 `AttemptDraft.startedAt` 與壁鐘時間計算秒數，並在 feedback 或頁面卸載時停止 interval。
-- `PracticePage.vue` 將 restart event 接到既有 reset flow，還原內容、游標與 Mode，保存更新後 draft，但保留 `clientAttemptId` 與 `startedAt`。
-- restart 不直接產生 Attempt，也不改動 scoring、mastery、exercise evaluation 或同步合約。
+- elapsed-time composable 從目前 attempt 的 `startedAt` 與壁鐘時間計算秒數，並在 feedback 或頁面卸載時停止 interval。
+- `PracticePage.vue` 將 restart 與完成回饋的「再試一次」接到同一個 fresh-attempt flow（`fresh-attempt-service.ts`）；該 flow 產生新的 `clientAttemptId` 與 `startedAt`，並重設內容、游標、Mode、按鍵、操作、提示與 resetCount。
+- restart 不保存未完成 Attempt；已完成後的 retry 保留既有 Attempt，再為同一題建立新 attempt。
+- `PracticePage.vue` 以 `isEditorLocked`（`feedback !== null || isSavingOutcome || isExerciseLoading`）同時鎖定 `VimEditor` 的 `readOnly` 與 `updateContent`／`updateCursor`／`updateMode`／`recordAction`／`recordKeydown` 等 handler；`VimEditor.vue` 透過 CodeMirror `Compartment` 讓 `readOnly` 在掛載後仍可反應式切換，避免完成、保存或載入下一題時仍可編輯或產生 draft 寫入。
+- 完成 outcome 由 `attempt-outcome-commit.ts` 的 `commitAttemptOutcome` 在單一 IndexedDB transaction 中同時寫入 Attempt 與更新 session（含清空 attemptDraft），任一步失敗即整體 rollback，不會留下「Attempt 已存在但 draft 仍可恢復」的中間狀態；本機 transaction 成功後才呼叫 `syncStore.notifyAttemptCommitted()` 觸發背景／遠端同步。session 只有在使用者點擊「下一題」後才前進一次。
+- `goToNext` 在推進 session 前，若還有下一題，會先以純函式 `advancePracticeSession` 預覽下一個 exerciseId 並成功取得該題目後，才實際呼叫 `completeCurrentExercise`／`skipCurrentExercise` 並保存 session；下一題載入失敗時，不會清除 feedback／pendingOutcome，也不會提交尚未確認的 session 前進狀態，並顯示可重試的錯誤訊息。
 
 ## 8. Attempt Draft
 
