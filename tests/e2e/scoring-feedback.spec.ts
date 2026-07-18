@@ -190,6 +190,59 @@ function elapsedSeconds(value: string | null): number {
   return minutes * 60 + seconds;
 }
 
+async function completeInsertExercise(page: Page): Promise<void> {
+  const editor = page.locator(".cm-content");
+  await expect(editor).toBeFocused();
+  await page.keyboard.press("i");
+  await page.keyboard.type("x");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("article", { name: "完成！" })).toBeVisible();
+}
+
+async function readLatestAttemptTiming(
+  page: Page,
+): Promise<{ startedAt: string; durationMs: number }> {
+  return page.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("vim-forge", 1);
+      request.addEventListener("success", () => resolve(request.result), { once: true });
+      request.addEventListener(
+        "error",
+        () => reject(request.error ?? new Error("Unable to open IndexedDB")),
+        { once: true },
+      );
+    });
+    const request = database
+      .transaction("attempts", "readonly")
+      .objectStore("attempts")
+      .getAll();
+    const attempts = await new Promise<Array<{
+      startedAt: string;
+      durationMs: number;
+    }>>((resolve, reject) => {
+      request.addEventListener(
+        "success",
+        () => resolve(request.result as Array<{
+          startedAt: string;
+          durationMs: number;
+        }>),
+        { once: true },
+      );
+      request.addEventListener(
+        "error",
+        () => reject(request.error ?? new Error("Unable to read attempts")),
+        { once: true },
+      );
+    });
+    database.close();
+    const attempt = attempts.at(-1);
+    if (!attempt) {
+      throw new Error("Expected a stored attempt");
+    }
+    return attempt;
+  });
+}
+
 async function domCursorOffset(page: Page): Promise<number | null> {
   return page.locator(".cm-content").evaluate((content) => {
     const selection = window.getSelection();
@@ -261,16 +314,12 @@ test("automatically completes after every target condition matches", async ({ pa
   ).toBeVisible();
   await expect(page.locator(".practice-workspace")).toBeVisible();
   await expect(page.locator(".cm-content")).toContainText("const xname = true;");
-  const keyGuide = page.locator('[data-testid="vim-key-guide"]');
-  await expect(keyGuide).toBeVisible();
-  await expect(keyGuide).not.toHaveAttribute("open", "");
-  await keyGuide.locator("summary").click();
-  await expect(keyGuide.locator("kbd")).toHaveText(["i", "Esc"]);
-  await expect(keyGuide).toContainText("i");
-  await expect(keyGuide).toContainText("Esc");
-  await expect(keyGuide).not.toContainText("h：向左移動");
-  await expect(keyGuide).not.toContainText("l：向右移動");
-  await expect(keyGuide).not.toContainText("u：復原上一個變更");
+  const recommendation = page.locator('[data-testid="recommended-explanation"]');
+  await expect(recommendation).toBeVisible();
+  await expect(recommendation).toContainText("使用 i 插入字元，完成後按 Esc。");
+  await expect(recommendation).not.toContainText("本題使用的 Vim 按鍵");
+  await expect(page.locator('[data-testid="vim-key-guide"]')).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "再試一次" })).toBeVisible();
   await page.getByText("查看計算方式", { exact: true }).click();
   await expect(page.locator("details.metric-explanation")).toContainText(
     "按鍵精簡度 60% + 時間效率 40%",
@@ -288,6 +337,31 @@ test("automatically completes after every target condition matches", async ({ pa
   await expect(page).toHaveURL(`/practice/${sessionId}/result`);
   await page.reload();
   await expect(page.getByRole("heading", { name: "練習結果" })).toBeVisible();
+});
+
+test("retries the completed exercise before advancing the session", async ({ page }) => {
+  const sessionId = await startPracticeSession(page);
+  const timer = page.getByLabel("已練習時間");
+
+  await completeInsertExercise(page);
+  await expect(page.getByText("第 1 / 1 題", { exact: true })).toBeVisible();
+  await expect.poll(() => readAttemptCount(page)).toBe(1);
+
+  await page.getByRole("button", { name: "再試一次" }).click();
+
+  await expect(page.getByRole("article", { name: "完成！" })).toHaveCount(0);
+  await expect(page.getByText("第 1 / 1 題", { exact: true })).toBeVisible();
+  await expect
+    .poll(async () => elapsedSeconds(await timer.textContent()))
+    .toBeLessThanOrEqual(1);
+  await expect(page.getByText("已解鎖 0 / 3", { exact: true })).toBeVisible();
+  await expect.poll(() => readAttemptCount(page)).toBe(1);
+
+  await completeInsertExercise(page);
+  await expect.poll(() => readAttemptCount(page)).toBe(2);
+
+  await page.getByRole("button", { name: "下一題" }).click();
+  await expect(page).toHaveURL(`/practice/${sessionId}/result`);
 });
 
 test("shows a cursor target and auto-completes a movement exercise", async ({ page }) => {
@@ -309,7 +383,7 @@ test("shows a cursor target and auto-completes a movement exercise", async ({ pa
   await expect.poll(() => readAttemptCount(page)).toBe(1);
 });
 
-test("autofocuses the target and restarts without creating an attempt", async ({ page }) => {
+test("autofocuses the target and restarts with a fresh timed attempt", async ({ page }) => {
   await startPracticeSession(page);
 
   const editor = page.locator(".cm-content");
@@ -324,21 +398,34 @@ test("autofocuses the target and restarts without creating an attempt", async ({
     .poll(async () => elapsedSeconds(await timer.textContent()))
     .toBeGreaterThanOrEqual(1);
 
+  await page.getByRole("button", { name: "顯示提示 1" }).click();
+  await expect(page.getByText("已解鎖 1 / 3", { exact: true })).toBeVisible();
+  await editor.click();
+
   await page.keyboard.press("i");
   await expect(mode).toHaveText("Insert");
   await page.keyboard.type("x");
-  const beforeRestart = elapsedSeconds(await timer.textContent());
 
   const restartButton = page.getByRole("button", { name: "重新開始本題" });
+  const restartRequestedAt = Date.now();
   await restartButton.click();
+
   await expect(editor).toHaveText("const name = true;");
   await expect(editor).toBeFocused();
   await expect.poll(() => domCursorOffset(page)).toBe(6);
   await expect(mode).toHaveText("Normal");
-  expect(elapsedSeconds(await timer.textContent())).toBeGreaterThanOrEqual(
-    beforeRestart,
-  );
+  await expect
+    .poll(async () => elapsedSeconds(await timer.textContent()))
+    .toBeLessThanOrEqual(1);
+  await expect(page.getByText("已解鎖 0 / 3", { exact: true })).toBeVisible();
   expect(await readAttemptCount(page)).toBe(0);
+
+  await completeInsertExercise(page);
+  const timing = await readLatestAttemptTiming(page);
+  expect(Date.parse(timing.startedAt)).toBeGreaterThanOrEqual(
+    restartRequestedAt - 1_000,
+  );
+  expect(timing.durationMs).toBeLessThan(10_000);
 });
 
 test("reveals available hints in order without playback or an attempt", async ({ page }) => {

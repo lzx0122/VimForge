@@ -33,6 +33,7 @@ import {
   type AttemptFeedback,
 } from "../services/attempt-outcome-service";
 import { evaluateAutoCompletion } from "../services/auto-completion-service";
+import { createFreshAttemptState } from "../services/fresh-attempt-service";
 import { scrollFeedbackIntoView } from "../services/feedback-scroll-service";
 
 const route = useRoute();
@@ -60,6 +61,13 @@ const attemptClientId = ref("");
 const attemptStartedAt = ref("");
 const feedback = ref<AttemptFeedback | null>(null);
 const feedbackAnchor = ref<HTMLElement | null>(null);
+
+interface PendingExerciseOutcome {
+  completed: boolean;
+  completedAt: string;
+}
+
+const pendingOutcome = ref<PendingExerciseOutcome | null>(null);
 const isAttemptActive = computed(
   () =>
     exercise.value !== null &&
@@ -177,32 +185,56 @@ function queueDraftSave(): void {
     });
 }
 
+function applyFreshAttempt(activeExercise: PracticeExercise): void {
+  const fresh = createFreshAttemptState({
+    exercise: activeExercise,
+    clientAttemptId: crypto.randomUUID(),
+    startedAt: new Date().toISOString(),
+  });
+
+  exercise.value = activeExercise;
+  snapshot.value = fresh.snapshot;
+  highestHintLevel.value = fresh.highestHintLevel;
+  resetCount.value = fresh.resetCount;
+  keystrokeCount.value = fresh.keystrokeCount;
+  recordedActions.value = fresh.recordedActions;
+  hasUserInteraction.value = fresh.hasUserInteraction;
+  unmetMessages.value = fresh.unmetMessages;
+  attemptClientId.value = fresh.clientAttemptId;
+  attemptStartedAt.value = fresh.startedAt;
+  feedback.value = null;
+  pendingOutcome.value = null;
+  editorInstance.value += 1;
+}
+
 function prepareExercise(activeExercise: PracticeExercise): void {
   const restoredDraft =
     practiceStore.attemptDraft?.exerciseId === activeExercise.id &&
     !practiceStore.attemptDraft.completed
       ? practiceStore.attemptDraft
       : null;
-  const content = restoredDraft?.currentContent ?? activeExercise.initialContent;
-  const cursor = restoredDraft?.currentCursor ?? activeExercise.initialCursor;
-  const mode = restoredDraft?.currentMode ?? "normal";
+
+  if (restoredDraft === null) {
+    applyFreshAttempt(activeExercise);
+    return;
+  }
 
   exercise.value = activeExercise;
   snapshot.value = {
-    content,
-    cursor: { ...cursor },
-    mode,
+    content: restoredDraft.currentContent,
+    cursor: { ...restoredDraft.currentCursor },
+    mode: restoredDraft.currentMode,
   };
-  highestHintLevel.value = restoredDraft?.highestHintLevel ?? 0;
-  resetCount.value = restoredDraft?.resetCount ?? 0;
-  recordedActions.value =
-    restoredDraft?.actions.map((action) => ({ ...action })) ?? [];
+  highestHintLevel.value = restoredDraft.highestHintLevel;
+  resetCount.value = restoredDraft.resetCount;
+  recordedActions.value = restoredDraft.actions.map((action) => ({ ...action }));
   hasUserInteraction.value = recordedActions.value.length > 0;
-  attemptClientId.value = restoredDraft?.clientAttemptId ?? crypto.randomUUID();
-  attemptStartedAt.value = restoredDraft?.startedAt ?? new Date().toISOString();
+  attemptClientId.value = restoredDraft.clientAttemptId;
+  attemptStartedAt.value = restoredDraft.startedAt;
   keystrokeCount.value = 0;
   unmetMessages.value = [];
   feedback.value = null;
+  pendingOutcome.value = null;
   editorInstance.value += 1;
 }
 
@@ -305,24 +337,23 @@ function recordKeydown(event: KeyboardEvent): void {
   }
 }
 
-function resetExercise(): void {
+function startFreshAttempt(message: string): void {
   if (isSavingOutcome.value) {
     return;
   }
 
-  const activeExercise = currentExercise();
-  resetCount.value += 1;
-  snapshot.value = {
-    content: activeExercise.initialContent,
-    cursor: { ...activeExercise.initialCursor },
-    mode: "normal",
-  };
-  recordedActions.value = [];
-  hasUserInteraction.value = false;
-  unmetMessages.value = [];
-  editorInstance.value += 1;
-  statusMessage.value = "示範已結束，題目已重設，請親自完成。";
+  applyFreshAttempt(currentExercise());
+  practiceStore.discardAttemptDraft();
+  statusMessage.value = message;
   queueDraftSave();
+}
+
+function resetExercise(): void {
+  startFreshAttempt("已重新開始本題。");
+}
+
+function retryExercise(): void {
+  startFreshAttempt("已開始新的作答。");
 }
 
 function scheduleAutoEvaluation(): void {
@@ -394,22 +425,16 @@ async function recordOutcome(completed: boolean): Promise<void> {
     });
 
     await syncStore.recordCompletedAttempt(outcome.attempt);
-    practiceStore.saveAttemptDraft(draft);
-    if (completed) {
-      practiceStore.completeCurrentExercise(completedAt);
-    } else {
-      practiceStore.skipCurrentExercise(completedAt);
-    }
-    if (practiceStore.session !== null) {
-      const sessionSnapshot = {
-        ...practiceStore.session,
-        exerciseIds: [...practiceStore.session.exerciseIds],
-        selectedSkillIds: [...practiceStore.session.selectedSkillIds],
-      } satisfies PracticeSession;
-      await repository.save(sessionSnapshot, null);
-    }
+    const sessionSnapshot = {
+      ...activeSession,
+      exerciseIds: [...activeSession.exerciseIds],
+      selectedSkillIds: [...activeSession.selectedSkillIds],
+    } satisfies PracticeSession;
+    await repository.save(sessionSnapshot, null);
+    practiceStore.discardAttemptDraft();
 
     feedback.value = outcome.feedback;
+    pendingOutcome.value = { completed, completedAt };
     unmetMessages.value = [];
     await nextTick();
     await waitForNextAnimationFrame();
@@ -426,14 +451,59 @@ async function skipExercise(): Promise<void> {
 }
 
 async function goToNext(): Promise<void> {
-  if (practiceStore.session?.status === "completed") {
-    await router.push({
-      name: "practice-result",
-      params: { sessionId: sessionId.value },
-    });
+  const outcome = pendingOutcome.value;
+  const currentSession = practiceStore.session;
+  if (outcome === null || currentSession === null || isSavingOutcome.value) {
     return;
   }
-  await loadCurrentExercise();
+
+  const previousSession = {
+    ...currentSession,
+    exerciseIds: [...currentSession.exerciseIds],
+    selectedSkillIds: [...currentSession.selectedSkillIds],
+  } satisfies PracticeSession;
+  let sessionPersisted = false;
+
+  isSavingOutcome.value = true;
+  try {
+    if (outcome.completed) {
+      practiceStore.completeCurrentExercise(outcome.completedAt);
+    } else {
+      practiceStore.skipCurrentExercise(outcome.completedAt);
+    }
+
+    const advancedSession = practiceStore.session;
+    if (advancedSession === null) {
+      throw new Error("Practice session disappeared before advancing.");
+    }
+
+    const sessionSnapshot = {
+      ...advancedSession,
+      exerciseIds: [...advancedSession.exerciseIds],
+      selectedSkillIds: [...advancedSession.selectedSkillIds],
+    } satisfies PracticeSession;
+    await requireRepository().save(sessionSnapshot, null);
+    sessionPersisted = true;
+
+    pendingOutcome.value = null;
+    feedback.value = null;
+    if (sessionSnapshot.status === "completed") {
+      await router.push({
+        name: "practice-result",
+        params: { sessionId: sessionId.value },
+      });
+      return;
+    }
+
+    await loadCurrentExercise();
+  } catch (error: unknown) {
+    if (!sessionPersisted) {
+      practiceStore.restoreSession(previousSession, null);
+    }
+    reportActionError("practice.advance-exercise", error);
+  } finally {
+    isSavingOutcome.value = false;
+  }
 }
 
 async function abandonSession(): Promise<void> {
@@ -612,6 +682,7 @@ onUnmounted(() => {
       </ul>
 
       <ProgressiveHintPanel
+        :key="attemptClientId"
         :hints="exercise.hints.map((hint) => ({
           level: hint.level,
           content: hint.content,
@@ -641,6 +712,8 @@ onUnmounted(() => {
         :actual-keystroke-count="feedback.actualKeystrokeCount"
         :recommended-keystroke-count="feedback.recommendedKeystrokeCount"
         :recommended-explanation="feedback.recommendedExplanation"
+        :actions-disabled="isSavingOutcome"
+        @request-retry="retryExercise"
         @request-next="goToNext"
       />
     </div>
