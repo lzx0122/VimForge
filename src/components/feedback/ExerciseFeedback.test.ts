@@ -85,7 +85,11 @@ describe("ExerciseFeedback", () => {
     expect(wrapper.get("article").attributes("aria-labelledby")).toBe(
       "exercise-feedback-title",
     );
-    expect(wrapper.get("button").attributes("type")).toBe("button");
+    expect(
+      wrapper
+        .findAll("button")
+        .every((button) => button.attributes("type") === "button"),
+    ).toBe(true);
   });
 
   it("explains the meaning and calculation of all three metrics", () => {
@@ -113,12 +117,27 @@ describe("ExerciseFeedback", () => {
     expect(details.text()).toContain("5 已掌握");
   });
 
-  it("emits requestNext from the next exercise button", async () => {
+  it("emits retry and next from separate feedback actions", async () => {
     const wrapper = mount(ExerciseFeedback, { props: defaultProps });
 
-    await wrapper.get("button").trigger("click");
+    await wrapper.get(".retry-exercise-button").trigger("click");
+    await wrapper.get(".next-exercise-button").trigger("click");
 
+    expect(wrapper.emitted("requestRetry")).toHaveLength(1);
     expect(wrapper.emitted("requestNext")).toHaveLength(1);
+  });
+
+  it("disables retry and next while persistence is busy", () => {
+    const wrapper = mount(ExerciseFeedback, {
+      props: { ...defaultProps, actionsDisabled: true },
+    });
+
+    expect(wrapper.get(".retry-exercise-button").attributes()).toHaveProperty(
+      "disabled",
+    );
+    expect(wrapper.get(".next-exercise-button").attributes()).toHaveProperty(
+      "disabled",
+    );
   });
 
   it("renders the imported recommendation explanation without generated key labels", () => {

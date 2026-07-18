@@ -15,6 +15,7 @@ export interface ExerciseFeedbackProps {
   actualKeystrokeCount: number;
   recommendedKeystrokeCount: number;
   recommendedExplanation: string;
+  actionsDisabled?: boolean;
 }
 </script>
 
@@ -26,6 +27,7 @@ import MetricCard from "./MetricCard.vue";
 const props = defineProps<ExerciseFeedbackProps>();
 
 const emit = defineEmits<{
+  requestRetry: [];
   requestNext: [];
 }>();
 
@@ -220,13 +222,24 @@ const trimmedRecommendedExplanation = computed(() =>
       <p>{{ trimmedRecommendedExplanation }}</p>
     </section>
 
-    <button
-      type="button"
-      class="next-exercise-button"
-      @click="emit('requestNext')"
-    >
-      下一題
-    </button>
+    <div class="feedback-actions">
+      <button
+        type="button"
+        class="retry-exercise-button"
+        :disabled="actionsDisabled"
+        @click="emit('requestRetry')"
+      >
+        再試一次
+      </button>
+      <button
+        type="button"
+        class="next-exercise-button"
+        :disabled="actionsDisabled"
+        @click="emit('requestNext')"
+      >
+        下一題
+      </button>
+    </div>
   </article>
 </template>
 
@@ -304,15 +317,17 @@ h2 {
 
 .metric-explanation-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
   gap: 1rem;
   padding: 0 1rem 1rem;
 }
 
 .metric-explanation-grid section {
   display: grid;
+  min-width: 0;
   align-content: start;
   gap: 0.45rem;
+  overflow-wrap: anywhere;
 }
 
 .metric-explanation-grid h3 {
@@ -386,26 +401,51 @@ h2 {
   line-height: 1.65;
 }
 
+.feedback-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.retry-exercise-button,
 .next-exercise-button {
-  justify-self: end;
   padding: 0.75rem 1rem;
-  border: 0;
   border-radius: 0.6rem;
-  color: #052e16;
-  background: #4ade80;
   cursor: pointer;
   font-weight: 800;
 }
 
+.retry-exercise-button {
+  border: 1px solid #4ade80;
+  color: #86efac;
+  background: transparent;
+}
+
+.next-exercise-button {
+  border: 0;
+  color: #052e16;
+  background: #4ade80;
+}
+
+.retry-exercise-button:disabled,
+.next-exercise-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 @media (max-width: 44rem) {
   .exercise-feedback-metrics,
-  .solution-grid,
-  .metric-explanation-grid {
+  .solution-grid {
     grid-template-columns: 1fr;
   }
 
+  .feedback-actions {
+    display: grid;
+  }
+
+  .retry-exercise-button,
   .next-exercise-button {
-    justify-self: stretch;
+    width: 100%;
   }
 }
 </style>
