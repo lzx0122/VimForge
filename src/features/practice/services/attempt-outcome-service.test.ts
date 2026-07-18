@@ -104,4 +104,41 @@ describe("createAttemptOutcome", () => {
       nextMasteryLevel: 0,
     });
   });
+
+  it("falls back to the default improvement text when the recommended explanation is blank", () => {
+    const blankExplanationExercise: PracticeExercise = {
+      ...exercise,
+      solutions: [{ ...exercise.solutions[0]!, explanation: "   " }],
+    };
+
+    const outcome = createAttemptOutcome({
+      ...baseInput,
+      exercise: blankExplanationExercise,
+      completed: true,
+    });
+
+    expect(outcome.feedback.recommendedExplanation).toBe("");
+    expect(outcome.feedback.improvementReason).toContain(
+      "題庫目前沒有推薦解法。",
+    );
+  });
+
+  it("falls back to the default improvement text when there is no recommended solution", () => {
+    const noRecommendedExercise: PracticeExercise = {
+      ...exercise,
+      solutions: [{ ...exercise.solutions[0]!, recommended: false }],
+    };
+
+    const outcome = createAttemptOutcome({
+      ...baseInput,
+      exercise: noRecommendedExercise,
+      completed: true,
+    });
+
+    expect(outcome.feedback.recommendedSequence).toBe("—");
+    expect(outcome.feedback.recommendedExplanation).toBe("");
+    expect(outcome.feedback.improvementReason).toContain(
+      "題庫目前沒有推薦解法。",
+    );
+  });
 });

@@ -640,7 +640,7 @@ onUnmounted(() => {
         :improvement-reason="feedback.improvementReason"
         :actual-keystroke-count="feedback.actualKeystrokeCount"
         :recommended-keystroke-count="feedback.recommendedKeystrokeCount"
-        :recommended-actions="feedback.recommendedActions"
+        :recommended-explanation="feedback.recommendedExplanation"
         @request-next="goToNext"
       />
     </div>

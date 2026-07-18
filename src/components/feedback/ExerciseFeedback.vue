@@ -1,6 +1,5 @@
 <script lang="ts">
 import type { LearningMode } from "../../types";
-import type { NormalizedAction } from "../../types/attempt";
 import type { MasteryLevel } from "../../domain/mastery/mastery-config";
 
 export interface ExerciseFeedbackProps {
@@ -15,14 +14,13 @@ export interface ExerciseFeedbackProps {
   improvementReason: string;
   actualKeystrokeCount: number;
   recommendedKeystrokeCount: number;
-  recommendedActions: readonly NormalizedAction[];
+  recommendedExplanation: string;
 }
 </script>
 
 <script setup lang="ts">
 import { computed } from "vue";
 
-import VimKeyGuide from "../../features/practice/components/VimKeyGuide.vue";
 import MetricCard from "./MetricCard.vue";
 
 const props = defineProps<ExerciseFeedbackProps>();
@@ -89,6 +87,9 @@ const keystrokeGap = computed(
 );
 const formattedKeystrokeGap = computed(() =>
   keystrokeGap.value > 0 ? `+${keystrokeGap.value}` : `${keystrokeGap.value}`,
+);
+const trimmedRecommendedExplanation = computed(() =>
+  props.recommendedExplanation.trim(),
 );
 </script>
 
@@ -207,7 +208,17 @@ const formattedKeystrokeGap = computed(() =>
       </p>
     </section>
 
-    <VimKeyGuide :expected-actions="recommendedActions" />
+    <section
+      v-if="trimmedRecommendedExplanation"
+      class="recommended-explanation"
+      data-testid="recommended-explanation"
+      aria-labelledby="recommended-explanation-title"
+    >
+      <h3 id="recommended-explanation-title">
+        本題按鍵解說
+      </h3>
+      <p>{{ trimmedRecommendedExplanation }}</p>
+    </section>
 
     <button
       type="button"
@@ -355,6 +366,21 @@ h2 {
 }
 
 .improvement-reason {
+  margin: 0;
+  color: #d1d5db;
+  line-height: 1.65;
+}
+
+.recommended-explanation {
+  display: grid;
+  gap: 0.65rem;
+  padding: 1rem;
+  border: 1px solid #374151;
+  border-radius: 0.75rem;
+  background: #18202d;
+}
+
+.recommended-explanation p {
   margin: 0;
   color: #d1d5db;
   line-height: 1.65;

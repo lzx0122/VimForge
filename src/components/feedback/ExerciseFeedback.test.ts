@@ -1,7 +1,6 @@
 import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 
-import type { NormalizedAction } from "../../types";
 import ExerciseFeedback, {
   type ExerciseFeedbackProps,
 } from "./ExerciseFeedback.vue";
@@ -18,11 +17,7 @@ const defaultProps: ExerciseFeedbackProps = {
   improvementReason: "起始游標已位於變數名稱內，因此不需要先按 ww。",
   actualKeystrokeCount: 6,
   recommendedKeystrokeCount: 3,
-  recommendedActions: [
-    { type: "vim_command", command: "ciw" },
-    { type: "insert_text", text: "customerName", textLength: 12 },
-    { type: "mode_change", mode: "normal" },
-  ] satisfies NormalizedAction[],
+  recommendedExplanation: "使用 ciw 一次替換游標所在單字，輸入完成後按 Esc。",
 };
 
 describe("ExerciseFeedback", () => {
@@ -126,17 +121,24 @@ describe("ExerciseFeedback", () => {
     expect(wrapper.emitted("requestNext")).toHaveLength(1);
   });
 
-  it("renders a collapsed key guide containing only expected solution keys", () => {
+  it("renders the imported recommendation explanation without generated key labels", () => {
     const wrapper = mount(ExerciseFeedback, { props: defaultProps });
-    const guide = wrapper.get('[data-testid="vim-key-guide"]');
+    const explanation = wrapper.get('[data-testid="recommended-explanation"]');
 
-    expect(guide.attributes("open")).toBeUndefined();
-    expect(guide.text()).toContain("本題按鍵解說");
-    expect(guide.text()).toContain("c");
-    expect(guide.text()).toContain("w");
-    expect(guide.text()).toContain("Esc");
-    expect(guide.text()).not.toContain("h：向左移動");
-    expect(guide.text()).not.toContain("l：向右移動");
-    expect(guide.text()).not.toContain("u：復原上一個變更");
+    expect(explanation.text()).toContain("本題按鍵解說");
+    expect(explanation.text()).toContain(defaultProps.recommendedExplanation);
+    expect(explanation.text()).not.toContain("c：修改操作");
+    expect(explanation.text()).not.toContain("本題使用的 Vim 按鍵");
+    expect(wrapper.find('[data-testid="vim-key-guide"]').exists()).toBe(false);
+  });
+
+  it("hides the recommendation explanation when imported text is blank", () => {
+    const wrapper = mount(ExerciseFeedback, {
+      props: { ...defaultProps, recommendedExplanation: "   " },
+    });
+
+    expect(
+      wrapper.find('[data-testid="recommended-explanation"]').exists(),
+    ).toBe(false);
   });
 });
