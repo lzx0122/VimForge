@@ -371,6 +371,10 @@ function recordAction(action: NormalizedAction): void {
 }
 
 function updateHighestHint(level: HintLevel): void {
+  if (isEditorLocked.value) {
+    return;
+  }
+
   highestHintLevel.value = level;
   queueDraftSave();
 }
@@ -764,6 +768,7 @@ onUnmounted(() => {
             ? {}
             : { commandPreview: hint.commandPreview }),
         }))"
+        :disabled="isEditorLocked"
         @highest-level-changed="updateHighestHint"
       />
     </section>

@@ -13,6 +13,7 @@ import type { HintLevel } from "../../../types";
 
 const props = defineProps<{
   hints: readonly ProgressiveHint[];
+  disabled?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -32,7 +33,7 @@ const nextHint = computed(() =>
 const canRevealNext = computed(() => nextHint.value !== undefined);
 
 function revealNextHint() {
-  if (!nextHint.value) {
+  if (!nextHint.value || props.disabled) {
     return;
   }
 
@@ -66,6 +67,7 @@ function revealNextHint() {
       type="button"
       class="progressive-hint-button"
       data-testid="reveal-hint"
+      :disabled="disabled"
       :aria-expanded="highestLevel > 0"
       aria-controls="progressive-hint-list"
       @click="revealNextHint"
@@ -147,6 +149,11 @@ h2 {
   background: transparent;
   cursor: pointer;
   font-weight: 800;
+}
+
+.progressive-hint-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .progressive-hint-list {

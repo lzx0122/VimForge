@@ -603,6 +603,21 @@ test("locks the editor and rejects further input once feedback is shown", async 
   await expect.poll(() => readAttemptCount(page)).toBe(1);
 });
 
+test("keeps the hint panel locked and avoids recreating a draft after feedback is shown", async ({ page }) => {
+  await startPracticeSession(page);
+
+  await completeInsertExercise(page);
+  await expect.poll(() => readAttemptCount(page)).toBe(1);
+
+  const revealButton = page.getByRole("button", { name: "顯示提示 1" });
+  await expect(revealButton).toBeDisabled();
+  await revealButton.click({ force: true });
+
+  await expect(page.getByText("已解鎖 0 / 3", { exact: true })).toBeVisible();
+  await expect(page.locator('[data-testid="restored-attempt-content"]')).toHaveCount(0);
+  expect(await readAttemptCount(page)).toBe(1);
+});
+
 test("shows a cursor target and auto-completes a movement exercise", async ({ page }) => {
   await startPracticeSession(page, "movement");
 

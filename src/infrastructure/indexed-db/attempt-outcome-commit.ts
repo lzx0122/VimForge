@@ -16,6 +16,34 @@ export interface CommitAttemptOutcomeInput {
   attemptDraft: AttemptDraft | null;
 }
 
+export class AttemptConflictError extends Error {}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(",")}]`;
+  }
+
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const keys = Object.keys(record).sort();
+    return `{${keys
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
+      .join(",")}}`;
+  }
+
+  return JSON.stringify(value);
+}
+
+function attemptPayloadsMatch(
+  existing: StoredAttempt,
+  incoming: AttemptSyncInput,
+): boolean {
+  const existingPayload = Object.fromEntries(
+    Object.entries(existing).filter(([key]) => key !== "syncStatus"),
+  );
+  return stableStringify(existingPayload) === stableStringify(incoming);
+}
+
 export async function commitAttemptOutcome(
   database: IDBDatabase,
   input: CommitAttemptOutcomeInput,
@@ -37,6 +65,10 @@ export async function commitAttemptOutcome(
         ...input.attempt,
         syncStatus: input.syncStatus ?? "pending",
       } satisfies StoredAttempt);
+    } else if (!attemptPayloadsMatch(existingAttempt, input.attempt)) {
+      throw new AttemptConflictError(
+        `Attempt ${input.attempt.clientAttemptId} already exists with a different payload.`,
+      );
     }
 
     transaction

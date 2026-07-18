@@ -81,4 +81,18 @@ describe("ProgressiveHintPanel", () => {
     expect(wrapper.text()).toContain("已解鎖 3 / 3");
     expect(wrapper.find('[data-testid="reveal-hint"]').exists()).toBe(false);
   });
+
+  it("disables the reveal button and blocks revealing further hints when disabled", async () => {
+    const wrapper = mount(ProgressiveHintPanel, {
+      props: { hints, disabled: true },
+    });
+    const revealButton = wrapper.get('[data-testid="reveal-hint"]');
+
+    expect(revealButton.attributes()).toHaveProperty("disabled");
+
+    await revealButton.trigger("click");
+
+    expect(wrapper.text()).not.toContain("先把目標視為一個文字物件");
+    expect(wrapper.emitted("highestLevelChanged")).toBeUndefined();
+  });
 });

@@ -6,7 +6,10 @@ import type { AttemptSyncInput } from "../../features/practice/repositories/atte
 import type { AttemptDraft } from "../../types/attempt";
 import type { PracticeSession } from "../../types/session";
 import { AttemptRepository } from "./attempt-repository";
-import { commitAttemptOutcome } from "./attempt-outcome-commit";
+import {
+  AttemptConflictError,
+  commitAttemptOutcome,
+} from "./attempt-outcome-commit";
 import {
   deleteVimForgeDatabase,
   openVimForgeDatabase,
@@ -114,7 +117,7 @@ describe("commitAttemptOutcome", () => {
     });
   });
 
-  it("does not duplicate an attempt already committed for the same clientAttemptId", async () => {
+  it("re-commits an identical duplicate payload for the same clientAttemptId as a no-op", async () => {
     const attemptRepository = new AttemptRepository(database);
 
     await commitAttemptOutcome(database, {
@@ -123,7 +126,7 @@ describe("commitAttemptOutcome", () => {
       attemptDraft: null,
     });
     await commitAttemptOutcome(database, {
-      attempt: { ...createSyncAttempt(), accuracyScore: 1 },
+      attempt: createSyncAttempt(),
       session: createSession(),
       attemptDraft: null,
     });
@@ -131,6 +134,37 @@ describe("commitAttemptOutcome", () => {
     expect(await attemptRepository.get("attempt-1")).toMatchObject({
       accuracyScore: 100,
     });
+  });
+
+  it("rejects a conflicting duplicate clientAttemptId and leaves the stored attempt and session untouched", async () => {
+    const attemptRepository = new AttemptRepository(database);
+    const sessionRepository = new SessionRepository(database);
+    const originalSession = createSession();
+    await commitAttemptOutcome(database, {
+      attempt: createSyncAttempt(),
+      session: originalSession,
+      attemptDraft: null,
+    });
+
+    const conflictingSession = {
+      ...createSession(),
+      currentIndex: 1,
+    } satisfies PracticeSession;
+
+    await expect(
+      commitAttemptOutcome(database, {
+        attempt: { ...createSyncAttempt(), accuracyScore: 1 },
+        session: conflictingSession,
+        attemptDraft: null,
+      }),
+    ).rejects.toThrow(AttemptConflictError);
+
+    expect(await attemptRepository.get("attempt-1")).toMatchObject({
+      accuracyScore: 100,
+    });
+    expect(await sessionRepository.getResumeState("session-1")).toMatchObject(
+      { session: originalSession },
+    );
   });
 
   it("rolls back the attempt when the session write fails, leaving no partial state", async () => {

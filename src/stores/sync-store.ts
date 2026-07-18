@@ -5,7 +5,6 @@ import {
   GuestSyncService,
   type GuestSyncResult,
 } from "../features/guest-sync/services/guest-sync-service";
-import type { AttemptSyncInput } from "../features/practice/repositories/attempt-sync-repository";
 import { AttemptRepository } from "../infrastructure/indexed-db/attempt-repository";
 import { openVimForgeDatabase } from "../infrastructure/indexed-db/database";
 import { reportError } from "../infrastructure/monitoring/error-reporter";
@@ -81,15 +80,7 @@ export const useSyncStore = defineStore("sync", {
       }
     },
 
-    async recordCompletedAttempt(
-      attempt: AttemptSyncInput,
-      service?: GuestSyncService,
-    ): Promise<void> {
-      const activeService = service ?? (await getDefaultService());
-      await activeService.saveCompletedAttempt(attempt);
-      await this.notifyAttemptCommitted(activeService);
-    },
-
+    // Call only after commitAttemptOutcome's atomic local transaction succeeds.
     async notifyAttemptCommitted(service?: GuestSyncService): Promise<void> {
       const activeService = service ?? (await getDefaultService());
       await this.refreshPending(activeService);
