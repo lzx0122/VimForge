@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import VimEditor from "../../../components/editor/VimEditor.vue";
@@ -33,6 +33,7 @@ import {
   type AttemptFeedback,
 } from "../services/attempt-outcome-service";
 import { evaluateAutoCompletion } from "../services/auto-completion-service";
+import { scrollFeedbackIntoView } from "../services/feedback-scroll-service";
 
 const route = useRoute();
 const router = useRouter();
@@ -58,6 +59,7 @@ const editorInstance = ref(0);
 const attemptClientId = ref("");
 const attemptStartedAt = ref("");
 const feedback = ref<AttemptFeedback | null>(null);
+const feedbackAnchor = ref<HTMLElement | null>(null);
 const isAttemptActive = computed(
   () =>
     exercise.value !== null &&
@@ -99,6 +101,19 @@ function requireRepository(): SessionRepository {
 function reportActionError(context: string, error: unknown): void {
   reportError(context, error);
   loadError.value = "無法更新本機練習進度，請稍後再試。";
+}
+
+function waitForNextAnimationFrame(): Promise<void> {
+  if (
+    typeof window === "undefined" ||
+    typeof window.requestAnimationFrame !== "function"
+  ) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
 }
 
 function currentSnapshot(): EditorSnapshot {
@@ -396,6 +411,9 @@ async function recordOutcome(completed: boolean): Promise<void> {
 
     feedback.value = outcome.feedback;
     unmetMessages.value = [];
+    await nextTick();
+    await waitForNextAnimationFrame();
+    scrollFeedbackIntoView(feedbackAnchor.value);
   } catch (error: unknown) {
     reportActionError("practice.record-outcome", error);
   } finally {
@@ -605,22 +623,27 @@ onUnmounted(() => {
       />
     </section>
 
-    <ExerciseFeedback
+    <div
       v-if="feedback && practiceStore.session"
-      :completed="feedback.completed"
-      :learning-mode="practiceStore.session.learningMode"
-      :accuracy-score="feedback.score.accuracyScore"
-      :speed-score="feedback.score.speedScore"
-      :previous-mastery-level="feedback.previousMasteryLevel"
-      :next-mastery-level="feedback.nextMasteryLevel"
-      :user-sequence="feedback.userSequence"
-      :recommended-sequence="feedback.recommendedSequence"
-      :improvement-reason="feedback.improvementReason"
-      :actual-keystroke-count="feedback.actualKeystrokeCount"
-      :recommended-keystroke-count="feedback.recommendedKeystrokeCount"
-      :recommended-actions="feedback.recommendedActions"
-      @request-next="goToNext"
-    />
+      ref="feedbackAnchor"
+      class="feedback-anchor"
+    >
+      <ExerciseFeedback
+        :completed="feedback.completed"
+        :learning-mode="practiceStore.session.learningMode"
+        :accuracy-score="feedback.score.accuracyScore"
+        :speed-score="feedback.score.speedScore"
+        :previous-mastery-level="feedback.previousMasteryLevel"
+        :next-mastery-level="feedback.nextMasteryLevel"
+        :user-sequence="feedback.userSequence"
+        :recommended-sequence="feedback.recommendedSequence"
+        :improvement-reason="feedback.improvementReason"
+        :actual-keystroke-count="feedback.actualKeystrokeCount"
+        :recommended-keystroke-count="feedback.recommendedKeystrokeCount"
+        :recommended-actions="feedback.recommendedActions"
+        @request-next="goToNext"
+      />
+    </div>
 
     <RouterLink
       v-if="statusMessage?.startsWith('已放棄')"
@@ -670,6 +693,10 @@ onUnmounted(() => {
 
 .restored-attempt {
   margin-top: 1.5rem;
+}
+
+.feedback-anchor {
+  scroll-margin-top: 1.5rem;
 }
 
 .practice-workspace {

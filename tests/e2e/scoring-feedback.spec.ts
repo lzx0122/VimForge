@@ -209,6 +209,8 @@ async function domCursorOffset(page: Page): Promise<number | null> {
 }
 
 test("automatically completes after every target condition matches", async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 400 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
   const sessionId = await startPracticeSession(page);
   const editor = page.locator(".cm-content");
   await expect(editor).toBeFocused();
@@ -223,6 +225,11 @@ test("automatically completes after every target condition matches", async ({ pa
   await page.keyboard.press("Escape");
 
   await expect(page.getByRole("article", { name: "完成！" })).toBeVisible();
+  await expect(page.locator("#exercise-feedback-title")).toBeInViewport({
+    ratio: 0.5,
+    timeout: 10_000,
+  });
+  await expect(editor).toBeFocused();
   await expect(page.getByRole("button", { name: "檢查答案" })).toHaveCount(0);
   await expect(
     page.locator('[data-feedback-section="accuracy"]').getByText("準確", {
@@ -348,4 +355,20 @@ test("reveals available hints in order without playback or an attempt", async ({
   await expect.poll(() => readAttemptCount(page)).toBe(0);
   await expect(page.getByRole("article", { name: "完成！" })).toHaveCount(0);
   await expect(page.locator(".practice-workspace")).toBeVisible();
+});
+
+test("brings the skipped result into view after skipping an exercise", async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 400 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await startPracticeSession(page);
+
+  await page.getByRole("button", { name: "跳過這題" }).click();
+
+  await expect(page.getByRole("article", { name: "尚未完成" })).toBeVisible();
+  await expect(page.locator("#exercise-feedback-title")).toBeInViewport({
+    ratio: 0.5,
+    timeout: 10_000,
+  });
+  await expect(page.locator(".practice-workspace")).toBeVisible();
+  await expect(page.locator(".cm-content")).toBeVisible();
 });
