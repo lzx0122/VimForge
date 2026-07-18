@@ -5,6 +5,7 @@ import { useRoute, useRouter } from "vue-router";
 import VimEditor from "../../../components/editor/VimEditor.vue";
 import ExerciseFeedback from "../../../components/feedback/ExerciseFeedback.vue";
 import type { EditorSnapshot } from "../../../domain/exercise/exercise-evaluator";
+import { commitAttemptOutcome } from "../../../infrastructure/indexed-db/attempt-outcome-commit";
 import {
   openVimForgeDatabase,
 } from "../../../infrastructure/indexed-db/database";
@@ -35,6 +36,7 @@ import {
 import { evaluateAutoCompletion } from "../services/auto-completion-service";
 import { createFreshAttemptState } from "../services/fresh-attempt-service";
 import { scrollFeedbackIntoView } from "../services/feedback-scroll-service";
+import { advancePracticeSession } from "../services/practice-session-service";
 
 const route = useRoute();
 const router = useRouter();
@@ -78,6 +80,12 @@ const elapsedSeconds = useAttemptElapsedTime(
   attemptStartedAt,
   isAttemptActive,
 );
+const isEditorLocked = computed(
+  () =>
+    feedback.value !== null ||
+    isSavingOutcome.value ||
+    isExerciseLoading.value,
+);
 
 let database: IDBDatabase | null = null;
 let repository: SessionRepository | null = null;
@@ -104,6 +112,14 @@ function requireRepository(): SessionRepository {
   }
 
   return repository;
+}
+
+function requireDatabase(): IDBDatabase {
+  if (database === null) {
+    throw new Error("Practice session storage is unavailable.");
+  }
+
+  return database;
 }
 
 function reportActionError(context: string, error: unknown): void {
@@ -238,6 +254,20 @@ function prepareExercise(activeExercise: PracticeExercise): void {
   editorInstance.value += 1;
 }
 
+class ExerciseNotFoundError extends Error {}
+
+async function fetchExercise(exerciseId: string): Promise<PracticeExercise> {
+  exerciseRepository ??= new SupabaseExerciseRepository();
+  const loadedExercise = await exerciseRepository.getPublishedExercise(exerciseId);
+  if (loadedExercise === null) {
+    throw new ExerciseNotFoundError(
+      `Exercise ${exerciseId} was not found or is not published.`,
+    );
+  }
+
+  return loadedExercise;
+}
+
 async function loadCurrentExercise(): Promise<void> {
   const exerciseId = practiceStore.currentExerciseId;
   if (exerciseId === null) {
@@ -253,16 +283,14 @@ async function loadCurrentExercise(): Promise<void> {
   isExerciseLoading.value = true;
   loadError.value = null;
   try {
-    exerciseRepository ??= new SupabaseExerciseRepository();
-    const loadedExercise = await exerciseRepository.getPublishedExercise(exerciseId);
-    if (loadedExercise === null) {
-      loadError.value = "找不到這一題，請返回練習設定後重試。";
-      return;
-    }
+    const loadedExercise = await fetchExercise(exerciseId);
     prepareExercise(loadedExercise);
   } catch (error: unknown) {
     reportError("practice.load-exercise", error);
-    loadError.value = "無法載入公開題目，請確認連線後再試。";
+    loadError.value =
+      error instanceof ExerciseNotFoundError
+        ? "找不到這一題，請返回練習設定後重試。"
+        : "無法載入公開題目，請確認連線後再試。";
   } finally {
     isExerciseLoading.value = false;
   }
@@ -296,6 +324,10 @@ async function resetAttempt(): Promise<void> {
 }
 
 function updateContent(content: string): void {
+  if (isEditorLocked.value) {
+    return;
+  }
+
   if (snapshot.value !== null) {
     snapshot.value = { ...snapshot.value, content };
     queueDraftSave();
@@ -304,6 +336,10 @@ function updateContent(content: string): void {
 }
 
 function updateCursor(cursor: EditorSnapshot["cursor"]): void {
+  if (isEditorLocked.value) {
+    return;
+  }
+
   if (snapshot.value !== null) {
     snapshot.value = { ...snapshot.value, cursor: { ...cursor } };
     queueDraftSave();
@@ -312,6 +348,10 @@ function updateCursor(cursor: EditorSnapshot["cursor"]): void {
 }
 
 function updateMode(mode: VimMode): void {
+  if (isEditorLocked.value) {
+    return;
+  }
+
   if (snapshot.value !== null) {
     snapshot.value = { ...snapshot.value, mode };
     queueDraftSave();
@@ -320,6 +360,10 @@ function updateMode(mode: VimMode): void {
 }
 
 function recordAction(action: NormalizedAction): void {
+  if (isEditorLocked.value) {
+    return;
+  }
+
   recordedActions.value.push({ ...action });
   hasUserInteraction.value = true;
   queueDraftSave();
@@ -332,6 +376,10 @@ function updateHighestHint(level: HintLevel): void {
 }
 
 function recordKeydown(event: KeyboardEvent): void {
+  if (isEditorLocked.value) {
+    return;
+  }
+
   if (!event.metaKey && !event.ctrlKey && !event.altKey && event.key !== "Shift") {
     keystrokeCount.value += 1;
   }
@@ -424,18 +472,24 @@ async function recordOutcome(completed: boolean): Promise<void> {
       normalizedActions: draft.actions,
     });
 
-    await syncStore.recordCompletedAttempt(outcome.attempt);
     const sessionSnapshot = {
       ...activeSession,
       exerciseIds: [...activeSession.exerciseIds],
       selectedSkillIds: [...activeSession.selectedSkillIds],
     } satisfies PracticeSession;
-    await repository.save(sessionSnapshot, null);
+    await commitAttemptOutcome(requireDatabase(), {
+      attempt: outcome.attempt,
+      session: sessionSnapshot,
+      attemptDraft: null,
+    });
     practiceStore.discardAttemptDraft();
 
     feedback.value = outcome.feedback;
     pendingOutcome.value = { completed, completedAt };
     unmetMessages.value = [];
+    void syncStore.notifyAttemptCommitted().catch((error: unknown) => {
+      reportError("practice.notify-attempt-committed", error);
+    });
     await nextTick();
     await waitForNextAnimationFrame();
     scrollFeedbackIntoView(feedbackAnchor.value);
@@ -462,15 +516,32 @@ async function goToNext(): Promise<void> {
     exerciseIds: [...currentSession.exerciseIds],
     selectedSkillIds: [...currentSession.selectedSkillIds],
   } satisfies PracticeSession;
-  let sessionPersisted = false;
+  let sessionMutated = false;
 
   isSavingOutcome.value = true;
+  loadError.value = null;
   try {
+    const previewSession = advancePracticeSession(
+      currentSession,
+      outcome.completedAt,
+    );
+
+    let nextExercise: PracticeExercise | null = null;
+    if (previewSession.status !== "completed") {
+      const nextExerciseId =
+        previewSession.exerciseIds[previewSession.currentIndex] ?? null;
+      if (nextExerciseId === null) {
+        throw new Error("No next exercise is available in the active session.");
+      }
+      nextExercise = await fetchExercise(nextExerciseId);
+    }
+
     if (outcome.completed) {
       practiceStore.completeCurrentExercise(outcome.completedAt);
     } else {
       practiceStore.skipCurrentExercise(outcome.completedAt);
     }
+    sessionMutated = true;
 
     const advancedSession = practiceStore.session;
     if (advancedSession === null) {
@@ -483,7 +554,6 @@ async function goToNext(): Promise<void> {
       selectedSkillIds: [...advancedSession.selectedSkillIds],
     } satisfies PracticeSession;
     await requireRepository().save(sessionSnapshot, null);
-    sessionPersisted = true;
 
     pendingOutcome.value = null;
     feedback.value = null;
@@ -495,12 +565,15 @@ async function goToNext(): Promise<void> {
       return;
     }
 
-    await loadCurrentExercise();
+    if (nextExercise !== null) {
+      prepareExercise(nextExercise);
+    }
   } catch (error: unknown) {
-    if (!sessionPersisted) {
+    if (sessionMutated) {
       practiceStore.restoreSession(previousSession, null);
     }
-    reportActionError("practice.advance-exercise", error);
+    reportError("practice.advance-exercise", error);
+    loadError.value = "無法載入下一題，請重試「下一題」。";
   } finally {
     isSavingOutcome.value = false;
   }
@@ -634,6 +707,7 @@ onUnmounted(() => {
           :initial-cursor="snapshot.cursor"
           :language="exercise.language"
           :cursor-target="exercise.completionRule.cursorMatch"
+          :read-only="isEditorLocked"
           show-line-numbers
           show-keypresses
           auto-focus

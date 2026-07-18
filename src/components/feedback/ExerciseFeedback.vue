@@ -124,7 +124,7 @@ const trimmedRecommendedExplanation = computed(() =>
           :accessibility-label="`準確：${accuracyScore} 分，${accuracySummary}`"
         />
         <p class="metric-definition">
-          準確：是否一次到位；Undo、重新開始與提示會扣分，按鍵較多不會重複扣分。
+          準確：是否一次到位；Undo 與提示會扣分，按鍵較多不會重複扣分。
         </p>
       </section>
 
@@ -171,7 +171,7 @@ const trimmedRecommendedExplanation = computed(() =>
       <div class="metric-explanation-grid">
         <section>
           <h3>準確</h3>
-          <p>從 100 分開始：一般誤操作 -5、Undo -3、重新開始 -12。</p>
+          <p>從 100 分開始：一般誤操作 -5、Undo -3。</p>
           <p>最高提示：Level 1 -3、Level 2 -8、Level 3 -15、Level 4 -30；提示只套用最高層級。</p>
         </section>
         <section>

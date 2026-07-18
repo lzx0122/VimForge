@@ -172,6 +172,220 @@ async function readAttemptCount(page: Page): Promise<number> {
   });
 }
 
+async function readAttemptExerciseIds(page: Page): Promise<string[]> {
+  return page.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("vim-forge", 1);
+      request.addEventListener("success", () => resolve(request.result), { once: true });
+      request.addEventListener(
+        "error",
+        () => reject(request.error ?? new Error("Unable to open IndexedDB")),
+        { once: true },
+      );
+    });
+    const request = database
+      .transaction("attempts", "readonly")
+      .objectStore("attempts")
+      .getAll();
+    const attempts = await new Promise<
+      Array<{ exerciseId: string; startedAt: string }>
+    >((resolve, reject) => {
+      request.addEventListener(
+        "success",
+        () =>
+          resolve(
+            request.result as Array<{ exerciseId: string; startedAt: string }>,
+          ),
+        { once: true },
+      );
+      request.addEventListener(
+        "error",
+        () => reject(request.error ?? new Error("Unable to read attempts")),
+        { once: true },
+      );
+    });
+    database.close();
+    return attempts
+      .slice()
+      .sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt))
+      .map((attempt) => attempt.exerciseId);
+  });
+}
+
+const SECOND_EXERCISE_ID = "00000000-0000-4000-8000-000000000403";
+
+async function mockTwoExerciseCatalogWithFlakySecondFetch(
+  page: Page,
+): Promise<{ failNextSecondExerciseFetch: () => void }> {
+  let shouldFailSecondFetch = false;
+  const firstExercise = {
+    id: EXERCISE_ID,
+    unit_id: "00000000-0000-4000-8000-000000000201",
+    slug: "insert-prefix-01",
+    title: "插入字首",
+    instruction: "在 name 前插入 x，最後回到 Normal Mode。",
+    language: "typescript",
+    exercise_type: "guided",
+    difficulty: "beginner",
+    supported_modes: ["beginner", "memory_review"],
+    target_duration_ms: 12000,
+    version: 1,
+    initial_content: "const name = true;",
+    expected_content: "const xname = true;",
+    initial_cursor: { line: 0, column: 6 },
+    completion_rule: {
+      contentMatch: "exact",
+      cursorMatch: { type: "ignore" },
+      requiredMode: "normal",
+    },
+  };
+  const secondExercise = {
+    id: SECOND_EXERCISE_ID,
+    unit_id: "00000000-0000-4000-8000-000000000201",
+    slug: "insert-suffix-01",
+    title: "插入字尾",
+    instruction: "在 name 後插入 x，最後回到 Normal Mode。",
+    language: "typescript",
+    exercise_type: "guided",
+    difficulty: "beginner",
+    supported_modes: ["beginner", "memory_review"],
+    target_duration_ms: 12000,
+    version: 1,
+    initial_content: "const name = true;",
+    expected_content: "const namxe = true;",
+    initial_cursor: { line: 0, column: 9 },
+    completion_rule: {
+      contentMatch: "exact",
+      cursorMatch: { type: "ignore" },
+      requiredMode: "normal",
+    },
+  };
+  const exercisesById: Record<string, typeof firstExercise> = {
+    [firstExercise.id]: firstExercise,
+    [secondExercise.id]: secondExercise,
+  };
+  const solutionsById: Record<string, object[]> = {
+    [firstExercise.id]: [{
+      sequence: "ix<Esc>",
+      normalized_actions: [
+        { type: "vim_command", command: "i" },
+        { type: "insert_text", text: "x", textLength: 1 },
+        { type: "mode_change", mode: "normal" },
+      ],
+      keystroke_count: 3,
+      is_recommended: true,
+      explanation: "使用 i 插入字元，完成後按 Esc。",
+      display_order: 0,
+    }],
+    [secondExercise.id]: [{
+      sequence: "ix<Esc>",
+      normalized_actions: [
+        { type: "vim_command", command: "i" },
+        { type: "insert_text", text: "x", textLength: 1 },
+        { type: "mode_change", mode: "normal" },
+      ],
+      keystroke_count: 3,
+      is_recommended: true,
+      explanation: "使用 i 插入字尾，完成後按 Esc。",
+      display_order: 0,
+    }],
+  };
+
+  await page.route("**/rest/v1/**", async (route) => {
+    const requestUrl = new URL(route.request().url());
+    const table = requestUrl.pathname.split("/").at(-1);
+    const idFilter = requestUrl.searchParams.get("id");
+    const exerciseIdFilter = requestUrl.searchParams.get("exercise_id");
+    const targetId =
+      idFilter?.replace("eq.", "") ?? exerciseIdFilter?.replace("eq.", "") ?? null;
+
+    if (table === "exercises" && idFilter) {
+      if (targetId === secondExercise.id && shouldFailSecondFetch) {
+        shouldFailSecondFetch = false;
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ message: "mock exercise fetch failure" }),
+        });
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(targetId ? exercisesById[targetId] ?? null : null),
+      });
+      return;
+    }
+
+    if (table === "exercises") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          [firstExercise, secondExercise].map((exercise) => ({
+            id: exercise.id,
+            unit_id: exercise.unit_id,
+            slug: exercise.slug,
+            title: exercise.title,
+            instruction: exercise.instruction,
+            language: exercise.language,
+            exercise_type: exercise.exercise_type,
+            difficulty: exercise.difficulty,
+            supported_modes: exercise.supported_modes,
+            target_duration_ms: exercise.target_duration_ms,
+            version: exercise.version,
+          })),
+        ),
+      });
+      return;
+    }
+
+    if (table === "exercise_skills") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([{
+          skill_id: "00000000-0000-4000-8000-000000000101",
+          weight: 1,
+          is_primary: true,
+        }]),
+      });
+      return;
+    }
+
+    if (table === "exercise_solutions") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(targetId ? solutionsById[targetId] ?? [] : []),
+      });
+      return;
+    }
+
+    if (table === "exercise_hints") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([]),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([]),
+    });
+  });
+
+  return {
+    failNextSecondExerciseFetch: () => {
+      shouldFailSecondFetch = true;
+    },
+  };
+}
+
 function elapsedSeconds(value: string | null): number {
   if (value === null) {
     throw new Error("Expected an elapsed-time value");
@@ -282,7 +496,8 @@ test("automatically completes after every target condition matches", async ({ pa
     ratio: 0.5,
     timeout: 10_000,
   });
-  await expect(editor).toBeFocused();
+  await expect(editor).toBeVisible();
+  await expect(editor).toHaveAttribute("contenteditable", "false");
   await expect(page.getByRole("button", { name: "檢查答案" })).toHaveCount(0);
   await expect(
     page.locator('[data-feedback-section="accuracy"]').getByText("準確", {
@@ -296,7 +511,7 @@ test("automatically completes after every target condition matches", async ({ pa
   ).toBeVisible();
   await expect(
     page.getByText(
-      "準確：是否一次到位；Undo、重新開始與提示會扣分，按鍵較多不會重複扣分。",
+      "準確：是否一次到位；Undo 與提示會扣分，按鍵較多不會重複扣分。",
       { exact: true },
     ),
   ).toBeVisible();
@@ -362,6 +577,30 @@ test("retries the completed exercise before advancing the session", async ({ pag
 
   await page.getByRole("button", { name: "下一題" }).click();
   await expect(page).toHaveURL(`/practice/${sessionId}/result`);
+});
+
+test("locks the editor and rejects further input once feedback is shown", async ({ page }) => {
+  await startPracticeSession(page);
+  const editor = page.locator(".cm-content");
+
+  await completeInsertExercise(page);
+  await expect.poll(() => readAttemptCount(page)).toBe(1);
+  await expect(editor).toHaveAttribute("contenteditable", "false");
+  await expect(editor).toContainText("const xname = true;");
+
+  await editor.click({ force: true });
+  await page.keyboard.type("MORE TEXT");
+  await page.keyboard.press("o");
+  await page.keyboard.type("EVEN MORE");
+
+  await expect(editor).toContainText("const xname = true;");
+  await expect(editor).not.toContainText("MORE TEXT");
+  await expect(editor).not.toContainText("EVEN MORE");
+  expect(await readAttemptCount(page)).toBe(1);
+
+  await page.reload();
+  await expect(page.locator('[data-testid="restored-attempt-content"]')).toHaveCount(0);
+  await expect.poll(() => readAttemptCount(page)).toBe(1);
 });
 
 test("shows a cursor target and auto-completes a movement exercise", async ({ page }) => {
@@ -458,4 +697,46 @@ test("brings the skipped result into view after skipping an exercise", async ({ 
   });
   await expect(page.locator(".practice-workspace")).toBeVisible();
   await expect(page.locator(".cm-content")).toBeVisible();
+});
+
+test("recovers from a failed next-exercise load without losing feedback or advancing the session", async ({ page }) => {
+  const { failNextSecondExerciseFetch } = await mockTwoExerciseCatalogWithFlakySecondFetch(page);
+  await page.goto("/practice/setup?mode=memory_review");
+  await page.getByLabel("5 題").check();
+  await page.getByRole("button", { name: "開始練習" }).click();
+  await expect(page).toHaveURL(/\/practice\/[0-9a-f-]+$/u);
+  await expect(page.getByText("在 name 前插入 x，最後回到 Normal Mode。")).toBeVisible();
+
+  await completeInsertExercise(page);
+  await expect.poll(() => readAttemptCount(page)).toBe(1);
+
+  failNextSecondExerciseFetch();
+  await page.getByRole("button", { name: "下一題" }).click();
+
+  await expect(page.getByRole("article", { name: "完成！" })).toBeVisible();
+  await expect(page.getByText("第 1 / 2 題", { exact: true })).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText("無法載入下一題");
+  await expect(page.locator(".cm-content")).toHaveAttribute(
+    "contenteditable",
+    "false",
+  );
+  await expect(page.getByRole("button", { name: "跳過這題" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "重新開始本題" })).toBeDisabled();
+  expect(await readAttemptCount(page)).toBe(1);
+
+  await page.getByRole("button", { name: "下一題" }).click();
+
+  await expect(page.getByText("在 name 後插入 x，最後回到 Normal Mode。")).toBeVisible();
+  await expect(page.getByText("第 2 / 2 題", { exact: true })).toBeVisible();
+  await expect(page.getByRole("article", { name: "完成！" })).toHaveCount(0);
+
+  await completeInsertExercise(page);
+  await expect.poll(() => readAttemptCount(page)).toBe(2);
+  expect(await readAttemptExerciseIds(page)).toEqual([
+    EXERCISE_ID,
+    SECOND_EXERCISE_ID,
+  ]);
+
+  await page.getByRole("button", { name: "下一題" }).click();
+  await expect(page).toHaveURL(/\/practice\/[0-9a-f-]+\/result$/u);
 });

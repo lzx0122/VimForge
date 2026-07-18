@@ -87,6 +87,11 @@ export const useSyncStore = defineStore("sync", {
     ): Promise<void> {
       const activeService = service ?? (await getDefaultService());
       await activeService.saveCompletedAttempt(attempt);
+      await this.notifyAttemptCommitted(activeService);
+    },
+
+    async notifyAttemptCommitted(service?: GuestSyncService): Promise<void> {
+      const activeService = service ?? (await getDefaultService());
       await this.refreshPending(activeService);
 
       if (useAuthStore().isAuthenticated) {

@@ -163,6 +163,26 @@ describe("VimEditor", () => {
     }
   });
 
+  it("becomes read-only reactively when the readOnly prop changes after mount", async () => {
+    const wrapper = await mountEditor();
+    const view = getEditorView(wrapper);
+
+    expect(view.state.readOnly).toBe(false);
+    expect(view.contentDOM.getAttribute("contenteditable")).not.toBe("false");
+
+    await wrapper.setProps({ readOnly: true });
+
+    expect(view.state.readOnly).toBe(true);
+    expect(view.contentDOM.getAttribute("contenteditable")).toBe("false");
+
+    await wrapper.setProps({ readOnly: false });
+
+    expect(view.state.readOnly).toBe(false);
+    expect(view.contentDOM.getAttribute("contenteditable")).not.toBe("false");
+
+    wrapper.unmount();
+  });
+
   it("emits content and cursor changes from real editor transactions", async () => {
     const wrapper = await mountEditor();
     const view = getEditorView(wrapper);

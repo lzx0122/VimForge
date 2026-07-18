@@ -96,7 +96,7 @@ describe("ExerciseFeedback", () => {
     const wrapper = mount(ExerciseFeedback, { props: defaultProps });
 
     expect(wrapper.text()).toContain(
-      "準確：是否一次到位；Undo、重新開始與提示會扣分，按鍵較多不會重複扣分。",
+      "準確：是否一次到位；Undo 與提示會扣分，按鍵較多不會重複扣分。",
     );
     expect(wrapper.text()).toContain(
       "速度：按鍵精簡度 60% 加上完成時間 40%，並依學習模式提供時間寬限。",
@@ -109,7 +109,7 @@ describe("ExerciseFeedback", () => {
     expect(details.get("summary").text()).toBe("查看計算方式");
     expect(details.text()).toContain("一般誤操作 -5");
     expect(details.text()).toContain("Undo -3");
-    expect(details.text()).toContain("重新開始 -12");
+    expect(details.text()).not.toContain("重新開始 -12");
     expect(details.text()).toContain("最高提示：Level 1 -3、Level 2 -8、Level 3 -15、Level 4 -30");
     expect(details.text()).toContain("按鍵精簡度 60% + 時間效率 40%");
     expect(details.text()).toContain("beginner ×2.0、memory_review ×1.3、efficiency ×1.0");

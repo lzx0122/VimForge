@@ -6,7 +6,7 @@ import {
   transactionToPromise,
 } from "./database";
 
-interface StoredSessionRecord {
+export interface StoredSessionRecord {
   id: string;
   status: PracticeSession["status"];
   session: PracticeSession;
@@ -18,7 +18,7 @@ export interface ResumeState {
   attemptDraft: AttemptDraft | null;
 }
 
-function toStoredSession(
+export function toStoredSession(
   session: PracticeSession,
   attemptDraft: AttemptDraft | null,
 ): StoredSessionRecord {

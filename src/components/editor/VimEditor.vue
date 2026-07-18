@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { minimalSetup } from "codemirror";
-import { EditorState, type Extension } from "@codemirror/state";
+import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import {
   EditorView,
   lineNumbers,
@@ -11,7 +11,7 @@ import {
   vim,
   type CodeMirror,
 } from "@replit/codemirror-vim";
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import type { VimMode } from "../../types";
 import { createEditorState } from "./create-editor-state";
@@ -37,6 +37,14 @@ const currentMode = ref<VimMode>("normal");
 const isFocused = ref(false);
 let editorView: EditorView | null = null;
 let vimBridge: CodeMirror | null = null;
+const readOnlyCompartment = new Compartment();
+
+function readOnlyExtensions(readOnly: boolean): Extension[] {
+  return [
+    EditorState.readOnly.of(readOnly),
+    EditorView.editable.of(!readOnly),
+  ];
+}
 let vimModeHandler: ((event: unknown) => void) | null = null;
 let vimCommandDoneHandler: (() => void) | null = null;
 let disposed = false;
@@ -123,8 +131,7 @@ onMounted(async () => {
     ...(props.cursorTarget && props.cursorTarget.type !== "ignore"
       ? [cursorTargetExtension(props.cursorTarget)]
       : []),
-    EditorState.readOnly.of(props.readOnly ?? false),
-    EditorView.editable.of(!(props.readOnly ?? false)),
+    readOnlyCompartment.of(readOnlyExtensions(props.readOnly ?? false)),
     focusHandlers,
     keyObservers,
     updateListener,
@@ -160,6 +167,14 @@ onMounted(async () => {
   if (props.autoFocus && !(props.readOnly ?? false)) {
     view.focus();
   }
+  watch(
+    () => props.readOnly ?? false,
+    (readOnly) => {
+      editorView?.dispatch({
+        effects: readOnlyCompartment.reconfigure(readOnlyExtensions(readOnly)),
+      });
+    },
+  );
   emit("modeChanged", currentMode.value);
   emit("editorReady");
 });
