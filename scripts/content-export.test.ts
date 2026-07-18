@@ -9,7 +9,11 @@ import {
   runSupabase,
   SUPABASE_CLI_VERSION,
 } from "../src/content/supabase-cli-runner";
-import { exportProductionCatalog, PRODUCTION_EXPORT_QUERY } from "./content-export-production";
+import {
+  exportProductionCatalog,
+  inspectProductionCatalog,
+  PRODUCTION_EXPORT_QUERY,
+} from "./content-export-production";
 
 describe("production catalog export", () => {
   it("rejects output that does not identify the expected linked project or release state", async () => {
@@ -194,5 +198,36 @@ describe("production catalog export", () => {
       runSupabase: run,
       outputDirectory: mkdtempSync(resolve(tmpdir(), "vimforge-export-")),
     })).resolves.toMatchObject({ exerciseCount: 100 });
+  });
+
+  it("inspects canonical production data while strict export rejects a stale release hash", async () => {
+    const target = JSON.parse(
+      readFileSync(resolve(process.cwd(), "content/catalog-v2.json"), "utf8"),
+    ) as CatalogSnapshot;
+    const staleHash =
+      "sha256:a1ea1b9f32fc9b3ed6ef25b8989c7f5c465ad10df10df6af62e2cb2d4aa96467";
+    const run = vi.fn(async (args: readonly string[]) => args.includes("--help")
+      ? "Usage: supabase db query [flags]\n  --linked\n  --output string"
+      : JSON.stringify({
+          projectRef: "expected-project",
+          releaseState: { revision: 2, catalog_hash: staleHash },
+          snapshot: { schemaVersion: 1, units: target.units },
+        }));
+
+    const inspection = await inspectProductionCatalog({
+      expectedProjectRef: "expected-project",
+      linkedProjectRef: "expected-project",
+      runSupabase: run,
+    });
+
+    expect(inspection.releaseState).toEqual({ revision: 2, hash: staleHash });
+    expect(inspection.snapshot.catalogHash).toBe(target.catalogHash);
+    await expect(exportProductionCatalog({
+      expectedProjectRef: "expected-project",
+      linkedProjectRef: "expected-project",
+      expectedRevision: 2,
+      expectedHash: target.catalogHash,
+      runSupabase: run,
+    })).rejects.toThrow(/release hash/i);
   });
 });

@@ -17,6 +17,7 @@
     "test:e2e": "playwright test",
     "supabase:cli": "npx --no-install supabase@2.79.0",
     "content:export:production": "vite-node --script scripts/content-export-production.ts",
+    "content:inspect-reconciliation": "vite-node --script scripts/content-inspect-reconciliation.ts",
     "content:diff": "vite-node --script scripts/content-diff.ts",
     "content:prepare-release": "vite-node --script scripts/content-prepare-release.ts",
     "content:publish:production": "vite-node --script scripts/content-publish-production.ts"
@@ -50,6 +51,7 @@
     "globals": "^16.5.0",
     "jiti": "^2.7.0",
     "jsdom": "^26.1.0",
+    "supabase": "^2.79.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.64.0",
     "vite": "^7.3.6",

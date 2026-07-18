@@ -21,6 +21,7 @@
     "src/content/catalog-canonicalizer.ts",
     "src/content/catalog-contract.ts",
     "src/content/catalog-diff.ts",
+    "src/content/catalog-hash-reconciliation.ts",
     "src/content/catalog-release-plan.ts",
     "src/content/catalog-sql.ts",
     "src/content/catalog-types.ts",

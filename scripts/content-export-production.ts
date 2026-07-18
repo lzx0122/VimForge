@@ -146,6 +146,16 @@ export interface ProductionExportResult {
   exerciseCount: number;
 }
 
+export interface ProductionCatalogInspectionResult {
+  snapshot: CatalogSnapshot;
+  releaseState: {
+    revision: number;
+    hash: string;
+  };
+  projectRef: string;
+  exerciseCount: number;
+}
+
 interface JsonRecord {
   [key: string]: unknown;
 }
@@ -238,19 +248,20 @@ function assertDbQueryCapability(helpOutput: string): void {
   }
 }
 
-function productionSnapshot(payload: JsonRecord, releaseState: unknown, now: () => Date): CatalogSnapshot {
-  const release = parseReleaseState(releaseState);
+function productionSnapshot(
+  payload: JsonRecord,
+  revision: number,
+  now: () => Date,
+): CatalogSnapshot {
   const rawSnapshot = payload.snapshot ?? payload.catalog;
-  const snapshot = isRecord(rawSnapshot)
-    ? rawSnapshot
-    : payload;
+  const snapshot = isRecord(rawSnapshot) ? rawSnapshot : payload;
   const units = snapshot.units;
   if (!Array.isArray(units)) {
     throw new Error("Production output did not include catalog units and relations.");
   }
   const candidate = {
     schemaVersion: 1 as const,
-    catalogRevision: release.revision,
+    catalogRevision: revision,
     catalogHash: "sha256:" + "0".repeat(64),
     exportedAt: now().toISOString(),
     units,
@@ -260,11 +271,7 @@ function productionSnapshot(payload: JsonRecord, releaseState: unknown, now: () 
     ...parsed,
     units: [...parsed.units].sort((left, right) => left.displayOrder - right.displayOrder),
   } satisfies CatalogSnapshot;
-  const canonicalHash = hashCatalog(ordered);
-  if (release.hash !== canonicalHash) {
-    throw new Error("Production release hash does not match the exported catalog.");
-  }
-  const withHash = { ...ordered, catalogHash: canonicalHash };
+  const withHash = { ...ordered, catalogHash: hashCatalog(ordered) };
   const errors = validateCatalogSnapshot(withHash);
   if (errors.length > 0) {
     throw new Error(`Production catalog is invalid: ${errors.map((error) => `${error.path}: ${error.message}`).join("; ")}`);
@@ -290,27 +297,19 @@ function loadExpectedMetadata(options: ProductionExportOptions): { revision: num
   return { revision: parsed.catalogRevision, hash: parsed.catalogHash };
 }
 
-/** Export the complete production catalog using only the authenticated CLI. */
-export async function exportProductionCatalog(
+export async function inspectProductionCatalog(
   options: ProductionExportOptions = {},
-): Promise<ProductionExportResult> {
+): Promise<ProductionCatalogInspectionResult> {
   const expectedProjectRef = options.expectedProjectRef ?? process.env.SUPABASE_PROJECT_REF;
   if (typeof expectedProjectRef !== "string" || expectedProjectRef.trim().length === 0) {
     throw new Error("Expected production project ref is required before querying.");
   }
-  const expected = loadExpectedMetadata(options);
   const invoke = options.runSupabase ?? options.run ?? defaultRunSupabase;
   const linkedProjectRef = options.linkedProjectRef ?? readLinkedProjectRef(options.cliOptions?.cwd);
-  if (linkedProjectRef === undefined) {
-    throw new Error("Linked Supabase project could not be identified. Run supabase link first.");
-  }
-  if (linkedProjectRef !== expectedProjectRef) {
+  if (linkedProjectRef === undefined || linkedProjectRef !== expectedProjectRef) {
     throw new Error("Production linked project does not match the expected project.");
   }
-  const capabilityOutput = await invoke(
-    ["db", "query", "--help"],
-    options.cliOptions,
-  );
+  const capabilityOutput = await invoke(["db", "query", "--help"], options.cliOptions);
   assertDbQueryCapability(capabilityOutput);
   const raw = await invoke(
     ["db", "query", "--linked", "--output", "json", PRODUCTION_EXPORT_QUERY],
@@ -318,14 +317,34 @@ export async function exportProductionCatalog(
   );
   const parsedOutput = parseJsonOutput(raw);
   const observedProjectRef = projectRefFromPayload(parsedOutput);
-  const parsedPayload = unwrapPayload(parsedOutput);
   if (observedProjectRef !== undefined && observedProjectRef !== expectedProjectRef) {
     throw new Error("Production linked project does not match the expected project.");
   }
-  const projectRef = linkedProjectRef;
-  const payload: JsonRecord = parsedPayload;
-  const rawRelease = payload.releaseState ?? payload.release_state;
-  const snapshot = productionSnapshot(payload, rawRelease, options.now ?? (() => new Date()));
+  const payload = unwrapPayload(parsedOutput);
+  const releaseState = parseReleaseState(payload.releaseState ?? payload.release_state);
+  const snapshot = productionSnapshot(
+    payload,
+    releaseState.revision,
+    options.now ?? (() => new Date()),
+  );
+  return {
+    snapshot,
+    releaseState,
+    projectRef: linkedProjectRef,
+    exerciseCount: snapshot.units.reduce((count, unit) => count + unit.exercises.length, 0),
+  };
+}
+
+/** Export the complete production catalog using only the authenticated CLI. */
+export async function exportProductionCatalog(
+  options: ProductionExportOptions = {},
+): Promise<ProductionExportResult> {
+  const expected = loadExpectedMetadata(options);
+  const inspection = await inspectProductionCatalog(options);
+  const { snapshot, releaseState, projectRef, exerciseCount } = inspection;
+  if (releaseState.hash !== snapshot.catalogHash) {
+    throw new Error("Production release hash does not match the exported catalog.");
+  }
   if (snapshot.catalogRevision !== expected.revision) {
     throw new Error("Production catalog revision does not match the repository base snapshot.");
   }
@@ -336,12 +355,7 @@ export async function exportProductionCatalog(
   mkdirSync(outputDirectory, { recursive: true });
   const path = resolve(outputDirectory, `catalog-${snapshot.catalogRevision}-${snapshot.catalogHash}.json`);
   writeFileSync(path, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
-  return {
-    path,
-    snapshot,
-    projectRef,
-    exerciseCount: snapshot.units.reduce((count, unit) => count + unit.exercises.length, 0),
-  };
+  return { path, snapshot, projectRef, exerciseCount };
 }
 
 function runCli(): void {
