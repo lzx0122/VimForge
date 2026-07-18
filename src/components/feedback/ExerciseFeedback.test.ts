@@ -160,4 +160,13 @@ describe("ExerciseFeedback", () => {
       wrapper.find('[data-testid="recommended-explanation"]').exists(),
     ).toBe(false);
   });
+
+  it("trims surrounding whitespace from the imported explanation before rendering", () => {
+    const wrapper = mount(ExerciseFeedback, {
+      props: { ...defaultProps, recommendedExplanation: "  explanation  " },
+    });
+    const explanation = wrapper.get('[data-testid="recommended-explanation"]');
+
+    expect(explanation.find("p").text()).toBe("explanation");
+  });
 });
