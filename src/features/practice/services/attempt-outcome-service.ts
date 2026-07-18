@@ -46,7 +46,7 @@ export interface AttemptFeedback {
   improvementReason: string;
   actualKeystrokeCount: number;
   recommendedKeystrokeCount: number;
-  recommendedActions: NormalizedAction[];
+  recommendedExplanation: string;
 }
 
 export interface AttemptOutcome {
@@ -101,10 +101,6 @@ export function createAttemptOutcome(
   const normalizedActions = input.normalizedActions.map((action) => ({
     ...action,
   }));
-  const recommendedActions =
-    recommended?.normalizedActions.map((action) => ({
-      ...action,
-    })) ?? [];
   const solutionMatch = matchSolution({
     actions: normalizedActions,
     completed: input.completed,
@@ -116,6 +112,9 @@ export function createAttemptOutcome(
   });
   const recommendedSequence = recommended?.sequence ?? "—";
   const userSequence = formatActionSequence(normalizedActions);
+  const recommendedExplanation = recommended?.explanation.trim() ?? "";
+  const improvementExplanation =
+    recommendedExplanation || "題庫目前沒有推薦解法。";
 
   return {
     solutionMatch,
@@ -150,13 +149,10 @@ export function createAttemptOutcome(
       nextMasteryLevel: input.completed ? 1 : 0,
       userSequence,
       recommendedSequence,
-      improvementReason: feedbackReason(
-        solutionMatch,
-        recommended?.explanation ?? "題庫目前沒有推薦解法。",
-      ),
+      improvementReason: feedbackReason(solutionMatch, improvementExplanation),
       actualKeystrokeCount,
       recommendedKeystrokeCount,
-      recommendedActions,
+      recommendedExplanation,
     },
   };
 }

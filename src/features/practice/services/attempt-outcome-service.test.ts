@@ -80,14 +80,9 @@ describe("createAttemptOutcome", () => {
       nextMasteryLevel: 1,
       userSequence: "ax<Esc>",
       recommendedSequence: "ix<Esc>",
-      recommendedActions: exercise.solutions[0]?.normalizedActions,
+      recommendedExplanation: "使用 i 插入後按 Esc。",
     });
-    expect(outcome.feedback.recommendedActions).not.toBe(
-      baseInput.normalizedActions,
-    );
-    expect(outcome.feedback.recommendedActions).not.toBe(
-      exercise.solutions[0]?.normalizedActions,
-    );
+    expect(outcome.feedback).not.toHaveProperty("recommendedActions");
     expect(outcome.feedback.improvementReason).toContain("操作未收錄於題庫");
   });
 
