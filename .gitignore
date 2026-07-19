@@ -9,3 +9,5 @@ test-results/
 !.env.example
 .vercel
 supabase/.temp/
+.superpowers/
+.DS_Store
