@@ -507,7 +507,8 @@ insert into public.exercises (
   supported_modes,
   target_duration_ms,
   version,
-  is_published
+  is_published,
+  display_order
 )
 select
   learning_units.id,
@@ -526,7 +527,8 @@ select
   ),
   (variant ->> 'targetDurationMs')::integer,
   1,
-  (unit ->> 'published')::boolean
+  (unit ->> 'published')::boolean,
+  exercise_number::smallint
 from seed_exercise_rows
 join public.learning_units
   on learning_units.slug = unit ->> 'slug'
@@ -545,6 +547,7 @@ on conflict (slug) do update set
   target_duration_ms = excluded.target_duration_ms,
   version = excluded.version,
   is_published = excluded.is_published,
+  display_order = excluded.display_order,
   updated_at = now();
 
 delete from public.exercise_skills

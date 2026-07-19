@@ -58,6 +58,16 @@ describe("catalog migration", () => {
   });
 });
 
+describe("exercise display order", () => {
+  it("persists exercise display_order from exercise_number in the local seed", () => {
+    expect(seedSql).toContain(
+      "  target_duration_ms,\n  version,\n  is_published,\n  display_order\n)",
+    );
+    expect(seedSql).toContain("exercise_number::smallint");
+    expect(seedSql).toContain("display_order = excluded.display_order,");
+  });
+});
+
 describe("seed validator", () => {
   it("accepts the complete published catalog", () => {
     const result = validateSeedSql(seedSql);
