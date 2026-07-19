@@ -71,7 +71,10 @@ const startButtonLabel = computed(() => {
   return pendingSelection.value !== null ? "使用這些題目開始練習" : "開始練習";
 });
 
+let selectionRevision = 0;
+
 watch([mode, practiceSource, selectedTopics, questionCount], () => {
+  selectionRevision += 1;
   pendingSelection.value = null;
   infoMessages.value = [];
   startError.value = null;
@@ -132,8 +135,15 @@ async function createSessionAndNavigate(
 }
 
 async function previewSelection(): Promise<void> {
-  const currentMode = mode.value;
-  const currentSelectionType = selectionType();
+  const revisionAtStart = selectionRevision;
+  const requestSnapshot = {
+    learningMode: mode.value,
+    selectionType: selectionType(),
+    questionCount: questionCount.value,
+    selectedTopicSlugs: [...selectedTopics.value],
+    localDate: todayLocalDate(),
+  } as const;
+
   const database = await openVimForgeDatabase();
   let selection;
   try {
@@ -141,39 +151,39 @@ async function previewSelection(): Promise<void> {
       new SupabasePracticeCandidateRepository(),
       new AttemptRepository(database),
     );
-    selection = await selectionService.select({
-      learningMode: currentMode,
-      selectionType: currentSelectionType,
-      questionCount: questionCount.value,
-      selectedTopicSlugs: selectedTopics.value,
-      localDate: todayLocalDate(),
-    });
+    selection = await selectionService.select(requestSnapshot);
   } finally {
     database.close();
   }
 
+  // The learner changed mode, source, count, or topics while this request
+  // was in flight - its result no longer matches what's on screen.
+  if (revisionAtStart !== selectionRevision) {
+    return;
+  }
+
   if (selection.actualCount === 0) {
-    startError.value = emptySelectionMessage(currentSelectionType);
+    startError.value = emptySelectionMessage(requestSnapshot.selectionType);
     return;
   }
 
   const messages: string[] = [];
   if (
     !selection.personalized &&
-    currentSelectionType === "weakness_practice"
+    requestSnapshot.selectionType === "weakness_practice"
   ) {
     messages.push("尚無個人練習資料，本次先安排一般效率題目。");
   }
-  if (selection.actualCount < questionCount.value) {
+  if (selection.actualCount < requestSnapshot.questionCount) {
     messages.push(
       `目前符合條件的題目共有 ${selection.actualCount} 題，本次將安排全部可用題目。`,
     );
   }
 
   const pending: PendingPracticeSelection = {
-    learningMode: currentMode,
-    selectionType: currentSelectionType,
-    requestedCount: questionCount.value,
+    learningMode: requestSnapshot.learningMode,
+    selectionType: requestSnapshot.selectionType,
+    requestedCount: requestSnapshot.questionCount,
     exerciseIds: selection.exerciseIds,
     selectedSkillIds: selection.selectedSkillIds,
   };

@@ -431,4 +431,67 @@ describe("PracticeSetupPage", () => {
     expect(listAll).toHaveBeenCalledTimes(1);
     expect(save).toHaveBeenCalledTimes(1);
   });
+
+  it("discards an in-flight selection when the learner changes the question count before it resolves", async () => {
+    let resolveFirstRequest: (
+      value: readonly PracticeCandidateRecord[],
+    ) => void = () => {};
+    const firstRequest = new Promise<readonly PracticeCandidateRecord[]>(
+      (resolve) => {
+        resolveFirstRequest = resolve;
+      },
+    );
+
+    listPublishedCandidates
+      .mockReturnValueOnce(firstRequest)
+      .mockResolvedValueOnce(
+        Array.from({ length: 5 }, (_, index) =>
+          candidateRecord({
+            exerciseId: `due-${index + 1}`,
+            skillIds: ["skill-shared"],
+          }),
+        ),
+      );
+    listAll.mockResolvedValue(
+      Array.from({ length: 10 }, (_, index) =>
+        attemptRecord({
+          clientAttemptId: `attempt-${index + 1}`,
+          exerciseId: `due-${index + 1}`,
+          completed: false,
+        }),
+      ),
+    );
+
+    const { wrapper, router } = await mountSetupPage("memory_review");
+
+    await wrapper.get("button").trigger("click");
+    await flushPromises();
+
+    await wrapper.get('input[value="5"]').setValue();
+
+    resolveFirstRequest(
+      Array.from({ length: 10 }, (_, index) =>
+        candidateRecord({
+          exerciseId: `due-${index + 1}`,
+          skillIds: ["skill-shared"],
+        }),
+      ),
+    );
+    await flushPromises();
+
+    expect(save).not.toHaveBeenCalled();
+    expect(router.currentRoute.value.name).toBe("practice-setup");
+    expect(wrapper.get("button").text()).toBe("開始練習");
+    expect(wrapper.text()).not.toContain("使用這些題目開始練習");
+
+    await wrapper.get("button").trigger("click");
+    await flushPromises();
+
+    expect(listPublishedCandidates).toHaveBeenCalledTimes(2);
+    expect(save).toHaveBeenCalledTimes(1);
+
+    const [savedSession] = save.mock.calls[0] ?? [];
+    expect(savedSession?.requestedCount).toBe(5);
+    expect(savedSession?.exerciseIds).toHaveLength(5);
+  });
 });
