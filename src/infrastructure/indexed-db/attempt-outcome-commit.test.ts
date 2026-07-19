@@ -61,6 +61,14 @@ function createSession(): PracticeSession {
   };
 }
 
+function withField(
+  attempt: AttemptSyncInput,
+  key: keyof AttemptSyncInput,
+  value: unknown,
+): AttemptSyncInput {
+  return { ...attempt, [key]: value } as AttemptSyncInput;
+}
+
 function createAttemptDraft(): AttemptDraft {
   return {
     clientAttemptId: "attempt-1",
@@ -117,22 +125,35 @@ describe("commitAttemptOutcome", () => {
     });
   });
 
-  it("re-commits an identical duplicate payload for the same clientAttemptId as a no-op", async () => {
+  it("treats an identical duplicate payload as a whole-transaction no-op, ignoring a stale resubmission's session and draft", async () => {
     const attemptRepository = new AttemptRepository(database);
+    const sessionRepository = new SessionRepository(database);
+    const firstSession = createSession();
 
     await commitAttemptOutcome(database, {
       attempt: createSyncAttempt(),
-      session: createSession(),
+      session: firstSession,
       attemptDraft: null,
     });
+
+    const staleSession = {
+      ...createSession(),
+      currentIndex: 1,
+    } satisfies PracticeSession;
+    const staleDraft = createAttemptDraft();
+
     await commitAttemptOutcome(database, {
       attempt: createSyncAttempt(),
-      session: createSession(),
-      attemptDraft: null,
+      session: staleSession,
+      attemptDraft: staleDraft,
     });
 
     expect(await attemptRepository.get("attempt-1")).toMatchObject({
       accuracyScore: 100,
+    });
+    expect(await sessionRepository.getResumeState("session-1")).toEqual({
+      session: firstSession,
+      attemptDraft: null,
     });
   });
 
@@ -165,6 +186,107 @@ describe("commitAttemptOutcome", () => {
     expect(await sessionRepository.getResumeState("session-1")).toMatchObject(
       { session: originalSession },
     );
+  });
+
+  it("treats NaN and null in the same field as a conflict, not a match", async () => {
+    const attemptRepository = new AttemptRepository(database);
+
+    await commitAttemptOutcome(database, {
+      attempt: withField(createSyncAttempt(), "accuracyScore", NaN),
+      session: createSession(),
+      attemptDraft: null,
+    });
+
+    await expect(
+      commitAttemptOutcome(database, {
+        attempt: withField(createSyncAttempt(), "accuracyScore", null),
+        session: createSession(),
+        attemptDraft: null,
+      }),
+    ).rejects.toThrow(AttemptConflictError);
+
+    expect((await attemptRepository.get("attempt-1"))?.accuracyScore).toBeNaN();
+  });
+
+  it("treats 0 and -0 in the same field as a conflict, not a match", async () => {
+    const attemptRepository = new AttemptRepository(database);
+
+    await commitAttemptOutcome(database, {
+      attempt: withField(createSyncAttempt(), "accuracyScore", 0),
+      session: createSession(),
+      attemptDraft: null,
+    });
+
+    await expect(
+      commitAttemptOutcome(database, {
+        attempt: withField(createSyncAttempt(), "accuracyScore", -0),
+        session: createSession(),
+        attemptDraft: null,
+      }),
+    ).rejects.toThrow(AttemptConflictError);
+
+    const stored = await attemptRepository.get("attempt-1");
+    expect(Object.is(stored?.accuracyScore, 0)).toBe(true);
+  });
+
+  it("treats a sparse array hole and an explicit undefined element as a conflict, not a match", async () => {
+    // eslint-disable-next-line no-sparse-arrays
+    const sparseActions = [, ] as unknown as AttemptSyncInput["normalizedActions"];
+    const explicitUndefinedActions = [
+      undefined,
+    ] as unknown as AttemptSyncInput["normalizedActions"];
+
+    await commitAttemptOutcome(database, {
+      attempt: withField(createSyncAttempt(), "normalizedActions", sparseActions),
+      session: createSession(),
+      attemptDraft: null,
+    });
+
+    await expect(
+      commitAttemptOutcome(database, {
+        attempt: withField(
+          createSyncAttempt(),
+          "normalizedActions",
+          explicitUndefinedActions,
+        ),
+        session: createSession(),
+        attemptDraft: null,
+      }),
+    ).rejects.toThrow(AttemptConflictError);
+  });
+
+  it("round-trips NaN, Infinity, and -0 through IndexedDB without losing their identity", async () => {
+    const attemptRepository = new AttemptRepository(database);
+    const attempt = withField(
+      withField(
+        withField(createSyncAttempt(), "accuracyScore", NaN),
+        "speedScore",
+        Infinity,
+      ),
+      "keystrokeCount",
+      -0,
+    );
+
+    await commitAttemptOutcome(database, {
+      attempt,
+      session: createSession(),
+      attemptDraft: null,
+    });
+
+    const stored = await attemptRepository.get("attempt-1");
+    expect(stored?.accuracyScore).toBeNaN();
+    expect(stored?.speedScore).toBe(Infinity);
+    expect(Object.is(stored?.keystrokeCount, -0)).toBe(true);
+
+    // A second commit with the exact same special values must still be
+    // recognized as an identical duplicate (a no-op), not a false conflict.
+    await expect(
+      commitAttemptOutcome(database, {
+        attempt,
+        session: createSession(),
+        attemptDraft: null,
+      }),
+    ).resolves.toBeUndefined();
   });
 
   it("rolls back the attempt when the session write fails, leaving no partial state", async () => {

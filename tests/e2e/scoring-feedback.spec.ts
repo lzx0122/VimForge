@@ -212,6 +212,46 @@ async function readAttemptExerciseIds(page: Page): Promise<string[]> {
   });
 }
 
+async function readPersistedAttemptDraft(
+  page: Page,
+  sessionId: string,
+): Promise<unknown> {
+  return page.evaluate(async (id) => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("vim-forge", 1);
+      request.addEventListener("success", () => resolve(request.result), { once: true });
+      request.addEventListener(
+        "error",
+        () => reject(request.error ?? new Error("Unable to open IndexedDB")),
+        { once: true },
+      );
+    });
+    const request = database
+      .transaction("sessions", "readonly")
+      .objectStore("sessions")
+      .get(id);
+    const record = await new Promise<{ attemptDraft: unknown } | undefined>(
+      (resolve, reject) => {
+        request.addEventListener(
+          "success",
+          () => resolve(request.result as { attemptDraft: unknown } | undefined),
+          { once: true },
+        );
+        request.addEventListener(
+          "error",
+          () => reject(request.error ?? new Error("Unable to read session")),
+          { once: true },
+        );
+      },
+    );
+    database.close();
+    if (record === undefined) {
+      throw new Error(`Expected a stored session for id ${id}`);
+    }
+    return record.attemptDraft;
+  }, sessionId);
+}
+
 const SECOND_EXERCISE_ID = "00000000-0000-4000-8000-000000000403";
 
 async function mockTwoExerciseCatalogWithFlakySecondFetch(
@@ -604,10 +644,11 @@ test("locks the editor and rejects further input once feedback is shown", async 
 });
 
 test("keeps the hint panel locked and avoids recreating a draft after feedback is shown", async ({ page }) => {
-  await startPracticeSession(page);
+  const sessionId = await startPracticeSession(page);
 
   await completeInsertExercise(page);
   await expect.poll(() => readAttemptCount(page)).toBe(1);
+  expect(await readPersistedAttemptDraft(page, sessionId)).toBeNull();
 
   const revealButton = page.getByRole("button", { name: "顯示提示 1" });
   await expect(revealButton).toBeDisabled();
@@ -616,6 +657,7 @@ test("keeps the hint panel locked and avoids recreating a draft after feedback i
   await expect(page.getByText("已解鎖 0 / 3", { exact: true })).toBeVisible();
   await expect(page.locator('[data-testid="restored-attempt-content"]')).toHaveCount(0);
   expect(await readAttemptCount(page)).toBe(1);
+  expect(await readPersistedAttemptDraft(page, sessionId)).toBeNull();
 });
 
 test("shows a cursor target and auto-completes a movement exercise", async ({ page }) => {
