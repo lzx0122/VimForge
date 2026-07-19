@@ -1,28 +1,49 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 
-import QuestionCountSelector from "../../practice/components/QuestionCountSelector.vue";
+import { AttemptRepository } from "../../../infrastructure/indexed-db/attempt-repository";
+import { openVimForgeDatabase } from "../../../infrastructure/indexed-db/database";
+import { SupabasePracticeCandidateRepository } from "../../../infrastructure/supabase/supabase-practice-candidate-repository";
 import type { QuestionCount } from "../../../types/learning";
+import QuestionCountSelector from "../../practice/components/QuestionCountSelector.vue";
 import DailyReviewSummary from "../components/DailyReviewSummary.vue";
 import WeakSkillList from "../components/WeakSkillList.vue";
+import {
+  ReviewSummaryService,
+  type ReviewSummary,
+} from "../services/review-summary-service";
 
-withDefaults(defineProps<{
-  hasLearningHistory?: boolean;
-  dueCount?: number;
-  weakSkills?: readonly {
-    id: string;
-    name: string;
-    masteryLevel: number;
-    dueCount: number;
-  }[];
-}>(), {
-  hasLearningHistory: false,
-  dueCount: 0,
-  weakSkills: () => [],
-});
+type ReviewLoadState = "loading" | "loaded" | "empty" | "error";
 
+const loadState = ref<ReviewLoadState>("loading");
+const summary = ref<ReviewSummary | null>(null);
 const questionCount = ref<QuestionCount>(10);
+
+async function loadSummary(): Promise<void> {
+  loadState.value = "loading";
+  try {
+    const database = await openVimForgeDatabase();
+    let result: ReviewSummary;
+    try {
+      const service = new ReviewSummaryService(
+        new SupabasePracticeCandidateRepository(),
+        new AttemptRepository(database),
+      );
+      result = await service.getSummary();
+    } finally {
+      database.close();
+    }
+    summary.value = result;
+    loadState.value = result.hasLearningHistory ? "loaded" : "empty";
+  } catch {
+    loadState.value = "error";
+  }
+}
+
+onMounted(() => {
+  void loadSummary();
+});
 </script>
 
 <template>
@@ -31,8 +52,12 @@ const questionCount = ref<QuestionCount>(10);
     <p>優先安排到期、錯題與主要弱項，再加入熟悉內容抽查。</p>
   </section>
 
+  <p v-if="loadState === 'loading'">
+    正在載入複習資料…
+  </p>
+
   <section
-    v-if="!hasLearningHistory"
+    v-else-if="loadState === 'empty'"
     class="empty-review-state"
   >
     <h2>尚無練習紀錄</h2>
@@ -46,15 +71,30 @@ const questionCount = ref<QuestionCount>(10);
   </section>
 
   <div
-    v-else
+    v-else-if="loadState === 'error'"
+    role="alert"
+    class="review-error"
+  >
+    <p>暫時無法讀取複習資料，請稍後重試。</p>
+    <button
+      type="button"
+      data-testid="review-retry"
+      @click="loadSummary"
+    >
+      重試
+    </button>
+  </div>
+
+  <div
+    v-else-if="summary !== null"
     class="daily-review-layout"
   >
     <DailyReviewSummary
-      :due-count="dueCount"
+      :due-count="summary.dueCount"
       :question-count="questionCount"
     />
     <QuestionCountSelector v-model="questionCount" />
-    <WeakSkillList :skills="weakSkills" />
+    <WeakSkillList :skills="summary.weakSkills" />
     <RouterLink
       class="primary-link"
       :to="{
@@ -79,7 +119,8 @@ const questionCount = ref<QuestionCount>(10);
   max-width: 52rem;
 }
 
-.empty-review-state {
+.empty-review-state,
+.review-error {
   justify-items: start;
   padding: 1.5rem;
   border: 1px solid #374151;
@@ -94,5 +135,16 @@ const questionCount = ref<QuestionCount>(10);
 
 .empty-review-state h2 {
   color: #f9fafb;
+}
+
+.review-error {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 52rem;
+}
+
+.review-error p {
+  margin: 0;
+  color: #fca5a5;
 }
 </style>

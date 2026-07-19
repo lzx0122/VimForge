@@ -1,9 +1,10 @@
 <script setup lang="ts">
 interface WeakSkillSummary {
-  id: string;
+  skillId: string;
+  skillSlug: string;
   name: string;
-  masteryLevel: number;
-  dueCount: number;
+  priority: number;
+  relatedExerciseCount: number;
 }
 
 defineProps<{
@@ -22,11 +23,11 @@ defineProps<{
     <ul v-if="skills.length > 0">
       <li
         v-for="skill in skills"
-        :key="skill.id"
+        :key="skill.skillId"
       >
         <strong>{{ skill.name }}</strong>
-        <span>熟練度 {{ skill.masteryLevel }} / 5</span>
-        <span>{{ skill.dueCount }} 題待複習</span>
+        <span>加強優先度 {{ Math.round(skill.priority) }}</span>
+        <span>{{ skill.relatedExerciseCount }} 題相關練習</span>
       </li>
     </ul>
     <p v-else>
