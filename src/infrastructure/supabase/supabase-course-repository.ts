@@ -9,6 +9,7 @@ import type {
   CourseUnitSummary,
 } from "../../features/course/repositories/course-repository";
 import { DIFFICULTIES, EXERCISE_TYPES, type Difficulty } from "../../types/exercise";
+import { LEARNING_MODES, type LearningMode } from "../../types/learning";
 import { getSupabaseBrowserClient } from "./client";
 import type { Database } from "./database.types";
 
@@ -18,7 +19,7 @@ const UNIT_SKILL_COLUMNS = "unit_id,skill_id,is_primary,display_order";
 const SKILL_COLUMNS = "id,slug,name,category";
 const EXERCISE_COUNT_COLUMNS = "unit_id";
 const EXERCISE_SUMMARY_COLUMNS =
-  "id,slug,title,exercise_type,difficulty,display_order";
+  "id,slug,title,exercise_type,difficulty,display_order,supported_modes";
 
 function isDifficulty(value: string): value is Difficulty {
   return DIFFICULTIES.some((difficulty) => difficulty === value);
@@ -30,6 +31,13 @@ function isExerciseType(value: string): value is CourseExerciseSummary["exercise
 
 function isSkillCategory(value: string): value is SkillCategory {
   return SKILL_CATEGORIES.some((category) => category === value);
+}
+
+function isLearningModeArray(value: unknown): value is LearningMode[] {
+  return (
+    Array.isArray(value) &&
+    value.every((mode) => LEARNING_MODES.some((learningMode) => learningMode === mode))
+  );
 }
 
 function isPositiveInteger(value: unknown): value is number {
@@ -132,6 +140,7 @@ interface ExerciseSummaryRow {
   exercise_type: string;
   difficulty: string;
   display_order: number;
+  supported_modes: string[];
 }
 
 function toExerciseSummary(row: ExerciseSummaryRow): CourseExerciseSummary {
@@ -144,6 +153,9 @@ function toExerciseSummary(row: ExerciseSummaryRow): CourseExerciseSummary {
   if (!isNonNegativeInteger(row.display_order)) {
     throw new Error(`Invalid exercise display order: ${row.display_order}.`);
   }
+  if (!isLearningModeArray(row.supported_modes)) {
+    throw new Error(`Invalid exercise supported modes: ${String(row.supported_modes)}.`);
+  }
 
   return {
     id: row.id,
@@ -152,6 +164,7 @@ function toExerciseSummary(row: ExerciseSummaryRow): CourseExerciseSummary {
     exerciseType: row.exercise_type,
     difficulty: row.difficulty,
     displayOrder: row.display_order,
+    supportedModes: row.supported_modes,
   };
 }
 

@@ -13,7 +13,10 @@ import type {
   CourseRepository,
   CourseUnitDetail,
 } from "../repositories/course-repository";
-import { CoursePracticeService } from "./course-practice-service";
+import {
+  CoursePracticeService,
+  NoBeginnerExercisesError,
+} from "./course-practice-service";
 
 const STARTED_AT = "2026-07-19T08:00:00.000Z";
 
@@ -180,7 +183,9 @@ describe("CoursePracticeService", () => {
         createStarter(save),
       );
 
-      await expect(service.startUnit("text-objects")).rejects.toThrow();
+      await expect(service.startUnit("text-objects")).rejects.toBeInstanceOf(
+        NoBeginnerExercisesError,
+      );
       expect(save).not.toHaveBeenCalled();
     });
 

@@ -27,25 +27,22 @@ import type { Database } from "./database.types";
 const MAX_SUMMARY_COUNT = 20;
 /**
  * A course unit's full exercise list is never randomized or capped like a
- * QuestionCount-bounded practice session (see PracticeSession.actualCount) -
- * this ceiling only guards against an unbounded query, not real curation.
+ * QuestionCount-bounded practice session (see PracticeSession.actualCount).
+ * Unit-scoped, display-order requests page through every row instead of
+ * applying a fixed ceiling, so a unit can never be silently truncated.
  */
-const MAX_UNIT_EXERCISE_COUNT = 500;
+const COURSE_EXERCISE_PAGE_SIZE = 200;
 const SUMMARY_COLUMNS =
   "id,unit_id,slug,title,instruction,language,exercise_type,difficulty,supported_modes,target_duration_ms,version";
 const DETAIL_COLUMNS =
   "id,unit_id,slug,title,instruction,language,exercise_type,difficulty,supported_modes,target_duration_ms,version,initial_content,expected_content,initial_cursor,completion_rule";
 
 function summaryLimit(options: ExerciseListOptions): number {
-  const ceiling =
-    options.orderByDisplayOrder === true && options.unitId !== undefined
-      ? MAX_UNIT_EXERCISE_COUNT
-      : MAX_SUMMARY_COUNT;
   const requestedLimit = options.limit;
   if (requestedLimit === undefined || !Number.isFinite(requestedLimit)) {
-    return ceiling;
+    return MAX_SUMMARY_COUNT;
   }
-  return Math.min(ceiling, Math.max(1, Math.floor(requestedLimit)));
+  return Math.min(MAX_SUMMARY_COUNT, Math.max(1, Math.floor(requestedLimit)));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -223,17 +220,15 @@ export class SupabaseExerciseRepository implements ExerciseRepository {
   public async listPublishedExercises(
     options: ExerciseListOptions = {},
   ): Promise<readonly ExerciseSummary[]> {
+    if (options.orderByDisplayOrder === true && options.unitId !== undefined) {
+      return this.listUnitExercisesInFull(options.unitId, options.learningMode);
+    }
+
     let query = this.client
       .from("exercises")
       .select(SUMMARY_COLUMNS)
-      .eq("is_published", true);
-
-    query =
-      options.orderByDisplayOrder === true
-        ? query
-            .order("display_order", { ascending: true })
-            .order("slug", { ascending: true })
-        : query.order("slug", { ascending: true });
+      .eq("is_published", true)
+      .order("slug", { ascending: true });
 
     if (options.unitId !== undefined) {
       query = query.eq("unit_id", options.unitId);
@@ -248,6 +243,49 @@ export class SupabaseExerciseRepository implements ExerciseRepository {
     }
 
     return data.map(toExerciseSummary);
+  }
+
+  /**
+   * Load every published exercise in a unit, ordered by display order then
+   * slug. Pages through the full result set instead of applying a fixed
+   * ceiling, so a unit's exercise list is never silently truncated.
+   */
+  private async listUnitExercisesInFull(
+    unitId: string,
+    learningMode: LearningMode | undefined,
+  ): Promise<ExerciseSummary[]> {
+    const results: ExerciseSummary[] = [];
+    let from = 0;
+
+    for (;;) {
+      let query = this.client
+        .from("exercises")
+        .select(SUMMARY_COLUMNS)
+        .eq("is_published", true)
+        .eq("unit_id", unitId)
+        .order("display_order", { ascending: true })
+        .order("slug", { ascending: true });
+
+      if (learningMode !== undefined) {
+        query = query.contains("supported_modes", [learningMode]);
+      }
+
+      const { data, error } = await query.range(
+        from,
+        from + COURSE_EXERCISE_PAGE_SIZE - 1,
+      );
+      if (error !== null) {
+        throwQueryError("Unable to load published exercises.", error);
+      }
+
+      results.push(...data.map(toExerciseSummary));
+      if (data.length < COURSE_EXERCISE_PAGE_SIZE) {
+        break;
+      }
+      from += COURSE_EXERCISE_PAGE_SIZE;
+    }
+
+    return results;
   }
 
   public async getPublishedExercise(

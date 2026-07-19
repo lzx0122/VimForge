@@ -1,5 +1,6 @@
 import type { SkillCategory } from "../../../content/catalog-types";
 import type { Difficulty, ExerciseType } from "../../../types/exercise";
+import type { LearningMode } from "../../../types/learning";
 
 export interface CourseSkillSummary {
   id: string;
@@ -17,6 +18,7 @@ export interface CourseExerciseSummary {
   exerciseType: ExerciseType;
   difficulty: Difficulty;
   displayOrder: number;
+  supportedModes: LearningMode[];
 }
 
 export interface CourseUnitSummary {

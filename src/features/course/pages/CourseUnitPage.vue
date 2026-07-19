@@ -10,7 +10,10 @@ import { SupabaseExerciseRepository } from "../../../infrastructure/supabase/sup
 import { usePracticeStore } from "../../../stores/practice-store";
 import { PracticeSessionStarter } from "../../practice/services/practice-session-starter";
 import type { CourseUnitDetail } from "../repositories/course-repository";
-import { CoursePracticeService } from "../services/course-practice-service";
+import {
+  CoursePracticeService,
+  NoBeginnerExercisesError,
+} from "../services/course-practice-service";
 
 type UnitLoadState = "loading" | "missing" | "empty" | "detail" | "read-error";
 
@@ -37,9 +40,15 @@ const unit = ref<CourseUnitDetail | null>(null);
 const isStarting = ref(false);
 const startError = ref<string | null>(null);
 
+const beginnerExercises = computed(() =>
+  (unit.value?.exercises ?? []).filter((exercise) =>
+    exercise.supportedModes.includes("beginner"),
+  ),
+);
+
 const exerciseTypeCounts = computed(() => {
   const counts = new Map<string, number>();
-  for (const exercise of unit.value?.exercises ?? []) {
+  for (const exercise of beginnerExercises.value) {
     counts.set(exercise.exerciseType, (counts.get(exercise.exerciseType) ?? 0) + 1);
   }
   return [...counts.entries()];
@@ -57,7 +66,11 @@ async function loadUnit(): Promise<void> {
       return;
     }
     unit.value = detail;
-    loadState.value = detail.exerciseCount === 0 ? "empty" : "detail";
+    loadState.value = detail.exercises.some((exercise) =>
+      exercise.supportedModes.includes("beginner"),
+    )
+      ? "detail"
+      : "empty";
   } catch (error: unknown) {
     reportError("course-unit.load", error);
     unit.value = null;
@@ -93,8 +106,12 @@ async function startUnit(): Promise<void> {
       params: { sessionId: session.id },
     });
   } catch (error: unknown) {
-    reportError("course-unit.start", error);
-    startError.value = "無法開始本單元，請確認連線後再試。";
+    if (error instanceof NoBeginnerExercisesError) {
+      loadState.value = "empty";
+    } else {
+      reportError("course-unit.start", error);
+      startError.value = "無法開始本單元，請確認連線後再試。";
+    }
   } finally {
     isStarting.value = false;
   }
@@ -147,7 +164,7 @@ onMounted(() => {
     <h2>{{ unit.title }}</h2>
     <p>{{ unit.slug }}</p>
     <p class="course-unit-meta">
-      {{ unit.exerciseCount }} 題 · {{ unit.estimatedMinutes }} 分鐘 ·
+      {{ beginnerExercises.length }} 題 · {{ unit.estimatedMinutes }} 分鐘 ·
       {{ DIFFICULTY_LABELS[unit.difficulty] }}
     </p>
     <p class="course-unit-description">
@@ -180,7 +197,7 @@ onMounted(() => {
     </ul>
 
     <p v-if="loadState === 'empty'">
-      此單元目前沒有可練習的題目。
+      此單元目前沒有支援初學者模式的題目。
     </p>
     <template v-else>
       <button

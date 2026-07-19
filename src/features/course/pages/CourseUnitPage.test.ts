@@ -66,6 +66,7 @@ function unitDetail(overrides: Partial<CourseUnitDetail> = {}): CourseUnitDetail
         exerciseType: "guided",
         difficulty: "advanced",
         displayOrder: 1,
+        supportedModes: ["beginner"],
       },
       {
         id: "exercise-2",
@@ -74,6 +75,7 @@ function unitDetail(overrides: Partial<CourseUnitDetail> = {}): CourseUnitDetail
         exerciseType: "challenge",
         difficulty: "advanced",
         displayOrder: 2,
+        supportedModes: ["beginner"],
       },
     ],
     ...overrides,
@@ -156,7 +158,32 @@ describe("CourseUnitPage", () => {
     const { wrapper } = await mountCourseUnitPage();
     await flushPromises();
 
-    expect(wrapper.text()).toContain("此單元目前沒有可練習的題目。");
+    expect(wrapper.text()).toContain("此單元目前沒有支援初學者模式的題目。");
+    expect(wrapper.find("button").exists()).toBe(false);
+  });
+
+  it("shows the empty state when published exercises do not support beginner mode", async () => {
+    getPublishedUnitBySlug.mockResolvedValue(
+      unitDetail({
+        exerciseCount: 2,
+        exercises: [
+          {
+            id: "exercise-1",
+            slug: "line-find-and-jump-01",
+            title: "練習一",
+            exerciseType: "review",
+            difficulty: "intermediate",
+            displayOrder: 1,
+            supportedModes: ["memory_review", "efficiency"],
+          },
+        ],
+      }),
+    );
+
+    const { wrapper } = await mountCourseUnitPage();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("此單元目前沒有支援初學者模式的題目。");
     expect(wrapper.find("button").exists()).toBe(false);
   });
 
@@ -207,6 +234,25 @@ describe("CourseUnitPage", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("無法開始本單元，請確認連線後再試。");
+    expect(router.currentRoute.value.name).toBe("course-unit");
+  });
+
+  it("switches to the beginner-empty state instead of a generic error when the start-time query finds no beginner exercises", async () => {
+    getPublishedUnitBySlug.mockResolvedValue(unitDetail());
+    listPublishedExercises.mockResolvedValue([]);
+
+    const { wrapper, router } = await mountCourseUnitPage();
+    await flushPromises();
+
+    expect(wrapper.get("button").text()).toBe("開始本單元");
+
+    await wrapper.get("button").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("此單元目前沒有支援初學者模式的題目。");
+    expect(wrapper.find("button").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("無法開始本單元，請確認連線後再試。");
+    expect(save).not.toHaveBeenCalled();
     expect(router.currentRoute.value.name).toBe("course-unit");
   });
 

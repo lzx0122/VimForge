@@ -6,6 +6,13 @@ import type {
   CourseUnitDetail,
 } from "../repositories/course-repository";
 
+export class NoBeginnerExercisesError extends Error {
+  public constructor(slug: string) {
+    super(`Course unit ${slug} has no beginner exercises available.`);
+    this.name = "NoBeginnerExercisesError";
+  }
+}
+
 export class CoursePracticeService {
   public constructor(
     private readonly courseRepository: CourseRepository,
@@ -29,9 +36,7 @@ export class CoursePracticeService {
       orderByDisplayOrder: true,
     });
     if (exercises.length === 0) {
-      throw new Error(
-        `Course unit ${slug} has no beginner exercises available.`,
-      );
+      throw new NoBeginnerExercisesError(slug);
     }
 
     return this.sessionStarter.start({

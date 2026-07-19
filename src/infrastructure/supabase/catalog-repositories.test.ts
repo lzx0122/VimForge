@@ -175,6 +175,7 @@ describe("SupabaseCourseRepository", () => {
               exercise_type: "challenge",
               difficulty: "advanced",
               display_order: 1,
+              supported_modes: ["memory_review", "efficiency"],
             },
             {
               id: "exercise-a",
@@ -183,6 +184,7 @@ describe("SupabaseCourseRepository", () => {
               exercise_type: "guided",
               difficulty: "advanced",
               display_order: 1,
+              supported_modes: ["beginner"],
             },
             {
               id: "exercise-c",
@@ -191,6 +193,7 @@ describe("SupabaseCourseRepository", () => {
               exercise_type: "challenge",
               difficulty: "advanced",
               display_order: 2,
+              supported_modes: ["beginner", "memory_review"],
             },
           ];
         }
@@ -233,6 +236,7 @@ describe("SupabaseCourseRepository", () => {
             exerciseType: "guided",
             difficulty: "advanced",
             displayOrder: 1,
+            supportedModes: ["beginner"],
           },
           {
             id: "exercise-b",
@@ -241,6 +245,7 @@ describe("SupabaseCourseRepository", () => {
             exerciseType: "challenge",
             difficulty: "advanced",
             displayOrder: 1,
+            supportedModes: ["memory_review", "efficiency"],
           },
           {
             id: "exercise-c",
@@ -249,6 +254,7 @@ describe("SupabaseCourseRepository", () => {
             exerciseType: "challenge",
             difficulty: "advanced",
             displayOrder: 2,
+            supportedModes: ["beginner", "memory_review"],
           },
         ],
       });
@@ -262,6 +268,7 @@ describe("SupabaseCourseRepository", () => {
         "display_order.asc,slug.asc",
       );
       const selectedExerciseColumns = exercisesUrl.searchParams.get("select") ?? "";
+      expect(selectedExerciseColumns).toContain("supported_modes");
       expect(selectedExerciseColumns).not.toContain("initial_content");
       expect(selectedExerciseColumns).not.toContain("expected_content");
       expect(selectedExerciseColumns).not.toContain("completion_rule");
@@ -384,6 +391,58 @@ describe("SupabaseExerciseRepository", () => {
 
     const requestUrl = new URL(requests[0]?.url ?? "");
     expect(requestUrl.searchParams.get("order")).toBe("slug.asc");
+  });
+
+  it("paginates through a course unit's full exercise list instead of silently truncating it", async () => {
+    const totalExercises = 205;
+    const allExercises = Array.from({ length: totalExercises }, (_, index) => ({
+      id: `exercise-${index + 1}`,
+      unit_id: "unit-1",
+      slug: `unit-${String(index + 1).padStart(3, "0")}`,
+      title: `練習 ${index + 1}`,
+      instruction: "指示",
+      language: "plaintext",
+      exercise_type: "guided",
+      difficulty: "beginner",
+      supported_modes: ["beginner"],
+      target_duration_ms: 1000,
+      version: 1,
+      display_order: index + 1,
+    }));
+
+    const { client, requests } = createMockClient((request) => {
+      const table = new URL(request.url).pathname.split("/").at(-1);
+      if (table !== "exercises") {
+        return [];
+      }
+      const requestUrl = new URL(request.url);
+      const offset = Number(requestUrl.searchParams.get("offset") ?? "0");
+      const limit = Number(requestUrl.searchParams.get("limit") ?? "0");
+      return allExercises.slice(offset, offset + limit);
+    });
+    const repository = new SupabaseExerciseRepository(client);
+
+    const result = await repository.listPublishedExercises({
+      unitId: "unit-1",
+      learningMode: "beginner",
+      orderByDisplayOrder: true,
+    });
+
+    expect(result).toHaveLength(totalExercises);
+    expect(result.map((exercise) => exercise.slug)).toEqual(
+      allExercises.map((exercise) => exercise.slug),
+    );
+
+    const exerciseRequests = requests.filter((request) =>
+      new URL(request.url).pathname.endsWith("/exercises"),
+    );
+    expect(exerciseRequests.length).toBeGreaterThanOrEqual(2);
+    for (const request of exerciseRequests) {
+      const requestUrl = new URL(request.url);
+      expect(requestUrl.searchParams.get("order")).toBe(
+        "display_order.asc,slug.asc",
+      );
+    }
   });
 
   it("loads and maps one complete practice exercise on demand", async () => {
