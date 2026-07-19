@@ -48,8 +48,12 @@ function hasOnlyTouchedSkills(
 function computePriority(
   snapshot: ExerciseLearningSnapshot | undefined,
 ): number {
-  const recentFailureWeight = snapshot?.lastCompleted === false ? 40 : 0;
-  const historicalFailureWeight = (snapshot?.failedAttemptCount ?? 0) * 5;
+  const failureWeight =
+    snapshot === undefined
+      ? 0
+      : snapshot.lastCompleted === false
+        ? 40
+        : snapshot.failedAttemptCount * 5;
   const accuracyWeight =
     snapshot === undefined || snapshot.averageAccuracy === null
       ? 10
@@ -61,14 +65,7 @@ function computePriority(
   const hintWeight = (snapshot?.highestRecentHintLevel ?? 0) * 5;
   const exposureWeight = Math.max(0, 3 - (snapshot?.attemptCount ?? 0)) * 4;
 
-  return (
-    recentFailureWeight +
-    historicalFailureWeight +
-    accuracyWeight +
-    speedWeight +
-    hintWeight +
-    exposureWeight
-  );
+  return failureWeight + accuracyWeight + speedWeight + hintWeight + exposureWeight;
 }
 
 function isStale(snapshot: ExerciseLearningSnapshot, now: Date): boolean {

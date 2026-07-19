@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import type { ExerciseLearningSnapshot } from "../../../domain/review/exercise-learning-snapshot";
-import { selectPracticeExercises } from "../../../domain/review/practice-selector";
 import type { PracticeCandidateRecord } from "../repositories/practice-candidate-repository";
 import { buildPracticeCandidatePools } from "./practice-pool-builder";
 
@@ -251,35 +250,22 @@ describe("buildPracticeCandidatePools", () => {
     expect(found?.priority).toBe(20);
   });
 
-  it("adds the recent-failure bonus to the historical failure weight instead of replacing it", () => {
-    const oneFailure = candidate({ exerciseId: "one-failure" });
-    const manyFailures = candidate({ exerciseId: "many-failures" });
-    const sharedSnapshotFields = {
-      lastCompleted: false as const,
-      averageAccuracy: 95,
-      averageSpeed: 90,
-      highestRecentHintLevel: 0 as const,
-      attemptCount: 3,
-      lastAttemptAt: NOW.toISOString(),
-    };
-
+  it("uses the flat recent-failure weight, not failedAttemptCount, when the most recent attempt failed", () => {
+    const target = candidate({ exerciseId: "recent-failure-exercise" });
     const pools = buildPracticeCandidatePools({
-      candidates: [oneFailure, manyFailures],
+      candidates: [target],
       snapshots: new Map([
         [
-          "one-failure",
+          "recent-failure-exercise",
           snapshot({
-            exerciseId: "one-failure",
-            ...sharedSnapshotFields,
-            failedAttemptCount: 1,
-          }),
-        ],
-        [
-          "many-failures",
-          snapshot({
-            exerciseId: "many-failures",
-            ...sharedSnapshotFields,
+            exerciseId: "recent-failure-exercise",
+            lastCompleted: false,
             failedAttemptCount: 5,
+            averageAccuracy: 100,
+            averageSpeed: 100,
+            highestRecentHintLevel: 0,
+            attemptCount: 3,
+            lastAttemptAt: NOW.toISOString(),
           }),
         ],
       ]),
@@ -287,31 +273,50 @@ describe("buildPracticeCandidatePools", () => {
       now: NOW,
     });
 
-    const oneFailurePriority = pools.dueOrIncorrect.find(
-      (c) => c.exerciseId === "one-failure",
-    )?.priority;
-    const manyFailuresPriority = pools.dueOrIncorrect.find(
-      (c) => c.exerciseId === "many-failures",
-    )?.priority;
+    // failureWeight: 40 (flat, since lastCompleted === false - the
+    // historical failedAttemptCount of 5 does not additionally raise it)
+    // accuracyWeight: (100-100)*0.25 = 0
+    // speedWeight: (100-100)*0.15 = 0
+    // hintWeight: 0*5 = 0
+    // exposureWeight: max(0, 3-3)*4 = 0
+    // total = 40
+    expect(pools.dueOrIncorrect.find(
+      (c) => c.exerciseId === "recent-failure-exercise",
+    )?.priority).toBe(40);
+  });
 
-    expect(oneFailurePriority).toBeDefined();
-    expect(manyFailuresPriority).toBeDefined();
-    // recentFailureWeight (40) is shared; only historicalFailureWeight
-    // (failedAttemptCount * 5) should differ: (5-1) * 5 = 20.
-    expect(manyFailuresPriority! - oneFailurePriority!).toBe(20);
-
-    const selected = selectPracticeExercises({
-      questionCount: 5,
+  it("uses failedAttemptCount * 5, not the flat 40, when the most recent attempt succeeded", () => {
+    const target = candidate({ exerciseId: "past-failures-exercise" });
+    const pools = buildPracticeCandidatePools({
+      candidates: [target],
+      snapshots: new Map([
+        [
+          "past-failures-exercise",
+          snapshot({
+            exerciseId: "past-failures-exercise",
+            lastCompleted: true,
+            failedAttemptCount: 5,
+            successfulAttemptCount: 2,
+            averageAccuracy: 100,
+            averageSpeed: 100,
+            highestRecentHintLevel: 0,
+            attemptCount: 5,
+            lastAttemptAt: NOW.toISOString(),
+          }),
+        ],
+      ]),
       touchedSkillIds: [TOUCHED_SKILL],
-      pools: {
-        dueOrIncorrect: pools.dueOrIncorrect,
-        weak: [],
-        familiar: [],
-        stale: [],
-        sameDifficulty: [],
-      },
+      now: NOW,
     });
-    expect(selected[0]).toBe("many-failures");
+
+    // failureWeight: 5*5 = 25 (lastCompleted === true, so the historical
+    // failedAttemptCount drives it instead of the flat 40)
+    // accuracyWeight: 0, speedWeight: 0, hintWeight: 0
+    // exposureWeight: max(0, 3-5)*4 = 0
+    // total = 25
+    expect(pools.familiar.find(
+      (c) => c.exerciseId === "past-failures-exercise",
+    )?.priority).toBe(25);
   });
 
   it("excludes an attempted but neutral candidate from every pool", () => {
