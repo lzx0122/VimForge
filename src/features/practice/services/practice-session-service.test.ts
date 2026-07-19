@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { createPracticeSession } from "./practice-session-service";
+import {
+  abandonPracticeSession,
+  advancePracticeSession,
+  createPracticeSession,
+} from "./practice-session-service";
 
 const STARTED_AT = "2026-07-19T08:00:00.000Z";
 
@@ -41,5 +45,40 @@ describe("createPracticeSession", () => {
 
     expect(session.requestedCount).toBe(10);
     expect(session.actualCount).toBe(7);
+  });
+});
+
+describe("actualCount preservation", () => {
+  function createTestSession() {
+    return createPracticeSession({
+      id: "session-3",
+      learningMode: "memory_review",
+      selectionType: "daily_review",
+      requestedCount: 10,
+      exerciseIds: ["exercise-1", "exercise-2"],
+      startedAt: STARTED_AT,
+    });
+  }
+
+  it("preserves actualCount when advancing a practice session", () => {
+    const session = createTestSession();
+
+    const advanced = advancePracticeSession(
+      session,
+      "2026-07-19T08:01:00.000Z",
+    );
+
+    expect(advanced.actualCount).toBe(session.actualCount);
+  });
+
+  it("preserves actualCount when abandoning a practice session", () => {
+    const session = createTestSession();
+
+    const abandoned = abandonPracticeSession(
+      session,
+      "2026-07-19T08:01:00.000Z",
+    );
+
+    expect(abandoned.actualCount).toBe(session.actualCount);
   });
 });

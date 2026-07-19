@@ -30,6 +30,25 @@ export function toStoredSession(
   };
 }
 
+/**
+ * Version-1 IndexedDB records were persisted before `actualCount` existed, so
+ * a stored record's `session` may lack it at runtime despite the type
+ * requiring it. Normalize at this repository boundary so every caller
+ * receives a genuinely complete PracticeSession.
+ */
+export function normalizePersistedSession(
+  session: PracticeSession,
+): PracticeSession {
+  if (typeof session.actualCount === "number") {
+    return session;
+  }
+
+  return {
+    ...session,
+    actualCount: session.exerciseIds.length,
+  };
+}
+
 export class SessionRepository {
   public constructor(private readonly database: IDBDatabase) {}
 
@@ -61,7 +80,9 @@ export class SessionRepository {
       transaction.objectStore(INDEXED_DB_STORES.sessions).get(id),
     );
 
-    return storedSession?.session ?? null;
+    return storedSession === undefined
+      ? null
+      : normalizePersistedSession(storedSession.session);
   }
 
   public async getActive(): Promise<PracticeSession | null> {
@@ -78,7 +99,9 @@ export class SessionRepository {
         .get("active"),
     );
 
-    return storedSession?.session ?? null;
+    return storedSession === undefined
+      ? null
+      : normalizePersistedSession(storedSession.session);
   }
 
   public async getResumeState(id: string): Promise<ResumeState | null> {
@@ -95,7 +118,7 @@ export class SessionRepository {
     }
 
     return {
-      session: storedSession.session,
+      session: normalizePersistedSession(storedSession.session),
       attemptDraft: storedSession.attemptDraft,
     };
   }

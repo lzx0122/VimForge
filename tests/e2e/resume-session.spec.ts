@@ -2,6 +2,9 @@ import { expect, test, type Page } from "@playwright/test";
 
 const SESSION_ID = "resume-session";
 
+// Intentionally omits actualCount to model a version-1 IndexedDB record
+// persisted before that field existed. SessionRepository must normalize it
+// back to exerciseIds.length when reading and re-persisting this session.
 const session = {
   id: SESSION_ID,
   learningMode: "memory_review",
@@ -16,8 +19,11 @@ const session = {
   updatedAt: "2026-07-16T08:01:00.000Z",
 } as const;
 
+const LEGACY_SESSION_ACTUAL_COUNT = session.exerciseIds.length;
+
 type PersistedSession = Omit<typeof session, "status"> & {
   status: "active" | "completed" | "abandoned";
+  actualCount?: number;
 };
 
 const attemptDraft = {
@@ -198,4 +204,9 @@ test("abandons the session without recording an automatic failure", async ({
   expect(storedSession.session.status).toBe("abandoned");
   expect(storedSession.attemptDraft).toBeNull();
   expect(attemptCount).toBe(0);
+  // The seeded fixture is a legacy (pre-actualCount) record. Reading it via
+  // SessionRepository.getResumeState() normalizes actualCount in memory, and
+  // abandoning re-persists the full session, so the record on disk now
+  // carries a real actualCount instead of the legacy shape.
+  expect(storedSession.session.actualCount).toBe(LEGACY_SESSION_ACTUAL_COUNT);
 });

@@ -153,6 +153,32 @@ describe("IndexedDB repositories", () => {
     expect(await repository.getActive()).toEqual(session);
   });
 
+  it("normalizes a legacy stored session that predates actualCount", async () => {
+    const repository = new SessionRepository(database);
+    const legacySession = createSession();
+    const rawLegacySession: Record<string, unknown> = { ...legacySession };
+    delete rawLegacySession.actualCount;
+
+    const transaction = database.transaction("sessions", "readwrite");
+    transaction.objectStore("sessions").put({
+      id: legacySession.id,
+      status: legacySession.status,
+      session: rawLegacySession,
+      attemptDraft: null,
+    });
+    await transactionToPromise(transaction);
+
+    expect(await repository.get(legacySession.id)).toMatchObject({
+      actualCount: legacySession.exerciseIds.length,
+    });
+    expect(await repository.getActive()).toMatchObject({
+      actualCount: legacySession.exerciseIds.length,
+    });
+    expect(await repository.getResumeState(legacySession.id)).toMatchObject({
+      session: { actualCount: legacySession.exerciseIds.length },
+    });
+  });
+
   it("stores an unfinished attempt draft with its resumable session", async () => {
     const repository = new SessionRepository(database);
     const session = createSession();
