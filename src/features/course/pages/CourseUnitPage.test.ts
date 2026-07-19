@@ -250,6 +250,11 @@ describe("CourseUnitPage", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("此單元目前沒有支援初學者模式的題目。");
+    expect(wrapper.text()).toContain("0 題");
+    expect(wrapper.text()).not.toContain("2 題");
+    expect(
+      wrapper.find('[data-testid="exercise-type-counts"]').exists(),
+    ).toBe(false);
     expect(wrapper.find("button").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("無法開始本單元，請確認連線後再試。");
     expect(save).not.toHaveBeenCalled();

@@ -164,7 +164,8 @@ onMounted(() => {
     <h2>{{ unit.title }}</h2>
     <p>{{ unit.slug }}</p>
     <p class="course-unit-meta">
-      {{ beginnerExercises.length }} 題 · {{ unit.estimatedMinutes }} 分鐘 ·
+      {{ loadState === "empty" ? 0 : beginnerExercises.length }} 題 ·
+      {{ unit.estimatedMinutes }} 分鐘 ·
       {{ DIFFICULTY_LABELS[unit.difficulty] }}
     </p>
     <p class="course-unit-description">
@@ -184,7 +185,7 @@ onMounted(() => {
     </ul>
 
     <ul
-      v-if="exerciseTypeCounts.length > 0"
+      v-if="loadState === 'detail' && exerciseTypeCounts.length > 0"
       class="course-unit-type-counts"
       data-testid="exercise-type-counts"
     >
