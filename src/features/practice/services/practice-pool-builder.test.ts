@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ExerciseLearningSnapshot } from "../../../domain/review/exercise-learning-snapshot";
+import { selectPracticeExercises } from "../../../domain/review/practice-selector";
 import type { PracticeCandidateRecord } from "../repositories/practice-candidate-repository";
 import { buildPracticeCandidatePools } from "./practice-pool-builder";
 
@@ -248,6 +249,103 @@ describe("buildPracticeCandidatePools", () => {
       (c) => c.exerciseId === "priority-exercise",
     );
     expect(found?.priority).toBe(20);
+  });
+
+  it("adds the recent-failure bonus to the historical failure weight instead of replacing it", () => {
+    const oneFailure = candidate({ exerciseId: "one-failure" });
+    const manyFailures = candidate({ exerciseId: "many-failures" });
+    const sharedSnapshotFields = {
+      lastCompleted: false as const,
+      averageAccuracy: 95,
+      averageSpeed: 90,
+      highestRecentHintLevel: 0 as const,
+      attemptCount: 3,
+      lastAttemptAt: NOW.toISOString(),
+    };
+
+    const pools = buildPracticeCandidatePools({
+      candidates: [oneFailure, manyFailures],
+      snapshots: new Map([
+        [
+          "one-failure",
+          snapshot({
+            exerciseId: "one-failure",
+            ...sharedSnapshotFields,
+            failedAttemptCount: 1,
+          }),
+        ],
+        [
+          "many-failures",
+          snapshot({
+            exerciseId: "many-failures",
+            ...sharedSnapshotFields,
+            failedAttemptCount: 5,
+          }),
+        ],
+      ]),
+      touchedSkillIds: [TOUCHED_SKILL],
+      now: NOW,
+    });
+
+    const oneFailurePriority = pools.dueOrIncorrect.find(
+      (c) => c.exerciseId === "one-failure",
+    )?.priority;
+    const manyFailuresPriority = pools.dueOrIncorrect.find(
+      (c) => c.exerciseId === "many-failures",
+    )?.priority;
+
+    expect(oneFailurePriority).toBeDefined();
+    expect(manyFailuresPriority).toBeDefined();
+    // recentFailureWeight (40) is shared; only historicalFailureWeight
+    // (failedAttemptCount * 5) should differ: (5-1) * 5 = 20.
+    expect(manyFailuresPriority! - oneFailurePriority!).toBe(20);
+
+    const selected = selectPracticeExercises({
+      questionCount: 5,
+      touchedSkillIds: [TOUCHED_SKILL],
+      pools: {
+        dueOrIncorrect: pools.dueOrIncorrect,
+        weak: [],
+        familiar: [],
+        stale: [],
+        sameDifficulty: [],
+      },
+    });
+    expect(selected[0]).toBe("many-failures");
+  });
+
+  it("excludes an attempted but neutral candidate from every pool", () => {
+    const neutral = candidate({ exerciseId: "neutral-exercise" });
+    const pools = buildPracticeCandidatePools({
+      candidates: [neutral],
+      snapshots: new Map([
+        [
+          "neutral-exercise",
+          snapshot({
+            exerciseId: "neutral-exercise",
+            attemptCount: 1,
+            successfulAttemptCount: 1,
+            failedAttemptCount: 0,
+            lastCompleted: true,
+            lastAttemptAt: NOW.toISOString(),
+            averageAccuracy: 95,
+            averageSpeed: 90,
+            highestRecentHintLevel: 0,
+          }),
+        ],
+      ]),
+      touchedSkillIds: [TOUCHED_SKILL],
+      now: NOW,
+    });
+
+    const allCandidateIds = [
+      ...pools.dueOrIncorrect,
+      ...pools.weak,
+      ...pools.familiar,
+      ...pools.stale,
+      ...pools.sameDifficulty,
+    ].map((c) => c.exerciseId);
+    expect(allCandidateIds).not.toContain("neutral-exercise");
   });
 
   it("produces the same pool order for the same seed date", () => {

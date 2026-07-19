@@ -48,12 +48,8 @@ function hasOnlyTouchedSkills(
 function computePriority(
   snapshot: ExerciseLearningSnapshot | undefined,
 ): number {
-  const failureWeight =
-    snapshot === undefined
-      ? 0
-      : snapshot.lastCompleted === false
-        ? 40
-        : snapshot.failedAttemptCount * 5;
+  const recentFailureWeight = snapshot?.lastCompleted === false ? 40 : 0;
+  const historicalFailureWeight = (snapshot?.failedAttemptCount ?? 0) * 5;
   const accuracyWeight =
     snapshot === undefined || snapshot.averageAccuracy === null
       ? 10
@@ -65,7 +61,14 @@ function computePriority(
   const hintWeight = (snapshot?.highestRecentHintLevel ?? 0) * 5;
   const exposureWeight = Math.max(0, 3 - (snapshot?.attemptCount ?? 0)) * 4;
 
-  return failureWeight + accuracyWeight + speedWeight + hintWeight + exposureWeight;
+  return (
+    recentFailureWeight +
+    historicalFailureWeight +
+    accuracyWeight +
+    speedWeight +
+    hintWeight +
+    exposureWeight
+  );
 }
 
 function isStale(snapshot: ExerciseLearningSnapshot, now: Date): boolean {
@@ -94,15 +97,20 @@ function isFamiliar(snapshot: ExerciseLearningSnapshot): boolean {
 type PoolName = keyof PracticeCandidatePools;
 
 /**
- * Classify a candidate into exactly one pool. Order matters: a failed last
- * attempt always wins (dueOrIncorrect); a long-unseen success resurfaces as
- * stale before it can be called familiar, since spaced repetition should
- * favor bringing old material back over treating it as already comfortable.
+ * Classify a candidate into exactly one pool, or null when it belongs in
+ * none. Order matters: a failed last attempt always wins (dueOrIncorrect);
+ * a long-unseen success resurfaces as stale before it can be called
+ * familiar, since spaced repetition should favor bringing old material back
+ * over treating it as already comfortable. An attempted candidate that is
+ * merely neutral - not failed, not stale, not weak, and not yet familiar
+ * (fewer than FAMILIAR_MIN_SUCCESSFUL_ATTEMPTS successes) - is excluded
+ * entirely rather than falling into sameDifficulty, which is reserved for
+ * exercises the learner has never attempted.
  */
 function classify(
   snapshot: ExerciseLearningSnapshot | undefined,
   now: Date,
-): PoolName {
+): PoolName | null {
   if (snapshot === undefined) {
     return "sameDifficulty";
   }
@@ -118,7 +126,7 @@ function classify(
   if (isFamiliar(snapshot)) {
     return "familiar";
   }
-  return "sameDifficulty";
+  return null;
 }
 
 /**
@@ -156,6 +164,10 @@ export function buildPracticeCandidatePools(
 
     const snapshot = input.snapshots.get(candidate.exerciseId);
     const poolName = classify(snapshot, input.now);
+
+    if (poolName === null) {
+      continue;
+    }
 
     pools[poolName].push({
       exerciseId: candidate.exerciseId,
