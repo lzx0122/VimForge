@@ -594,6 +594,31 @@ test("automatically completes after every target condition matches", async ({ pa
   await expect(page.getByRole("heading", { name: "練習結果" })).toBeVisible();
 });
 
+test("keeps expanded metric calculations inside their layout", async ({ page }) => {
+  await page.setViewportSize({ width: 720, height: 900 });
+  await startPracticeSession(page);
+  await completeInsertExercise(page);
+  await page.getByText("查看計算方式", { exact: true }).click();
+
+  const layout = await page.locator(".metric-explanation-grid").evaluate((grid) => ({
+    gridFits: grid.scrollWidth <= grid.clientWidth,
+    sectionsFit: Array.from(grid.children).every(
+      (section) => section.scrollWidth <= section.clientWidth,
+    ),
+  }));
+  expect(layout).toEqual({ gridFits: true, sectionsFit: true });
+
+  const detailsBox = await page.locator("details.metric-explanation").boundingBox();
+  const solutionsBox = await page
+    .locator('[data-feedback-section="solutions"]')
+    .boundingBox();
+  expect(detailsBox).not.toBeNull();
+  expect(solutionsBox).not.toBeNull();
+  expect((detailsBox?.y ?? 0) + (detailsBox?.height ?? 0)).toBeLessThanOrEqual(
+    (solutionsBox?.y ?? 0) + 1,
+  );
+});
+
 test("retries the completed exercise before advancing the session", async ({ page }) => {
   const sessionId = await startPracticeSession(page);
   const timer = page.getByLabel("已練習時間");
