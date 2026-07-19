@@ -48,6 +48,16 @@ function restoreTimeZone(originalTimeZone: string | undefined): void {
 }
 
 describe("restoreTimeZone", () => {
+  let suiteOriginalTimeZone: string | undefined;
+
+  beforeEach(() => {
+    suiteOriginalTimeZone = process.env.TZ;
+  });
+
+  afterEach(() => {
+    restoreTimeZone(suiteOriginalTimeZone);
+  });
+
   it("removes TZ when the original environment did not define it", () => {
     delete process.env.TZ;
     process.env.TZ = "Asia/Taipei";
