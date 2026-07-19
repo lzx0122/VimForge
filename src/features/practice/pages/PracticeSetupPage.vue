@@ -2,10 +2,11 @@
 import { computed, ref } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 
+import { AttemptRepository } from "../../../infrastructure/indexed-db/attempt-repository";
 import { openVimForgeDatabase } from "../../../infrastructure/indexed-db/database";
 import { SessionRepository } from "../../../infrastructure/indexed-db/session-repository";
 import { reportError } from "../../../infrastructure/monitoring/error-reporter";
-import { SupabaseExerciseRepository } from "../../../infrastructure/supabase/supabase-exercise-repository";
+import { SupabasePracticeCandidateRepository } from "../../../infrastructure/supabase/supabase-practice-candidate-repository";
 import { usePracticeStore } from "../../../stores/practice-store";
 import type {
   LearningMode,
@@ -17,6 +18,7 @@ import PracticeSourceSelector, {
 } from "../components/PracticeSourceSelector.vue";
 import QuestionCountSelector from "../components/QuestionCountSelector.vue";
 import TopicSelector from "../components/TopicSelector.vue";
+import { PracticeSelectionService } from "../services/practice-selection-service";
 import { PracticeSessionStarter } from "../services/practice-session-starter";
 
 const route = useRoute();
@@ -33,6 +35,7 @@ const practiceSource = ref<PracticeSource>(
 const selectedTopics = ref<string[]>([]);
 const isStarting = ref(false);
 const startError = ref<string | null>(null);
+const infoMessage = ref<string | null>(null);
 
 const mode = computed<LearningMode>(() => {
   const queryMode = route.query.mode;
@@ -50,13 +53,33 @@ const canStart = computed(
     (practiceSource.value !== "topic_practice" || selectedTopics.value.length > 0),
 );
 
-function selectionType(): PracticeSelectionType {
+function selectionType(): Exclude<PracticeSelectionType, "course"> {
   if (mode.value === "memory_review") {
     return practiceSource.value;
   }
   return selectedTopics.value.length > 0
     ? "topic_practice"
     : "weakness_practice";
+}
+
+function todayLocalDate(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function emptySelectionMessage(
+  currentSelectionType: PracticeSelectionType,
+): string {
+  if (currentSelectionType === "topic_practice") {
+    return "目前選取的主題尚無可用題目，請選擇其他主題。";
+  }
+  if (currentSelectionType === "daily_review") {
+    return "無法讀取學習紀錄，暫時不能建立今日複習。";
+  }
+  return "無法建立題組，請確認連線後再試。";
 }
 
 async function startPractice(): Promise<void> {
@@ -66,38 +89,56 @@ async function startPractice(): Promise<void> {
 
   isStarting.value = true;
   startError.value = null;
+  infoMessage.value = null;
   try {
-    const exerciseRepository = new SupabaseExerciseRepository();
-    const exercises = await exerciseRepository.listPublishedExercises({
-      learningMode: mode.value,
-      limit: questionCount.value,
-    });
-    if (exercises.length === 0) {
-      startError.value = "目前沒有符合條件的公開題目，請稍後再試。";
-      return;
-    }
-
+    const currentMode = mode.value;
+    const currentSelectionType = selectionType();
     const database = await openVimForgeDatabase();
-    let session;
     try {
+      const selectionService = new PracticeSelectionService(
+        new SupabasePracticeCandidateRepository(),
+        new AttemptRepository(database),
+      );
+      const selection = await selectionService.select({
+        learningMode: currentMode,
+        selectionType: currentSelectionType,
+        questionCount: questionCount.value,
+        selectedTopicSlugs: selectedTopics.value,
+        localDate: todayLocalDate(),
+      });
+
+      if (selection.actualCount === 0) {
+        startError.value = emptySelectionMessage(currentSelectionType);
+        return;
+      }
+
+      if (
+        !selection.personalized &&
+        currentSelectionType === "weakness_practice"
+      ) {
+        infoMessage.value = "尚無個人練習資料，本次先安排一般效率題目。";
+      } else if (selection.actualCount < questionCount.value) {
+        infoMessage.value = `目前符合條件的題目共有 ${selection.actualCount} 題，本次將安排全部可用題目。`;
+      }
+
       const starter = new PracticeSessionStarter(
         new SessionRepository(database),
         practiceStore,
       );
-      session = await starter.start({
-        learningMode: mode.value,
-        selectionType: selectionType(),
+      const session = await starter.start({
+        learningMode: currentMode,
+        selectionType: currentSelectionType,
         requestedCount: questionCount.value,
-        exerciseIds: exercises.map((exercise) => exercise.id),
-        selectedSkillIds: selectedTopics.value,
+        exerciseIds: selection.exerciseIds,
+        selectedSkillIds: selection.selectedSkillIds,
+      });
+      await router.push({
+        name: "practice",
+        params: { sessionId: session.id },
       });
     } finally {
       database.close();
     }
-    await router.push({
-      name: "practice",
-      params: { sessionId: session.id },
-    });
   } catch (error: unknown) {
     reportError("practice.create-session", error);
     startError.value = "無法建立題組，請確認連線後再試。";
@@ -164,6 +205,12 @@ async function startPractice(): Promise<void> {
       {{ isStarting ? "正在建立題組…" : "開始練習" }}
     </button>
     <p
+      v-if="infoMessage"
+      class="start-practice-info"
+    >
+      {{ infoMessage }}
+    </p>
+    <p
       v-if="startError"
       role="alert"
     >
@@ -198,5 +245,9 @@ async function startPractice(): Promise<void> {
 .start-practice-panel p {
   margin: 0;
   color: #fca5a5;
+}
+
+.start-practice-info {
+  color: #a3a3a3;
 }
 </style>
