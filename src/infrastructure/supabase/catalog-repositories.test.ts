@@ -343,6 +343,49 @@ describe("SupabaseExerciseRepository", () => {
     expect(selectedColumns).not.toContain("completion_rule");
   });
 
+  it("orders by display order then slug and does not cap a single unit's exercise list at 20 when requested for a course", async () => {
+    const { client, requests } = createMockClient(() =>
+      Array.from({ length: 25 }, (_, index) => ({
+        id: `exercise-${index + 1}`,
+        unit_id: "unit-1",
+        slug: `unit-${String(index + 1).padStart(2, "0")}`,
+        title: `練習 ${index + 1}`,
+        instruction: "指示",
+        language: "plaintext",
+        exercise_type: "guided",
+        difficulty: "beginner",
+        supported_modes: ["beginner"],
+        target_duration_ms: 1000,
+        version: 1,
+      })),
+    );
+    const repository = new SupabaseExerciseRepository(client);
+
+    const result = await repository.listPublishedExercises({
+      unitId: "unit-1",
+      learningMode: "beginner",
+      orderByDisplayOrder: true,
+    });
+
+    expect(result).toHaveLength(25);
+
+    const requestUrl = new URL(requests[0]?.url ?? "");
+    expect(requestUrl.searchParams.get("order")).toBe(
+      "display_order.asc,slug.asc",
+    );
+    expect(requestUrl.searchParams.get("limit")).not.toBe("20");
+  });
+
+  it("keeps ordering by slug alone when orderByDisplayOrder is not requested", async () => {
+    const { client, requests } = createMockClient(() => []);
+    const repository = new SupabaseExerciseRepository(client);
+
+    await repository.listPublishedExercises({ unitId: "unit-1" });
+
+    const requestUrl = new URL(requests[0]?.url ?? "");
+    expect(requestUrl.searchParams.get("order")).toBe("slug.asc");
+  });
+
   it("loads and maps one complete practice exercise on demand", async () => {
     const { client, requests } = createMockClient((request) => {
       const table = new URL(request.url).pathname.split("/").at(-1);

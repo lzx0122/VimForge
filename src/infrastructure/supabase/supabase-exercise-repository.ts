@@ -25,16 +25,27 @@ import { getSupabaseBrowserClient } from "./client";
 import type { Database } from "./database.types";
 
 const MAX_SUMMARY_COUNT = 20;
+/**
+ * A course unit's full exercise list is never randomized or capped like a
+ * QuestionCount-bounded practice session (see PracticeSession.actualCount) -
+ * this ceiling only guards against an unbounded query, not real curation.
+ */
+const MAX_UNIT_EXERCISE_COUNT = 500;
 const SUMMARY_COLUMNS =
   "id,unit_id,slug,title,instruction,language,exercise_type,difficulty,supported_modes,target_duration_ms,version";
 const DETAIL_COLUMNS =
   "id,unit_id,slug,title,instruction,language,exercise_type,difficulty,supported_modes,target_duration_ms,version,initial_content,expected_content,initial_cursor,completion_rule";
 
-function summaryLimit(requestedLimit: number | undefined): number {
+function summaryLimit(options: ExerciseListOptions): number {
+  const ceiling =
+    options.orderByDisplayOrder === true && options.unitId !== undefined
+      ? MAX_UNIT_EXERCISE_COUNT
+      : MAX_SUMMARY_COUNT;
+  const requestedLimit = options.limit;
   if (requestedLimit === undefined || !Number.isFinite(requestedLimit)) {
-    return MAX_SUMMARY_COUNT;
+    return ceiling;
   }
-  return Math.min(MAX_SUMMARY_COUNT, Math.max(1, Math.floor(requestedLimit)));
+  return Math.min(ceiling, Math.max(1, Math.floor(requestedLimit)));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -215,8 +226,14 @@ export class SupabaseExerciseRepository implements ExerciseRepository {
     let query = this.client
       .from("exercises")
       .select(SUMMARY_COLUMNS)
-      .eq("is_published", true)
-      .order("slug", { ascending: true });
+      .eq("is_published", true);
+
+    query =
+      options.orderByDisplayOrder === true
+        ? query
+            .order("display_order", { ascending: true })
+            .order("slug", { ascending: true })
+        : query.order("slug", { ascending: true });
 
     if (options.unitId !== undefined) {
       query = query.eq("unit_id", options.unitId);
@@ -225,7 +242,7 @@ export class SupabaseExerciseRepository implements ExerciseRepository {
       query = query.contains("supported_modes", [options.learningMode]);
     }
 
-    const { data, error } = await query.limit(summaryLimit(options.limit));
+    const { data, error } = await query.limit(summaryLimit(options));
     if (error !== null) {
       throwQueryError("Unable to load published exercises.", error);
     }

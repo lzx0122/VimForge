@@ -52,6 +52,8 @@ export interface ExerciseListOptions {
   unitId?: string;
   learningMode?: LearningMode;
   limit?: number;
+  /** Order by the exercises' curated display order, then slug, instead of slug alone. */
+  orderByDisplayOrder?: boolean;
 }
 
 export interface ExerciseRepository {
