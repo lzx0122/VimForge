@@ -99,11 +99,7 @@ function attemptRecord(
   };
 }
 
-async function mountSetupPage(
-  mode: string,
-  options: { registerPracticeRoute?: boolean } = {},
-) {
-  const { registerPracticeRoute = true } = options;
+async function mountSetupPage(mode: string) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -113,15 +109,11 @@ async function mountSetupPage(
         component: PracticeSetupPage,
       },
       { path: "/courses", name: "courses", component: { template: "<div />" } },
-      ...(registerPracticeRoute
-        ? [
-            {
-              path: "/practice/:sessionId",
-              name: "practice",
-              component: { template: "<div />" },
-            },
-          ]
-        : []),
+      {
+        path: "/practice/:sessionId",
+        name: "practice",
+        component: { template: "<div />" },
+      },
     ],
   });
   await router.push({
@@ -246,7 +238,7 @@ describe("PracticeSetupPage", () => {
     expect(router.currentRoute.value.params.sessionId).toBe(savedSession?.id);
   });
 
-  it("shows how many exercises matched when fewer are available than requested", async () => {
+  it("previews the partial match, then creates the session only after confirming", async () => {
     listPublishedCandidates.mockResolvedValue(
       Array.from({ length: 3 }, (_, index) =>
         candidateRecord({
@@ -265,21 +257,23 @@ describe("PracticeSetupPage", () => {
       ),
     );
 
-    // The practice route is intentionally unregistered: this component isn't
-    // mounted behind a <router-view> here, so a real navigation would leave
-    // its "mode" query behind and flip the rendered state to "beginner"
-    // before this assertion runs, even though production unmounts the page
-    // on navigation instead.
-    const { wrapper } = await mountSetupPage("memory_review", {
-      registerPracticeRoute: false,
-    });
+    const { wrapper, router } = await mountSetupPage("memory_review");
+
     await wrapper.get("button").trigger("click");
     await flushPromises();
 
     expect(wrapper.text()).toContain(
       "目前符合條件的題目共有 3 題，本次將安排全部可用題目。",
     );
+    expect(save).not.toHaveBeenCalled();
+    expect(router.currentRoute.value.name).toBe("practice-setup");
+    expect(wrapper.get("button").text()).toBe("使用這些題目開始練習");
+
+    await wrapper.get("button").trigger("click");
+    await flushPromises();
+
     expect(save).toHaveBeenCalledTimes(1);
+    expect(router.currentRoute.value.name).toBe("practice");
   });
 
   it("shows a topic-empty message when the selected topic has no matching exercises", async () => {
@@ -313,7 +307,7 @@ describe("PracticeSetupPage", () => {
     expect(save).not.toHaveBeenCalled();
   });
 
-  it("shows a general-fallback message when weakness practice has no personal history", async () => {
+  it("previews the general-fallback message, then creates the session only after confirming", async () => {
     listPublishedCandidates.mockResolvedValue(
       Array.from({ length: 10 }, (_, index) =>
         candidateRecord({
@@ -326,9 +320,8 @@ describe("PracticeSetupPage", () => {
     );
     listAll.mockResolvedValue([]);
 
-    const { wrapper } = await mountSetupPage("efficiency", {
-      registerPracticeRoute: false,
-    });
+    const { wrapper, router } = await mountSetupPage("efficiency");
+
     await wrapper.get("button").trigger("click");
     await flushPromises();
 
@@ -338,10 +331,78 @@ describe("PracticeSetupPage", () => {
     expect(wrapper.text()).toContain(
       "尚無個人練習資料，本次先安排一般效率題目。",
     );
+    expect(save).not.toHaveBeenCalled();
+    expect(router.currentRoute.value.name).toBe("practice-setup");
+
+    await wrapper.get("button").trigger("click");
+    await flushPromises();
+
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(router.currentRoute.value.name).toBe("practice");
+  });
+
+  it("shows both the fallback and partial-match messages when they overlap", async () => {
+    listPublishedCandidates.mockResolvedValue(
+      Array.from({ length: 3 }, (_, index) =>
+        candidateRecord({
+          exerciseId: `general-${index + 1}`,
+          skillIds: [`skill-${index + 1}`],
+          skillSlugs: [`skill-slug-${index + 1}`],
+          learningModes: ["efficiency"],
+        }),
+      ),
+    );
+    listAll.mockResolvedValue([]);
+
+    const { wrapper } = await mountSetupPage("efficiency");
+    await wrapper.get('input[value="20"]').setValue();
+
+    await wrapper.get("button").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain(
+      "尚無個人練習資料，本次先安排一般效率題目。",
+    );
+    expect(wrapper.text()).toContain(
+      "目前符合條件的題目共有 3 題，本次將安排全部可用題目。",
+    );
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("ignores a second click on the confirm step while the session is being created", async () => {
+    listPublishedCandidates.mockResolvedValue(
+      Array.from({ length: 3 }, (_, index) =>
+        candidateRecord({
+          exerciseId: `due-${index + 1}`,
+          skillIds: ["skill-shared"],
+        }),
+      ),
+    );
+    listAll.mockResolvedValue(
+      Array.from({ length: 3 }, (_, index) =>
+        attemptRecord({
+          clientAttemptId: `attempt-${index + 1}`,
+          exerciseId: `due-${index + 1}`,
+          completed: false,
+        }),
+      ),
+    );
+
+    const { wrapper } = await mountSetupPage("memory_review");
+
+    await wrapper.get("button").trigger("click");
+    await flushPromises();
+    expect(wrapper.get("button").text()).toBe("使用這些題目開始練習");
+
+    const confirmButton = wrapper.get("button");
+    void confirmButton.trigger("click");
+    void confirmButton.trigger("click");
+    await flushPromises();
+
     expect(save).toHaveBeenCalledTimes(1);
   });
 
-  it("ignores a second click while a session is being created", async () => {
+  it("ignores a second click on the selection step while it is still resolving", async () => {
     listPublishedCandidates.mockResolvedValue(
       Array.from({ length: 10 }, (_, index) =>
         candidateRecord({
@@ -367,6 +428,7 @@ describe("PracticeSetupPage", () => {
     await flushPromises();
 
     expect(listPublishedCandidates).toHaveBeenCalledTimes(1);
+    expect(listAll).toHaveBeenCalledTimes(1);
     expect(save).toHaveBeenCalledTimes(1);
   });
 });
