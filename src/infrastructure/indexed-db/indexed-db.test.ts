@@ -220,6 +220,54 @@ describe("IndexedDB repositories", () => {
     expect(await repository.get()).toEqual(settings);
   });
 
+  it("lists every stored attempt across exercises", async () => {
+    const repository = new AttemptRepository(database);
+    await repository.save({
+      ...createSyncAttempt(),
+      clientAttemptId: "attempt-1",
+      exerciseId: "exercise-1",
+    });
+    await repository.save({
+      ...createSyncAttempt(),
+      clientAttemptId: "attempt-2",
+      exerciseId: "exercise-2",
+    });
+
+    const attempts = await repository.listAll();
+
+    expect(attempts.map((attempt) => attempt.clientAttemptId).sort()).toEqual(
+      ["attempt-1", "attempt-2"],
+    );
+  });
+
+  it("filters stored attempts down to the requested exercise IDs", async () => {
+    const repository = new AttemptRepository(database);
+    await repository.save({
+      ...createSyncAttempt(),
+      clientAttemptId: "attempt-1",
+      exerciseId: "exercise-1",
+    });
+    await repository.save({
+      ...createSyncAttempt(),
+      clientAttemptId: "attempt-2",
+      exerciseId: "exercise-2",
+    });
+    await repository.save({
+      ...createSyncAttempt(),
+      clientAttemptId: "attempt-3",
+      exerciseId: "exercise-3",
+    });
+
+    const attempts = await repository.listByExerciseIds([
+      "exercise-1",
+      "exercise-3",
+    ]);
+
+    expect(attempts.map((attempt) => attempt.clientAttemptId).sort()).toEqual(
+      ["attempt-1", "attempt-3"],
+    );
+  });
+
   it("rolls back every object store when a transaction aborts", async () => {
     const transaction = database.transaction(
       ["attempts", "sessions"],

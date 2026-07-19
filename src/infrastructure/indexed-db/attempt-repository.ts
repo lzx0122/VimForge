@@ -66,6 +66,28 @@ export class AttemptRepository {
     );
   }
 
+  public async listAll(): Promise<StoredAttempt[]> {
+    const transaction = this.database.transaction(
+      INDEXED_DB_STORES.attempts,
+      "readonly",
+    );
+
+    return requestToPromise<StoredAttempt[]>(
+      transaction.objectStore(INDEXED_DB_STORES.attempts).getAll(),
+    );
+  }
+
+  public async listByExerciseIds(
+    exerciseIds: readonly string[],
+  ): Promise<StoredAttempt[]> {
+    const requestedExerciseIds = new Set(exerciseIds);
+    const attempts = await this.listAll();
+
+    return attempts.filter((attempt) =>
+      requestedExerciseIds.has(attempt.exerciseId),
+    );
+  }
+
   public async markSynced(clientAttemptId: string): Promise<void> {
     const transaction = this.database.transaction(
       INDEXED_DB_STORES.attempts,
