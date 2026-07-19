@@ -16,6 +16,7 @@ export interface PracticeSession {
   learningMode: LearningMode;
   selectionType: PracticeSelectionType;
   requestedCount: QuestionCount | null;
+  actualCount: number;
   status: PracticeSessionStatus;
   currentIndex: number;
   exerciseIds: string[];

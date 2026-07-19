@@ -58,6 +58,8 @@ describe("usePracticeStore", () => {
       completedAt: null,
       startedAt: SESSION_STARTED_AT,
       updatedAt: SESSION_STARTED_AT,
+      requestedCount: 5,
+      actualCount: 2,
     });
     expect(store.currentExerciseId).toBe("exercise-1");
   });
@@ -162,6 +164,7 @@ describe("usePracticeStore", () => {
       learningMode: "memory_review",
       selectionType: "daily_review",
       requestedCount: 5,
+      actualCount: 2,
       status: "active",
       currentIndex: 1,
       exerciseIds: ["exercise-1", "exercise-2"],
@@ -174,6 +177,7 @@ describe("usePracticeStore", () => {
     store.restoreSession(persistedSession, createAttemptDraft("exercise-2"));
 
     expect(store.currentExerciseId).toBe("exercise-2");
+    expect(store.session?.actualCount).toBe(2);
     expect(store.attemptDraft?.exerciseId).toBe("exercise-2");
 
     store.discardAttemptDraft();

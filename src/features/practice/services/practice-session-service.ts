@@ -29,6 +29,7 @@ export function createPracticeSession(
     learningMode: input.learningMode,
     selectionType: input.selectionType,
     requestedCount: input.requestedCount,
+    actualCount: input.exerciseIds.length,
     status: "active",
     currentIndex: 0,
     exerciseIds: [...input.exerciseIds],

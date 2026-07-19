@@ -72,6 +72,7 @@ function createSession(): PracticeSession {
     learningMode: "memory_review",
     selectionType: "daily_review",
     requestedCount: 5,
+    actualCount: 2,
     status: "active",
     currentIndex: 1,
     exerciseIds: ["exercise-1", "exercise-2"],
