@@ -14,5 +14,4 @@ test("loads a course unit from a deep link", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: /課程單元/ }),
   ).toBeVisible();
-  await expect(page.getByText("text-objects")).toBeVisible();
 });

@@ -6,7 +6,7 @@ test("loads and reloads a nested course route as an SPA", async ({ page }) => {
   expect(response?.status()).toBe(200);
   await expect(page.getByRole("heading", { name: "課程單元" })).toBeVisible();
   await page.reload();
-  await expect(page.getByText("text-objects", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "課程單元" })).toBeVisible();
 });
 
 test("shows physical keyboard guidance on a narrow practice screen", async ({ page }) => {

@@ -5,11 +5,14 @@ const SESSION_ID = "resume-session";
 // Intentionally omits actualCount to model a version-1 IndexedDB record
 // persisted before that field existed. SessionRepository must normalize it
 // back to exerciseIds.length when reading and re-persisting this session.
+// Uses a beginner/course session (rather than memory_review/daily_review) so
+// this coverage also proves a beginner course unit can resume after an
+// interruption, matching the P0.1 checkpoint requirement.
 const session = {
   id: SESSION_ID,
-  learningMode: "memory_review",
-  selectionType: "daily_review",
-  requestedCount: 5,
+  learningMode: "beginner",
+  selectionType: "course",
+  requestedCount: null,
   status: "active",
   currentIndex: 1,
   exerciseIds: ["exercise-1", "exercise-2"],
@@ -30,7 +33,7 @@ const attemptDraft = {
   clientAttemptId: "attempt-resume",
   exerciseId: "exercise-2",
   exerciseVersion: 1,
-  learningMode: "memory_review",
+  learningMode: "beginner",
   source: "web",
   startedAt: "2026-07-16T08:01:00.000Z",
   completedAt: null,
