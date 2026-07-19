@@ -33,6 +33,39 @@ function attempt(overrides: Partial<AttemptSyncInput> = {}): AttemptSyncInput {
 
 const NOW = new Date("2026-07-19T12:00:00.000Z");
 
+/**
+ * Assigning `undefined` to a `process.env` property stringifies it to
+ * "undefined" instead of removing it, so restoring an originally-unset TZ
+ * requires deleting the key rather than assigning back the captured value.
+ */
+function restoreTimeZone(originalTimeZone: string | undefined): void {
+  if (originalTimeZone === undefined) {
+    delete process.env.TZ;
+    return;
+  }
+
+  process.env.TZ = originalTimeZone;
+}
+
+describe("restoreTimeZone", () => {
+  it("removes TZ when the original environment did not define it", () => {
+    delete process.env.TZ;
+    process.env.TZ = "Asia/Taipei";
+
+    restoreTimeZone(undefined);
+
+    expect(process.env.TZ).toBeUndefined();
+  });
+
+  it("restores an existing TZ value", () => {
+    process.env.TZ = "Asia/Taipei";
+
+    restoreTimeZone("UTC");
+
+    expect(process.env.TZ).toBe("UTC");
+  });
+});
+
 describe("buildExerciseLearningSnapshots", () => {
   let originalTimeZone: string | undefined;
 
@@ -42,7 +75,7 @@ describe("buildExerciseLearningSnapshots", () => {
   });
 
   afterEach(() => {
-    process.env.TZ = originalTimeZone;
+    restoreTimeZone(originalTimeZone);
   });
 
   it("returns an empty map for no attempts", () => {
