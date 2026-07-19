@@ -61,6 +61,7 @@ type ExerciseRow = {
   target_duration_ms: number;
   version: number;
   is_published: boolean;
+  display_order: number;
   created_at: string;
   updated_at: string;
 };

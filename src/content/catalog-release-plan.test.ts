@@ -106,6 +106,21 @@ describe("catalog release planning", () => {
     expect(sql).toContain("delete from public.unit_skills");
   });
 
+  it("persists each exercise's displayOrder into public.exercises on insert and upsert", () => {
+    const base = snapshot([exercise("filler")]);
+    const next = snapshot([
+      exercise("filler"),
+      { ...exercise("ordered"), displayOrder: 5 },
+    ]);
+    const sql = renderCatalogMigration(buildCatalogReleasePlan(base, next));
+
+    expect(sql).toContain(
+      "insert into public.exercises (unit_id, slug, title, instruction, language, exercise_type, difficulty, initial_content, expected_content, initial_cursor, completion_rule, supported_modes, target_duration_ms, version, is_published, display_order)",
+    );
+    expect(sql).toMatch(/,\s*true,\s*5\b/);
+    expect(sql).toContain("display_order = excluded.display_order");
+  });
+
   it("models publication-only changes without advancing the exercise version or rewriting content", () => {
     const base = snapshot([exercise("visibility")]);
     const next = snapshot([{ ...exercise("visibility"), isPublished: false }]);

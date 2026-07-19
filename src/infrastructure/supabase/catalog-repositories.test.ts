@@ -41,18 +41,49 @@ function createMockClient(resolveResponse: ResponseResolver): {
 }
 
 describe("SupabaseCourseRepository", () => {
-  it("maps published unit summaries to the domain model", async () => {
-    const { client, requests } = createMockClient(() => [
-      {
-        id: "unit-1",
-        slug: "text-objects",
-        title: "文字物件",
-        description: "精準操作文字範圍。",
-        difficulty: "advanced",
-        estimated_minutes: 28,
-        display_order: 8,
-      },
-    ]);
+  function findRequest(requests: Request[], table: string): Request {
+    const request = requests.find((candidate) =>
+      new URL(candidate.url).pathname.endsWith(`/${table}`),
+    );
+    if (request === undefined) {
+      throw new Error(`No request was made to ${table}.`);
+    }
+    return request;
+  }
+
+  it("maps published unit summaries with primary skills sorted by display order and a published exercise count", async () => {
+    const { client, requests } = createMockClient((request) => {
+      const table = new URL(request.url).pathname.split("/").at(-1);
+      if (table === "learning_units") {
+        return [
+          {
+            id: "unit-1",
+            slug: "text-objects",
+            title: "文字物件",
+            description: "精準操作文字範圍。",
+            difficulty: "advanced",
+            estimated_minutes: 28,
+            display_order: 8,
+          },
+        ];
+      }
+      if (table === "unit_skills") {
+        return [
+          { unit_id: "unit-1", skill_id: "skill-2", is_primary: true, display_order: 2 },
+          { unit_id: "unit-1", skill_id: "skill-1", is_primary: true, display_order: 1 },
+        ];
+      }
+      if (table === "skills") {
+        return [
+          { id: "skill-1", slug: "quote-object", name: "引號文字物件", category: "text_object" },
+          { id: "skill-2", slug: "bracket-object", name: "括號文字物件", category: "text_object" },
+        ];
+      }
+      if (table === "exercises") {
+        return [{ unit_id: "unit-1" }, { unit_id: "unit-1" }, { unit_id: "unit-1" }];
+      }
+      return [];
+    });
     const repository = new SupabaseCourseRepository(client);
 
     await expect(repository.listPublishedUnits()).resolves.toEqual([
@@ -64,15 +95,197 @@ describe("SupabaseCourseRepository", () => {
         difficulty: "advanced",
         estimatedMinutes: 28,
         displayOrder: 8,
+        exerciseCount: 3,
+        primarySkills: [
+          {
+            id: "skill-1",
+            slug: "quote-object",
+            name: "引號文字物件",
+            category: "text_object",
+            primary: true,
+            displayOrder: 1,
+          },
+          {
+            id: "skill-2",
+            slug: "bracket-object",
+            name: "括號文字物件",
+            category: "text_object",
+            primary: true,
+            displayOrder: 2,
+          },
+        ],
       },
     ]);
 
-    const requestUrl = new URL(requests[0]?.url ?? "");
-    expect(requestUrl.pathname).toBe("/rest/v1/learning_units");
-    expect(requestUrl.searchParams.get("is_published")).toBe("eq.true");
-    expect(requestUrl.searchParams.get("order")).toBe(
-      "display_order.asc",
-    );
+    const unitsUrl = new URL(findRequest(requests, "learning_units").url);
+    expect(unitsUrl.searchParams.get("is_published")).toBe("eq.true");
+    expect(unitsUrl.searchParams.get("order")).toBe("display_order.asc");
+
+    const unitSkillsUrl = new URL(findRequest(requests, "unit_skills").url);
+    expect(unitSkillsUrl.searchParams.get("is_primary")).toBe("eq.true");
+    expect(unitSkillsUrl.searchParams.get("unit_id")).toBe("in.(unit-1)");
+
+    const exercisesUrl = new URL(findRequest(requests, "exercises").url);
+    expect(exercisesUrl.searchParams.get("is_published")).toBe("eq.true");
+    expect(exercisesUrl.searchParams.get("unit_id")).toBe("in.(unit-1)");
+    expect(exercisesUrl.searchParams.get("select")).toBe("unit_id");
+  });
+
+  it("returns an empty list without querying skills or exercises when no units are published", async () => {
+    const { client, requests } = createMockClient(() => []);
+    const repository = new SupabaseCourseRepository(client);
+
+    await expect(repository.listPublishedUnits()).resolves.toEqual([]);
+    expect(requests).toHaveLength(1);
+  });
+
+  describe("getPublishedUnitBySlug", () => {
+    it("loads unit detail with skills and exercises ordered by display order then slug", async () => {
+      const { client, requests } = createMockClient((request) => {
+        const table = new URL(request.url).pathname.split("/").at(-1);
+        if (table === "learning_units") {
+          return {
+            id: "unit-1",
+            slug: "text-objects",
+            title: "文字物件",
+            description: "精準操作文字範圍。",
+            difficulty: "advanced",
+            estimated_minutes: 28,
+            display_order: 8,
+          };
+        }
+        if (table === "unit_skills") {
+          return [
+            { unit_id: "unit-1", skill_id: "skill-2", is_primary: false, display_order: 2 },
+            { unit_id: "unit-1", skill_id: "skill-1", is_primary: true, display_order: 1 },
+          ];
+        }
+        if (table === "skills") {
+          return [
+            { id: "skill-1", slug: "quote-object", name: "引號文字物件", category: "text_object" },
+            { id: "skill-2", slug: "bracket-object", name: "括號文字物件", category: "text_object" },
+          ];
+        }
+        if (table === "exercises") {
+          return [
+            {
+              id: "exercise-b",
+              slug: "text-objects-02",
+              title: "練習二",
+              exercise_type: "challenge",
+              difficulty: "advanced",
+              display_order: 1,
+            },
+            {
+              id: "exercise-a",
+              slug: "text-objects-01",
+              title: "練習一",
+              exercise_type: "guided",
+              difficulty: "advanced",
+              display_order: 1,
+            },
+            {
+              id: "exercise-c",
+              slug: "text-objects-03",
+              title: "練習三",
+              exercise_type: "challenge",
+              difficulty: "advanced",
+              display_order: 2,
+            },
+          ];
+        }
+        return [];
+      });
+      const repository = new SupabaseCourseRepository(client);
+
+      await expect(repository.getPublishedUnitBySlug("text-objects")).resolves.toEqual({
+        id: "unit-1",
+        slug: "text-objects",
+        title: "文字物件",
+        description: "精準操作文字範圍。",
+        difficulty: "advanced",
+        estimatedMinutes: 28,
+        displayOrder: 8,
+        exerciseCount: 3,
+        skills: [
+          {
+            id: "skill-1",
+            slug: "quote-object",
+            name: "引號文字物件",
+            category: "text_object",
+            primary: true,
+            displayOrder: 1,
+          },
+          {
+            id: "skill-2",
+            slug: "bracket-object",
+            name: "括號文字物件",
+            category: "text_object",
+            primary: false,
+            displayOrder: 2,
+          },
+        ],
+        exercises: [
+          {
+            id: "exercise-a",
+            slug: "text-objects-01",
+            title: "練習一",
+            exerciseType: "guided",
+            difficulty: "advanced",
+            displayOrder: 1,
+          },
+          {
+            id: "exercise-b",
+            slug: "text-objects-02",
+            title: "練習二",
+            exerciseType: "challenge",
+            difficulty: "advanced",
+            displayOrder: 1,
+          },
+          {
+            id: "exercise-c",
+            slug: "text-objects-03",
+            title: "練習三",
+            exerciseType: "challenge",
+            difficulty: "advanced",
+            displayOrder: 2,
+          },
+        ],
+      });
+
+      const unitUrl = new URL(findRequest(requests, "learning_units").url);
+      expect(unitUrl.searchParams.get("slug")).toBe("eq.text-objects");
+      expect(unitUrl.searchParams.get("is_published")).toBe("eq.true");
+
+      const exercisesUrl = new URL(findRequest(requests, "exercises").url);
+      expect(exercisesUrl.searchParams.get("order")).toBe(
+        "display_order.asc,slug.asc",
+      );
+      const selectedExerciseColumns = exercisesUrl.searchParams.get("select") ?? "";
+      expect(selectedExerciseColumns).not.toContain("initial_content");
+      expect(selectedExerciseColumns).not.toContain("expected_content");
+      expect(selectedExerciseColumns).not.toContain("completion_rule");
+    });
+
+    it("returns null when the matching unit is not published", async () => {
+      const { client, requests } = createMockClient(() => null);
+      const repository = new SupabaseCourseRepository(client);
+
+      await expect(
+        repository.getPublishedUnitBySlug("draft-unit"),
+      ).resolves.toBeNull();
+      expect(requests).toHaveLength(1);
+    });
+
+    it("returns null for an unknown unit slug", async () => {
+      const { client, requests } = createMockClient(() => null);
+      const repository = new SupabaseCourseRepository(client);
+
+      await expect(
+        repository.getPublishedUnitBySlug("does-not-exist"),
+      ).resolves.toBeNull();
+      expect(requests).toHaveLength(1);
+    });
   });
 });
 
