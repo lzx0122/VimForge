@@ -282,6 +282,8 @@ h2 {
 }
 
 .exercise-feedback-metrics > section {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
 }
 

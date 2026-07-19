@@ -27,7 +27,6 @@ defineProps<{
 
 <style scoped>
 .metric-card {
-  height: 100%;
   padding: 1.1rem;
   border: 1px solid #4b5563;
   border-radius: 0.8rem;

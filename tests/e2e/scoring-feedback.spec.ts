@@ -21,7 +21,7 @@ async function mockExerciseCatalog(
         language: "plaintext",
         exercise_type: "challenge",
         difficulty: "beginner",
-        supported_modes: ["beginner", "memory_review"],
+        supported_modes: ["beginner", "memory_review", "efficiency"],
         target_duration_ms: 12000,
         version: 1,
         initial_content: "abc",
@@ -42,7 +42,7 @@ async function mockExerciseCatalog(
         language: "typescript",
         exercise_type: "guided",
         difficulty: "beginner",
-        supported_modes: ["beginner", "memory_review"],
+        supported_modes: ["beginner", "memory_review", "efficiency"],
         target_duration_ms: 12000,
         version: 1,
         initial_content: "const name = true;",
@@ -670,6 +670,37 @@ test("keeps expanded metric calculations inside their layout", async ({ page }) 
   expect(solutionsBox).not.toBeNull();
   expect((detailsBox?.y ?? 0) + (detailsBox?.height ?? 0)).toBeLessThanOrEqual(
     (solutionsBox?.y ?? 0) + 1,
+  );
+});
+
+test("does not let the calculation summary bar overlap the metric definitions", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await mockExerciseCatalog(page);
+  await page.goto("/practice/setup?mode=efficiency");
+  await page.getByLabel("5 題").check();
+  await page.getByRole("button", { name: "開始練習" }).click();
+  await expect(page).toHaveURL(/\/practice\/[0-9a-f-]+$/u);
+
+  await completeInsertExercise(page);
+  await expect(page.locator('[data-testid="keystroke-gap"]')).toBeVisible();
+
+  const sections = page.locator(".exercise-feedback-metrics > section");
+  const overflow = await sections.evaluateAll((elements) =>
+    elements.map((element) => element.scrollHeight <= element.clientHeight + 1),
+  );
+  expect(overflow).toEqual([true, true, true]);
+
+  const lastDefinitionBox = await page
+    .locator(".metric-definition, [data-testid=\"keystroke-gap\"]")
+    .last()
+    .boundingBox();
+  const summaryBox = await page
+    .locator("details.metric-explanation summary")
+    .boundingBox();
+  expect(lastDefinitionBox).not.toBeNull();
+  expect(summaryBox).not.toBeNull();
+  expect((lastDefinitionBox?.y ?? 0) + (lastDefinitionBox?.height ?? 0)).toBeLessThanOrEqual(
+    summaryBox?.y ?? 0,
   );
 });
 
