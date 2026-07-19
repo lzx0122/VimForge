@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import { RouterLink } from "vue-router";
 
-import type { StaticCourseUnit } from "../data/static-units";
+import type { CourseUnitSummary } from "../repositories/course-repository";
 
 defineProps<{
-  unit: StaticCourseUnit;
+  unit: CourseUnitSummary;
 }>();
+
+const DIFFICULTY_LABELS: Record<CourseUnitSummary["difficulty"], string> = {
+  beginner: "入門",
+  intermediate: "進階",
+  advanced: "高階",
+};
 </script>
 
 <template>
@@ -15,23 +21,25 @@ defineProps<{
     :data-unit="unit.slug"
   >
     <div>
-      <p class="course-unit-count">
-        {{ unit.exerciseCount }} 題
+      <p class="course-unit-meta">
+        {{ unit.exerciseCount }} 題 · {{ unit.estimatedMinutes }} 分鐘 ·
+        {{ DIFFICULTY_LABELS[unit.difficulty] }}
       </p>
       <h2>{{ unit.title }}</h2>
-      <code>{{ unit.commands }}</code>
-      <p
-        v-if="unit.prerequisiteSuggestion"
-        class="prerequisite-suggestion"
-      >
-        {{ unit.prerequisiteSuggestion }}
+      <p class="course-unit-description">
+        {{ unit.description }}
       </p>
-      <p
-        v-else
-        class="prerequisite-suggestion"
+      <ul
+        v-if="unit.primarySkills.length > 0"
+        class="course-unit-skills"
       >
-        適合從這裡開始。
-      </p>
+        <li
+          v-for="skill in unit.primarySkills"
+          :key="skill.id"
+        >
+          {{ skill.name }}
+        </li>
+      </ul>
     </div>
     <RouterLink :to="`/courses/${unit.slug}`">
       進入單元
