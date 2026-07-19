@@ -74,7 +74,7 @@ describe("CoursesPage", () => {
     expect(wrapper.findAll('[data-testid="course-unit-card"]')).toHaveLength(0);
   });
 
-  it("renders published units with description, difficulty, time, exercise count, and primary skills", async () => {
+  it("renders published units with description, difficulty, time, exercise count, and primary skill badges", async () => {
     listPublishedUnits.mockResolvedValue([unit()]);
 
     const wrapper = await mountCoursesPage();
@@ -87,7 +87,9 @@ describe("CoursesPage", () => {
     expect(card.text()).toContain("精準操作文字範圍。");
     expect(card.text()).toContain("28");
     expect(card.text()).toContain("12 題");
-    expect(card.text()).toContain("引號文字物件");
+    expect(card.text()).toContain("高階");
+    expect(card.findAll(".course-unit-skills li")).toHaveLength(1);
+    expect(card.get(".course-unit-skills").text()).toContain("引號文字物件");
     expect(card.get("a").attributes("href")).toBe("/courses/text-objects");
   });
 

@@ -247,27 +247,59 @@ textarea {
   color: #f9fafb;
 }
 
-.course-unit-card code {
-  color: #86efac;
-  line-height: 1.7;
-}
-
 .course-unit-card > a {
   align-self: flex-start;
   font-weight: 800;
 }
 
-.course-unit-count,
-.prerequisite-suggestion {
-  color: #9ca3af;
-}
-
-.course-unit-count {
+.course-unit-meta {
   margin-top: 0;
+  color: #9ca3af;
   font-size: 0.85rem;
   font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+}
+
+.course-unit-description {
+  color: #d1d5db;
+  line-height: 1.65;
+}
+
+.course-unit-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.course-unit-skills li {
+  padding: 0.3rem 0.65rem;
+  border: 1px solid #4b5563;
+  border-radius: 999px;
+  color: #86efac;
+  font-size: 0.85rem;
+}
+
+.courses-error {
+  display: grid;
+  justify-items: start;
+  gap: 0.75rem;
+}
+
+.courses-error p {
+  margin: 0;
+  color: #fca5a5;
+}
+
+.courses-error button {
+  padding: 0.65rem 1rem;
+  border: 0;
+  border-radius: 0.6rem;
+  color: #052e16;
+  background: #4ade80;
+  cursor: pointer;
+  font-weight: 800;
 }
 
 .vim-editor {
