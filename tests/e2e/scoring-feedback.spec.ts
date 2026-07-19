@@ -608,6 +608,16 @@ test("keeps expanded metric calculations inside their layout", async ({ page }) 
   }));
   expect(layout).toEqual({ gridFits: true, sectionsFit: true });
 
+  const columnCount = await page
+    .locator(".metric-explanation-grid")
+    .evaluate((grid) =>
+      window
+        .getComputedStyle(grid)
+        .gridTemplateColumns.split(/\s+/u)
+        .filter(Boolean).length,
+    );
+  expect(columnCount).toBe(2);
+
   const detailsBox = await page.locator("details.metric-explanation").boundingBox();
   const solutionsBox = await page
     .locator('[data-feedback-section="solutions"]')
