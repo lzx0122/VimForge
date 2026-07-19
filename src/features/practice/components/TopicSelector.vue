@@ -1,21 +1,5 @@
 <script setup lang="ts">
-interface TopicOption {
-  slug: string;
-  label: string;
-}
-
-const topicOptions: readonly TopicOption[] = [
-  { slug: "mode-switching", label: "模式切換" },
-  { slug: "basic-movement", label: "基礎移動" },
-  { slug: "word-movement", label: "單字移動" },
-  { slug: "line-find", label: "行內跳轉" },
-  { slug: "delete-change", label: "刪除與修改" },
-  { slug: "copy-paste", label: "複製貼上" },
-  { slug: "search", label: "全文搜尋" },
-  { slug: "text-objects", label: "文字物件" },
-  { slug: "visual-mode", label: "Visual Mode" },
-  { slug: "composition", label: "綜合操作" },
-];
+import { TOPIC_DEFINITIONS } from "../data/topic-definitions";
 
 const props = defineProps<{
   modelValue: readonly string[];
@@ -51,7 +35,7 @@ function toggleTopic(slug: string) {
     <legend>主題</legend>
     <div class="topic-grid">
       <label
-        v-for="topic in topicOptions"
+        v-for="topic in TOPIC_DEFINITIONS"
         :key="topic.slug"
         class="choice-pill"
       >
