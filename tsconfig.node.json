@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "strict": true,
+    "types": ["node"]
+  },
+  "include": [
+    "eslint.config.ts",
+    "playwright.config.ts",
+    "scripts/**/*.ts",
+    "src/content/catalog-canonicalizer.ts",
+    "src/content/catalog-contract.ts",
+    "src/content/catalog-diff.ts",
+    "src/content/catalog-hash-reconciliation.ts",
+    "src/content/catalog-release-plan.ts",
+    "src/content/catalog-sql.ts",
+    "src/content/catalog-types.ts",
+    "src/content/publish-preflight.ts",
+    "src/content/supabase-cli-runner.ts",
+    "src/types/attempt.ts",
+    "src/types/exercise.ts",
+    "src/types/index.ts",
+    "src/types/learning.ts",
+    "src/types/session.ts",
+    "vite.config.ts",
+    "vitest.config.ts"
+  ]
+}

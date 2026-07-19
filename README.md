@@ -1,74 +1,60 @@
-# Vim Practice Platform — Vibe Coding 規格包
+# VimForge
 
-這是一個「瀏覽器版 Vim 反覆練習平台」的 MVP 規格，設計目標接近 Epop 的學習節奏：
+VimForge 是以 Vue 3、TypeScript、CodeMirror 6 與 Supabase 建立的瀏覽器 Vim 練習平台。訪客資料會先保存至 IndexedDB；登入後再同步至受 RLS 保護的 Supabase PostgreSQL。
 
-1. 依使用者需求選擇練習模式。
-2. 直接在瀏覽器的 CodeMirror 編輯器操作 Vim。
-3. 每題分別評估速度、準確與熟練。
-4. 根據錯題與熟練度安排後續複習。
-5. 訪客可立即練習，登入後可跨裝置保存。
+## 本機啟動
 
-## AI Coding Agent 閱讀順序
+需求：Node.js 20.19 以上與 npm。
 
-開始實作前，依序閱讀：
+```bash
+npm ci
+cp .env.example .env.local
+npm run dev
+```
 
-1. `docs/decisions.md`
-2. `docs/product-spec.md`
-3. `docs/architecture.md`
-4. `docs/database-schema.md`
-5. `docs/testing-strategy.md`
-6. `docs/acceptance-criteria.md`
-7. `docs/implementation-plan.md`
-8. `docs/agent-prompt.md`
+在 `.env.local` 填入瀏覽器可公開的 `VITE_SUPABASE_URL` 與 `VITE_SUPABASE_PUBLISHABLE_KEY`。不得放入 service-role key、Supabase secret key 或 Google client secret。
 
-## 固定技術
+## 驗證
 
-- Vue 3
-- TypeScript
-- Vite
-- Vue Router
-- Pinia
-- CodeMirror 6
-- `@replit/codemirror-vim`
-- Supabase Auth
-- Supabase PostgreSQL
-- Supabase Data API
-- IndexedDB
-- Vitest
-- Vue Test Utils
-- Playwright
-- Vercel
+```bash
+npm run type-check
+npm run lint
+npm run test
+npm run build
+npm run test:e2e
+```
 
-## MVP 部署方式
+題庫另可執行：
+
+```bash
+npx vite-node --script scripts/validate-seed.ts
+```
+
+## 文件
+
+- [產品規格](docs/product-spec.md)
+- [架構](docs/architecture.md)
+- [資料庫 Schema](docs/database-schema.md)
+- [題目編寫指南](docs/exercise-authoring-guide.md)
+- [部署指南](docs/deployment.md)
+- [維運手冊](docs/operations.md)
+- [驗收對照](docs/acceptance-verification.md)
+
+## 部署架構
 
 ```text
-Vue 3 SPA
+Vue 3 SPA on Vercel
    │
-   ├── 部署：Vercel
-   ├── 訪客資料：IndexedDB
+   ├── 訪客與離線資料：IndexedDB
    └── 雲端資料：Supabase
          ├── Google OAuth
          ├── PostgreSQL
-         ├── RLS
+         ├── Row Level Security
          └── Database Functions
 ```
 
-## MVP 明確不包含
+Vercel、Supabase Redirect URLs 與 Google OAuth 的逐步設定及上線檢查，請依照[部署指南](docs/deployment.md)操作。
 
-- ASP.NET Core 或其他自訂後端
-- Neovim、IdeaVim、VS Code 外掛
-- 排行榜、好友、聯賽
-- XP、等級、徽章、愛心、金幣
-- 付費訂閱
-- 題庫管理後台
-- AI 自動生成題目
-- 手機上的完整 Vim 練習體驗
+## MVP 範圍
 
-## Agent 執行原則
-
-- 一次只實作 `implementation-plan.md` 的一個 Task。
-- 不得自行更換技術。
-- 不得擴充 MVP。
-- 核心規則必須寫成純 TypeScript 模組，不可塞進 Vue 元件。
-- 每個 Task 先寫測試，再寫最小實作。
-- 完成後必須執行型別檢查、測試與建置。
+本專案不包含自訂後端、排行榜、好友／聯賽、XP／等級／徽章、付費訂閱、題庫後台、AI 產題或手機完整 Vim 練習體驗。

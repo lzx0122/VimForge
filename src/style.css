@@ -1,0 +1,368 @@
+:root {
+  color: #e5e7eb;
+  background: #111827;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+a {
+  color: #86efac;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid #4ade80;
+  outline-offset: 3px;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.app-layout {
+  min-height: 100vh;
+}
+
+.app-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2rem;
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1.5rem 2rem 1rem;
+}
+
+.app-header p {
+  margin: 0;
+  color: #9ca3af;
+}
+
+.app-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1rem;
+}
+
+.app-header-actions .google-auth-control {
+  flex: none;
+}
+
+.brand-link {
+  color: #f9fafb;
+  font-size: 1.25rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+@media (max-width: 48rem) {
+  .app-header,
+  .app-header-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+.app-navigation {
+  display: flex;
+  gap: 1.25rem;
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 0.75rem 2rem;
+  border-block: 1px solid #374151;
+}
+
+.app-navigation a {
+  color: #d1d5db;
+  text-decoration: none;
+}
+
+.app-navigation a.router-link-active {
+  color: #4ade80;
+}
+
+.page-container {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 4rem 2rem;
+}
+
+.page-section {
+  max-width: 48rem;
+}
+
+.page-section h1 {
+  margin: 0 0 1rem;
+  color: #f9fafb;
+  font-size: clamp(2.25rem, 7vw, 4.5rem);
+  line-height: 1;
+}
+
+.learning-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.learning-mode-card {
+  display: flex;
+  min-height: 18rem;
+  flex-direction: column;
+  padding: 1.5rem;
+  border: 1px solid #374151;
+  border-radius: 1rem;
+  background: #1f2937;
+}
+
+.learning-mode-card h3 {
+  margin: 0;
+  color: #f9fafb;
+  font-size: 1.5rem;
+}
+
+.learning-mode-card p {
+  color: #d1d5db;
+  line-height: 1.65;
+}
+
+.learning-mode-card button {
+  margin-top: auto;
+  padding: 0.75rem 1rem;
+  border: 0;
+  border-radius: 0.6rem;
+  color: #052e16;
+  background: #4ade80;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.setup-panel {
+  display: grid;
+  gap: 1.5rem;
+  max-width: 52rem;
+}
+
+.option-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.option-fieldset legend,
+.setup-panel h2 {
+  margin-bottom: 0.75rem;
+  color: #f9fafb;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.option-row,
+.topic-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.topic-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.choice-pill,
+.choice-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid #4b5563;
+  border-radius: 0.75rem;
+  background: #1f2937;
+  cursor: pointer;
+}
+
+.choice-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.choice-card small {
+  display: block;
+  margin-top: 0.35rem;
+  color: #9ca3af;
+  line-height: 1.5;
+}
+
+.primary-link {
+  justify-self: start;
+  padding: 0.75rem 1rem;
+  border-radius: 0.6rem;
+  color: #052e16;
+  background: #4ade80;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.course-unit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.course-unit-card {
+  display: flex;
+  min-height: 20rem;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  border: 1px solid #374151;
+  border-radius: 1rem;
+  background: #1f2937;
+}
+
+.course-unit-card h2 {
+  margin: 0 0 0.75rem;
+  color: #f9fafb;
+}
+
+.course-unit-card code {
+  color: #86efac;
+  line-height: 1.7;
+}
+
+.course-unit-card > a {
+  align-self: flex-start;
+  font-weight: 800;
+}
+
+.course-unit-count,
+.prerequisite-suggestion {
+  color: #9ca3af;
+}
+
+.course-unit-count {
+  margin-top: 0;
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.vim-editor {
+  overflow: hidden;
+  border: 1px solid #4b5563;
+  border-radius: 0.75rem;
+  background: #111827;
+}
+
+.vim-editor-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.vim-mode-badge {
+  padding: 0.3rem 0.65rem;
+  border: 1px solid #4ade80;
+  border-radius: 999px;
+  color: #86efac;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.vim-mode-badge[data-mode="insert"] {
+  border-color: #60a5fa;
+  color: #93c5fd;
+}
+
+.vim-mode-badge[data-mode="visual"] {
+  border-color: #c084fc;
+  color: #d8b4fe;
+}
+
+.editor-focus-notice {
+  margin: 0;
+  color: #fbbf24;
+  font-size: 0.9rem;
+}
+
+.vim-editor .cm-editor {
+  min-height: 20rem;
+  color: #e5e7eb;
+  background: #111827;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 1rem;
+}
+
+.vim-editor .cm-gutters {
+  color: #6b7280;
+  background: #111827;
+  border-right-color: #374151;
+}
+
+.vim-editor .cm-content,
+.vim-editor .cm-gutter {
+  min-height: 20rem;
+}
+
+.vim-editor .cm-focused {
+  outline: 3px solid #4ade80;
+  outline-offset: -3px;
+}
+
+.eyebrow {
+  color: #4ade80;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 40rem) {
+  .app-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .app-navigation {
+    overflow-x: auto;
+  }
+
+  .learning-mode-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .choice-card-grid,
+  .course-unit-grid,
+  .topic-grid {
+    grid-template-columns: 1fr;
+  }
+}

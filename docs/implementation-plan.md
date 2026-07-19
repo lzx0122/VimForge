@@ -51,13 +51,13 @@
 - `npm run build`
 - `npm run test:e2e`
 
-- [ ] 建立 Vue 3 + TypeScript + Vite 專案。
-- [ ] 安裝 Vue Router、Pinia、CodeMirror 6、`@replit/codemirror-vim`、Supabase JS、Vitest、Vue Test Utils、Playwright、ESLint。
-- [ ] 設定 scripts，與 `testing-strategy.md` 一致。
-- [ ] 建立 `vercel.json` SPA rewrite。
-- [ ] 建立 Smoke Test，驗證首頁顯示 `Vim Practice`。
-- [ ] 執行所有驗證。
-- [ ] Commit：`chore: initialize vim practice app`
+- [x] 建立 Vue 3 + TypeScript + Vite 專案。
+- [x] 安裝 Vue Router、Pinia、CodeMirror 6、`@replit/codemirror-vim`、Supabase JS、Vitest、Vue Test Utils、Playwright、ESLint。
+- [x] 設定 scripts，與 `testing-strategy.md` 一致。
+- [x] 建立 `vercel.json` SPA rewrite。
+- [x] 建立 Smoke Test，驗證首頁顯示 `Vim Practice`。
+- [x] 執行所有驗證。
+- [x] Commit：`chore: initialize vim practice app`
 
 ### Task 0.2：建立共用型別與資料驗證
 
@@ -74,12 +74,12 @@
 
 - Produces: `LearningMode`, `QuestionCount`, `VimMode`, `ExerciseSource`, `CursorPosition`, `ExerciseDefinition`, `AttemptDraft`.
 
-- [ ] 寫型別編譯測試與 runtime validation 測試。
-- [ ] 建立固定 Union Types。
-- [ ] 建立 Completion Rule discriminated unions。
-- [ ] 禁止 `any`。
-- [ ] 執行驗證。
-- [ ] Commit：`feat: define shared learning types`
+- [x] 寫型別編譯測試與 runtime validation 測試。
+- [x] 建立固定 Union Types。
+- [x] 建立 Completion Rule discriminated unions。
+- [x] 禁止 `any`。
+- [x] 執行驗證。
+- [x] Commit：`feat: define shared learning types`
 
 ### Task 0.3：建立 App Shell 與 Router
 
@@ -102,11 +102,11 @@
 - Create: `src/features/errors/pages/NotFoundPage.vue`
 - Test: `src/app/router/router.test.ts`
 
-- [ ] 寫 Router Test，驗證所有規格路由存在。
-- [ ] 建立 Layout 與 Placeholder Pages。
-- [ ] 404 Route 必須在最後。
-- [ ] 執行 Playwright 深層路由 Smoke Test。
-- [ ] Commit：`feat: add application shell and routes`
+- [x] 寫 Router Test，驗證所有規格路由存在。
+- [x] 建立 Layout 與 Placeholder Pages。
+- [x] 404 Route 必須在最後。
+- [x] 執行 Playwright 深層路由 Smoke Test。
+- [x] Commit：`feat: add application shell and routes`
 
 ---
 
@@ -129,11 +129,11 @@ export interface LearningModeSelection {
 }
 ```
 
-- [ ] 測試顯示三張卡片。
-- [ ] 測試鍵盤可選取。
-- [ ] 選擇後導向 `/practice/setup?mode=<mode>`。
-- [ ] 不要求登入。
-- [ ] Commit：`feat: add learning mode selection`
+- [x] 測試顯示三張卡片。
+- [x] 測試鍵盤可選取。
+- [x] 選擇後導向 `/practice/setup?mode=<mode>`。
+- [x] 不要求登入。
+- [x] Commit：`feat: add learning mode selection`
 
 ### Task 1.2：題量與練習來源選擇
 
@@ -145,11 +145,11 @@ export interface LearningModeSelection {
 - Modify: `src/features/practice/pages/PracticeSetupPage.vue`
 - Test: `src/features/practice/pages/PracticeSetupPage.test.ts`
 
-- [ ] 顯示 5、10、20，預設 10。
-- [ ] `memory_review` 顯示「今日複習／指定主題」。
-- [ ] `efficiency` 顯示題量與可選主題。
-- [ ] `beginner` 顯示課程單元入口，不強制題量。
-- [ ] Commit：`feat: add practice setup options`
+- [x] 顯示 5、10、20，預設 10。
+- [x] `memory_review` 顯示「今日複習／指定主題」。
+- [x] `efficiency` 顯示題量與可選主題。
+- [x] `beginner` 顯示課程單元入口，不強制題量。
+- [x] Commit：`feat: add practice setup options`
 
 ### Task 1.3：自由課程地圖
 
@@ -160,11 +160,11 @@ export interface LearningModeSelection {
 - Modify: `src/features/course/pages/CoursesPage.vue`
 - Test: `src/features/course/pages/CoursesPage.test.ts`
 
-- [ ] 建立十個單元靜態資料。
-- [ ] 所有單元都有可操作按鈕。
-- [ ] 不出現鎖定狀態。
-- [ ] 顯示先備技能文字，但不阻止進入。
-- [ ] Commit：`feat: add freely accessible course map`
+- [x] 建立十個單元靜態資料。
+- [x] 所有單元都有可操作按鈕。
+- [x] 不出現鎖定狀態。
+- [x] 顯示先備技能文字，但不阻止進入。
+- [x] Commit：`feat: add freely accessible course map`
 
 ---
 
@@ -187,12 +187,12 @@ export interface LearningModeSelection {
 - `actionRecorded`
 - `editorReady`
 
-- [ ] 先測試 Props 與 Emits 契約。
-- [ ] 動態建立 EditorView。
-- [ ] `vim()` Extension 排在其他 keymaps 前。
-- [ ] 初始化內容與游標。
-- [ ] unmount 時銷毀 EditorView。
-- [ ] Commit：`feat: add codemirror vim editor adapter`
+- [x] 先測試 Props 與 Emits 契約。
+- [x] 動態建立 EditorView。
+- [x] `vim()` Extension 排在其他 keymaps 前。
+- [x] 初始化內容與游標。
+- [x] unmount 時銷毀 EditorView。
+- [x] Commit：`feat: add codemirror vim editor adapter`
 
 ### Task 2.2：Vim Mode 與焦點狀態
 
@@ -203,10 +203,10 @@ export interface LearningModeSelection {
 - Modify: `src/components/editor/VimEditor.vue`
 - Test: `src/components/editor/VimModeBadge.test.ts`
 
-- [ ] 顯示 Normal、Insert、Visual。
-- [ ] 編輯器失去焦點時顯示「點擊編輯器以繼續」。
-- [ ] Mode 改變時 emit。
-- [ ] Commit：`feat: expose vim mode and focus state`
+- [x] 顯示 Normal、Insert、Visual。
+- [x] 編輯器失去焦點時顯示「點擊編輯器以繼續」。
+- [x] Mode 改變時 emit。
+- [x] Commit：`feat: expose vim mode and focus state`
 
 ### Task 2.3：每題建立全新 Editor State
 
@@ -216,10 +216,10 @@ export interface LearningModeSelection {
 - Modify: `src/components/editor/VimEditor.vue`
 - Test: `src/components/editor/create-editor-state.test.ts`
 
-- [ ] 題目 ID 改變時銷毀舊 View 並建立新 View。
-- [ ] Undo 歷史不能跨題。
-- [ ] Search、Visual、Pending Operator 不能跨題。
-- [ ] Commit：`fix: isolate editor state between exercises`
+- [x] 題目 ID 改變時銷毀舊 View 並建立新 View。
+- [x] Undo 歷史不能跨題。
+- [x] Search、Visual、Pending Operator 不能跨題。
+- [x] Commit：`fix: isolate editor state between exercises`
 
 ---
 
@@ -240,12 +240,12 @@ export function normalizeCommandInput(
 ): NormalizedAction[];
 ```
 
-- [ ] 測試 `d i "` 合併為 `di"`。
-- [ ] 測試 `2 d w` 正規化為等價操作。
-- [ ] 測試 Insert 文字合併。
-- [ ] 測試 Escape 轉為 Mode Change。
-- [ ] 不保存瀏覽器無關按鍵。
-- [ ] Commit：`feat: normalize vim command actions`
+- [x] 測試 `d i "` 合併為 `di"`。
+- [x] 測試 `2 d w` 正規化為等價操作。
+- [x] 測試 Insert 文字合併。
+- [x] 測試 Escape 轉為 Mode Change。
+- [x] 不保存瀏覽器無關按鍵。
+- [x] Commit：`feat: normalize vim command actions`
 
 ### Task 3.2：ExerciseEvaluator
 
@@ -263,13 +263,13 @@ export function evaluateExercise(
 ): ExerciseEvaluation;
 ```
 
-- [ ] exact content success/failure。
-- [ ] unchanged content success/failure。
-- [ ] CRLF 正規化為 LF。
-- [ ] cursor ignore/exact/range。
-- [ ] requiredMode。
-- [ ] unmetConditions 可供 UI 顯示。
-- [ ] Commit：`feat: evaluate exercise completion`
+- [x] exact content success/failure。
+- [x] unchanged content success/failure。
+- [x] CRLF 正規化為 LF。
+- [x] cursor ignore/exact/range。
+- [x] requiredMode。
+- [x] unmetConditions 可供 UI 顯示。
+- [x] Commit：`feat: evaluate exercise completion`
 
 ### Task 3.3：SolutionMatcher
 
@@ -278,12 +278,12 @@ export function evaluateExercise(
 - Create: `src/domain/exercise/solution-matcher.ts`
 - Test: `src/domain/exercise/solution-matcher.test.ts`
 
-- [ ] recommended exact match。
-- [ ] accepted match。
-- [ ] valid but inefficient。
-- [ ] unknown valid。
-- [ ] 結果正確時未知序列不得判錯。
-- [ ] Commit：`feat: compare user and recommended solutions`
+- [x] recommended exact match。
+- [x] accepted match。
+- [x] valid but inefficient。
+- [x] unknown valid。
+- [x] 結果正確時未知序列不得判錯。
+- [x] Commit：`feat: compare user and recommended solutions`
 
 ### Task 3.4：Progressive Hint
 
@@ -293,11 +293,11 @@ export function evaluateExercise(
 - Create: `src/features/practice/components/EditorPlayback.vue`
 - Test: `src/features/practice/components/ProgressiveHintPanel.test.ts`
 
-- [ ] Level 1–4 依序顯示。
-- [ ] 記錄最高層級。
-- [ ] Level 4 播放後 emit `requestReset`。
-- [ ] 動畫不能 emit 完成。
-- [ ] Commit：`feat: add progressive exercise hints`
+- [x] Level 1–4 依序顯示。
+- [x] 記錄最高層級。
+- [x] Level 4 播放後 emit `requestReset`。
+- [x] 動畫不能 emit 完成。
+- [x] Commit：`feat: add progressive exercise hints`
 
 ---
 
@@ -319,14 +319,14 @@ export function calculateAttemptScore(
 ): ScoreResult;
 ```
 
-- [ ] 按鍵效率 60%。
-- [ ] 時間效率 40%。
-- [ ] 模式時間寬限。
-- [ ] 未完成速度 0。
-- [ ] 準確扣分表。
-- [ ] 最高 Hint only。
-- [ ] performanceQuality 0–5。
-- [ ] Commit：`feat: calculate speed and accuracy scores`
+- [x] 按鍵效率 60%。
+- [x] 時間效率 40%。
+- [x] 模式時間寬限。
+- [x] 未完成速度 0。
+- [x] 準確扣分表。
+- [x] 最高 Hint only。
+- [x] performanceQuality 0–5。
+- [x] Commit：`feat: calculate speed and accuracy scores`
 
 ### Task 4.2：MasteryCalculator
 
@@ -336,15 +336,15 @@ export function calculateAttemptScore(
 - Create: `src/domain/mastery/mastery-calculator.ts`
 - Test: `src/domain/mastery/mastery-calculator.test.ts`
 
-- [ ] 品質變化表。
-- [ ] 模式倍率。
-- [ ] 提示倍率。
-- [ ] 情境倍率。
-- [ ] 技能權重。
-- [ ] 0–100 clamp。
-- [ ] Level 3/4/5 最低條件。
-- [ ] 高等級單次失敗保護。
-- [ ] Commit：`feat: calculate long-term skill mastery`
+- [x] 品質變化表。
+- [x] 模式倍率。
+- [x] 提示倍率。
+- [x] 情境倍率。
+- [x] 技能權重。
+- [x] 0–100 clamp。
+- [x] Level 3/4/5 最低條件。
+- [x] 高等級單次失敗保護。
+- [x] Commit：`feat: calculate long-term skill mastery`
 
 ### Task 4.3：ReviewScheduler
 
@@ -353,12 +353,12 @@ export function calculateAttemptScore(
 - Create: `src/domain/review/review-scheduler.ts`
 - Test: `src/domain/review/review-scheduler.test.ts`
 
-- [ ] Level 基礎間隔。
-- [ ] 品質倍率。
-- [ ] 提示最長間隔。
-- [ ] 最大 30 天。
-- [ ] 失敗安排 10 分鐘後或本輪尾端。
-- [ ] Commit：`feat: schedule adaptive exercise reviews`
+- [x] Level 基礎間隔。
+- [x] 品質倍率。
+- [x] 提示最長間隔。
+- [x] 最大 30 天。
+- [x] 失敗安排 10 分鐘後或本輪尾端。
+- [x] Commit：`feat: schedule adaptive exercise reviews`
 
 ### Task 4.4：單題結果 UI
 
@@ -368,11 +368,11 @@ export function calculateAttemptScore(
 - Create: `src/components/feedback/ExerciseFeedback.vue`
 - Test: `src/components/feedback/ExerciseFeedback.test.ts`
 
-- [ ] 順序：完成、準確、速度、熟練、解法。
-- [ ] 新手模式弱化速度。
-- [ ] 效率模式顯示按鍵差距。
-- [ ] 無障礙文字標籤。
-- [ ] Commit：`feat: display exercise performance feedback`
+- [x] 順序：完成、準確、速度、熟練、解法。
+- [x] 新手模式弱化速度。
+- [x] 效率模式顯示按鍵差距。
+- [x] 無障礙文字標籤。
+- [x] Commit：`feat: display exercise performance feedback`
 
 ---
 
@@ -386,12 +386,12 @@ export function calculateAttemptScore(
 - Create: `src/features/practice/services/practice-session-service.ts`
 - Test: `src/stores/practice-store.test.ts`
 
-- [ ] 建立題組。
-- [ ] 追蹤 currentIndex。
-- [ ] 保存 AttemptDraft。
-- [ ] complete/skip/reset。
-- [ ] 不保存 EditorView。
-- [ ] Commit：`feat: manage practice session state`
+- [x] 建立題組。
+- [x] 追蹤 currentIndex。
+- [x] 保存 AttemptDraft。
+- [x] complete/skip/reset。
+- [x] 不保存 EditorView。
+- [x] Commit：`feat: manage practice session state`
 
 ### Task 5.2：IndexedDB Database
 
@@ -403,12 +403,12 @@ export function calculateAttemptScore(
 - Create: `src/infrastructure/indexed-db/settings-repository.ts`
 - Test: `src/infrastructure/indexed-db/indexed-db.test.ts`
 
-- [ ] 使用原生 IndexedDB。
-- [ ] Object Stores：attempts、sessions、settings、metadata。
-- [ ] Attempt 使用 clientAttemptId。
-- [ ] 支援 syncStatus pending/synced。
-- [ ] Transaction 測試。
-- [ ] Commit：`feat: persist guest progress in indexeddb`
+- [x] 使用原生 IndexedDB。
+- [x] Object Stores：attempts、sessions、settings、metadata。
+- [x] Attempt 使用 clientAttemptId。
+- [x] 支援 syncStatus pending/synced。
+- [x] Transaction 測試。
+- [x] Commit：`feat: persist guest progress in indexeddb`
 
 ### Task 5.3：中途恢復
 
@@ -419,11 +419,11 @@ export function calculateAttemptScore(
 - Test: `src/features/practice/components/ResumeSessionDialog.test.ts`
 - E2E: `tests/e2e/resume-session.spec.ts`
 
-- [ ] 重新整理後發現 active session。
-- [ ] 可恢復或放棄。
-- [ ] 未完成單題可恢復內容或重設。
-- [ ] 不自動算失敗。
-- [ ] Commit：`feat: resume interrupted practice sessions`
+- [x] 重新整理後發現 active session。
+- [x] 可恢復或放棄。
+- [x] 未完成單題可恢復內容或重設。
+- [x] 不自動算失敗。
+- [x] Commit：`feat: resume interrupted practice sessions`
 
 ---
 
@@ -439,10 +439,10 @@ export function calculateAttemptScore(
 - Modify: `.env.example`
 - Test: `src/infrastructure/supabase/env.test.ts`
 
-- [ ] 驗證 URL 與 Publishable Key。
-- [ ] 缺少環境變數時顯示明確錯誤。
-- [ ] 不接受 Service Role 變數。
-- [ ] Commit：`feat: configure supabase browser client`
+- [x] 驗證 URL 與 Publishable Key。
+- [x] 缺少環境變數時顯示明確錯誤。
+- [x] 不接受 Service Role 變數。
+- [x] Commit：`feat: configure supabase browser client`
 
 ### Task 6.2：Catalog Migration
 
@@ -453,12 +453,12 @@ export function calculateAttemptScore(
 - Create: `scripts/validate-seed.ts`
 - Test: `scripts/validate-seed.test.ts`
 
-- [ ] 建立 units、skills、exercises、solutions、hints。
-- [ ] Constraints 與 indexes。
-- [ ] RLS。
-- [ ] 先 Seed 10 個 Units、最小 10 題作流程驗證。
-- [ ] Seed Validator 通過後再擴到約 100 題。
-- [ ] Commit：`feat: add supabase exercise catalog`
+- [x] 建立 units、skills、exercises、solutions、hints。
+- [x] Constraints 與 indexes。
+- [x] RLS。
+- [x] 先 Seed 10 個 Units、最小 10 題作流程驗證。
+- [x] Seed Validator 通過後再擴到約 100 題。
+- [x] Commit：`feat: add supabase exercise catalog`
 
 ### Task 6.3：Catalog Repository
 
@@ -470,10 +470,10 @@ export function calculateAttemptScore(
 - Create: `src/infrastructure/supabase/supabase-exercise-repository.ts`
 - Test: `src/infrastructure/supabase/catalog-repositories.test.ts`
 
-- [ ] Domain 依賴 Repository Interface。
-- [ ] Supabase DTO 轉 Domain。
-- [ ] 不一次載入 100 題完整內容。
-- [ ] Commit：`feat: load published curriculum from supabase`
+- [x] Domain 依賴 Repository Interface。
+- [x] Supabase DTO 轉 Domain。
+- [x] 不一次載入 100 題完整內容。
+- [x] Commit：`feat: load published curriculum from supabase`
 
 ### Task 6.4：User Learning Migration 與 RLS
 
@@ -483,11 +483,11 @@ export function calculateAttemptScore(
 - Create: `supabase/migrations/20260716000300_add_user_learning_rls.sql`
 - Create: `supabase/tests/rls_user_learning.sql`
 
-- [ ] 建立 profiles、settings、sessions、attempts、progress、mastery、reviews、guest_imports。
-- [ ] 所有 exposed tables 啟用 RLS。
-- [ ] A 無法存取 B。
-- [ ] Attempts 不提供一般 delete policy。
-- [ ] Commit：`feat: add secure user learning schema`
+- [x] 建立 profiles、settings、sessions、attempts、progress、mastery、reviews、guest_imports。
+- [x] 所有 exposed tables 啟用 RLS。
+- [x] A 無法存取 B。
+- [x] Attempts 不提供一般 delete policy。
+- [x] Commit：`feat: add secure user learning schema`
 
 ---
 
@@ -503,11 +503,11 @@ export function calculateAttemptScore(
 - Modify: `src/features/auth/pages/AuthCallbackPage.vue`
 - Test: `src/features/auth/services/auth-service.test.ts`
 
-- [ ] 使用 Supabase `signInWithOAuth({ provider: "google" })`。
-- [ ] Redirect URL 使用目前 origin + `/auth/callback`。
-- [ ] 維持 Session。
-- [ ] 登出清除雲端身分但不刪本機資料。
-- [ ] Commit：`feat: add google authentication`
+- [x] 使用 Supabase `signInWithOAuth({ provider: "google" })`。
+- [x] Redirect URL 使用目前 origin + `/auth/callback`。
+- [x] 維持 Session。
+- [x] 登出清除雲端身分但不刪本機資料。
+- [x] Commit：`feat: add google authentication`
 
 ### Task 7.2：Record Attempt Function
 
@@ -518,13 +518,13 @@ export function calculateAttemptScore(
 - Create: `src/infrastructure/supabase/supabase-attempt-sync-repository.ts`
 - Test: `src/infrastructure/supabase/attempt-sync.test.ts`
 
-- [ ] Function 由 auth.uid 決定 user。
-- [ ] clientAttemptId 去重。
-- [ ] Transaction 更新所有摘要。
-- [ ] RPC 使用 `security invoker`，所有寫入仍受 RLS。
-- [ ] 不接受前端 user_id；以 auth.uid() 決定擁有者。
-- [ ] revoke from public、anon；只 grant authenticated。
-- [ ] Commit：`feat: record attempts transactionally`
+- [x] Function 由 auth.uid 決定 user。
+- [x] clientAttemptId 去重。
+- [x] Transaction 更新所有摘要。
+- [x] RPC 使用 `security invoker`，所有寫入仍受 RLS。
+- [x] 不接受前端 user_id；以 auth.uid() 決定擁有者。
+- [x] revoke from public、anon；只 grant authenticated。
+- [x] Commit：`feat: record attempts transactionally`
 
 ### Task 7.3：Guest Sync Queue
 
@@ -536,13 +536,13 @@ export function calculateAttemptScore(
 - Test: `src/features/guest-sync/services/guest-sync-service.test.ts`
 - E2E: `tests/e2e/offline-sync.spec.ts`
 
-- [ ] 完成題目先本機。
-- [ ] 登入後批次同步。
-- [ ] 成功標記 synced。
-- [ ] 失敗保留 pending。
-- [ ] 網路恢復重試。
-- [ ] 下一題不受阻。
-- [ ] Commit：`feat: sync guest attempts after login`
+- [x] 完成題目先本機。
+- [x] 登入後批次同步。
+- [x] 成功標記 synced。
+- [x] 失敗保留 pending。
+- [x] 網路恢復重試。
+- [x] 下一題不受阻。
+- [x] Commit：`feat: sync guest attempts after login`
 
 ---
 
@@ -555,13 +555,13 @@ export function calculateAttemptScore(
 - Create: `src/domain/review/practice-selector.ts`
 - Test: `src/domain/review/practice-selector.test.ts`
 
-- [ ] 5 題 3/1/1。
-- [ ] 10 題 7/2/1。
-- [ ] 20 題 14/4/2。
-- [ ] 題目不足遞補。
-- [ ] 同一 Exercise 不重複。
-- [ ] 只出已接觸技能。
-- [ ] Commit：`feat: select adaptive review exercises`
+- [x] 5 題 3/1/1。
+- [x] 10 題 7/2/1。
+- [x] 20 題 14/4/2。
+- [x] 題目不足遞補。
+- [x] 同一 Exercise 不重複。
+- [x] 只出已接觸技能。
+- [x] Commit：`feat: select adaptive review exercises`
 
 ### Task 8.2：今日複習頁
 
@@ -572,11 +572,11 @@ export function calculateAttemptScore(
 - Modify: `src/features/review/pages/ReviewPage.vue`
 - Test: `src/features/review/pages/ReviewPage.test.ts`
 
-- [ ] 顯示到期數。
-- [ ] 顯示主要加強技能。
-- [ ] 可選 5/10/20。
-- [ ] 無紀錄時推薦基礎題組。
-- [ ] Commit：`feat: add daily adaptive review flow`
+- [x] 顯示到期數。
+- [x] 顯示主要加強技能。
+- [x] 可選 5/10/20。
+- [x] 無紀錄時推薦基礎題組。
+- [x] Commit：`feat: add daily adaptive review flow`
 
 ### Task 8.3：指定主題練習
 
@@ -586,11 +586,11 @@ export function calculateAttemptScore(
 - Create: `src/features/review/services/topic-practice-service.ts`
 - Test: `src/features/review/services/topic-practice-service.test.ts`
 
-- [ ] 一個或多個主題。
-- [ ] 不清除到期題。
-- [ ] 優先尚未熟練題。
-- [ ] 同日重複提升倍率遞減。
-- [ ] Commit：`feat: add topic-focused practice`
+- [x] 一個或多個主題。
+- [x] 不清除到期題。
+- [x] 優先尚未熟練題。
+- [x] 同日重複提升倍率遞減。
+- [x] Commit：`feat: add topic-focused practice`
 
 ---
 
@@ -606,12 +606,12 @@ export function calculateAttemptScore(
 - Modify: `src/features/progress/pages/ProgressPage.vue`
 - Test: `src/features/progress/pages/ProgressPage.test.ts`
 
-- [ ] 顯示技能 0–5。
-- [ ] 顯示單元完成度。
-- [ ] 顯示最近錯誤。
-- [ ] 顯示待複習。
-- [ ] 不顯示 XP、排名。
-- [ ] Commit：`feat: add learning progress dashboard`
+- [x] 顯示技能 0–5。
+- [x] 顯示單元完成度。
+- [x] 顯示最近錯誤。
+- [x] 顯示待複習。
+- [x] 不顯示 XP、排名。
+- [x] Commit：`feat: add learning progress dashboard`
 
 ### Task 9.2：設定頁
 
@@ -621,14 +621,14 @@ export function calculateAttemptScore(
 - Modify: `src/features/settings/pages/SettingsPage.vue`
 - Test: `src/features/settings/pages/SettingsPage.test.ts`
 
-- [ ] 字體大小 12–28。
-- [ ] 行號。
-- [ ] 按鍵顯示。
-- [ ] 音效。
-- [ ] 預設題量。
-- [ ] 訪客保存 IndexedDB。
-- [ ] 登入使用者同步 Supabase。
-- [ ] Commit：`feat: add editor and practice settings`
+- [x] 字體大小 12–28。
+- [x] 行號。
+- [x] 按鍵顯示。
+- [x] 音效。
+- [x] 預設題量。
+- [x] 訪客保存 IndexedDB。
+- [x] 登入使用者同步 Supabase。
+- [x] Commit：`feat: add editor and practice settings`
 
 ---
 
@@ -642,14 +642,14 @@ export function calculateAttemptScore(
 - Modify: `scripts/validate-seed.ts`
 - Create: `docs/exercise-authoring-guide.md`
 
-- [ ] 題數約 100。
-- [ ] C# 約 60%。
-- [ ] TypeScript/JavaScript 約 20%。
-- [ ] 其他約 20%。
-- [ ] 每題游標合法。
-- [ ] 每題有 Skill、Solution、Hints。
-- [ ] Seed Validator 全部通過。
-- [ ] Commit：`content: add mvp vim exercise catalog`
+- [x] 題數約 100。
+- [x] C# 約 60%。
+- [x] TypeScript/JavaScript 約 20%。
+- [x] 其他約 20%。
+- [x] 每題游標合法。
+- [x] 每題有 Skill、Solution、Hints。
+- [x] Seed Validator 全部通過。
+- [x] Commit：`content: add mvp vim exercise catalog`
 
 ### Task 10.2：完整 E2E
 
@@ -662,10 +662,10 @@ export function calculateAttemptScore(
 - Create: `tests/e2e/auth-sync.spec.ts`
 - Create: `tests/e2e/deep-linking.spec.ts`
 
-- [ ] 覆蓋 acceptance criteria 主要流程。
-- [ ] Chrome、Firefox、WebKit。
-- [ ] 修正所有 flaky test。
-- [ ] Commit：`test: cover mvp user journeys`
+- [x] 覆蓋 acceptance criteria 主要流程。
+- [x] Chrome、Firefox、WebKit。
+- [x] 修正所有 flaky test。
+- [x] Commit：`test: cover mvp user journeys`
 
 ### Task 10.3：Production Readiness
 
@@ -676,14 +676,14 @@ export function calculateAttemptScore(
 - Modify: `README.md`
 - Modify: `vercel.json`
 
-- [ ] Vercel env 設定文件。
-- [ ] Supabase Redirect URL 文件。
-- [ ] Google OAuth origins 與 callback 文件。
-- [ ] RLS 驗證。
-- [ ] Production Build。
-- [ ] Vercel Deep Link。
-- [ ] 錯誤監控最低限度 console + user-safe message。
-- [ ] Commit：`docs: add production deployment guide`
+- [x] Vercel env 設定文件。
+- [x] Supabase Redirect URL 文件。
+- [x] Google OAuth origins 與 callback 文件。
+- [x] RLS 驗證。
+- [x] Production Build。
+- [x] Vercel Deep Link。
+- [x] 錯誤監控最低限度 console + user-safe message。
+- [x] Commit：`docs: add production deployment guide`
 
 ---
 
@@ -706,3 +706,74 @@ npm run test:e2e
 - Vercel Preview 可直接開啟深層路由。
 - 前端 Bundle 不包含 Service Role、Secret Key 或 Google Client Secret。
 - 所有 Acceptance Criteria 已對應測試或人工驗收紀錄。
+
+## Phase 11：練習互動與回饋可理解性
+
+### Task 11.1：自動完成與操作紀錄
+
+**Files:**
+
+- Modify: `src/components/editor/VimEditor.vue`
+- Create: `src/components/editor/vim-action-recorder.ts`
+- Modify: `src/features/practice/pages/PracticePage.vue`
+- Modify: `src/features/practice/services/attempt-outcome-service.ts`
+
+- [x] 有效操作會保存為標準化序列並顯示在單題回饋。
+- [x] 使用者互動後首次符合完成條件時自動建立一次成功 Attempt。
+- [x] 移除額外的「檢查答案」步驟，且初始狀態不會自動完成。
+- [x] 未收錄但有效的操作不影響完成結果。
+
+### Task 11.2：游標目標與指標說明
+
+**Files:**
+
+- Create: `src/components/editor/cursor-target-extension.ts`
+- Modify: `src/components/feedback/ExerciseFeedback.vue`
+- Modify: `tests/e2e/scoring-feedback.spec.ts`
+
+- [x] exact/range 游標題顯示黃色透明細邊框目標。
+- [x] 回饋頁說明準確、速度、熟練的定義與計算方式。
+- [x] E2E 覆蓋自動完成、操作紀錄、游標目標與指標說明。
+
+### Task 11.3：規格同步與驗證
+
+**Files:**
+
+- Modify: `docs/product-spec.md`
+- Modify: `docs/architecture.md`
+- Modify: `docs/acceptance-criteria.md`
+- Modify: `docs/implementation-plan.md`
+
+- [x] 規格文件記錄新的練習互動與回饋行為。
+- [x] `npm run type-check`、`npm run lint`、`npm run test`、`npm run build` 通過。
+- [x] `npm run test:e2e` 在 Chromium、Firefox、WebKit 通過。
+- [x] Commit：`docs: specify automatic practice feedback`
+
+---
+
+## Phase 12：練習回饋簡化與提示彈性
+
+### Task 12.1：移除播放並以推薦解法提供完成回饋
+
+**Files:**
+
+- Create: `src/features/practice/services/vim-key-guide.ts`
+- Create: `src/features/practice/components/VimKeyGuide.vue`
+- Modify: `src/features/practice/services/attempt-outcome-service.ts`
+- Modify: `src/features/practice/services/vim-key-guide.ts`
+- Modify: `src/features/practice/components/VimKeyGuide.vue`
+- Modify: `src/components/feedback/ExerciseFeedback.vue`
+- Modify: `src/features/practice/pages/PracticePage.vue`
+- Modify: `src/features/practice/components/ProgressiveHintPanel.vue`
+- Modify: `src/content/catalog-contract.ts`
+- Modify: `tests/e2e/scoring-feedback.spec.ts`
+
+- [x] 移除播放區、播放按鈕、按鍵高亮與播放後重設流程。
+- [x] 漸進提示依題庫實際存在的層級由小到大解鎖，缺號不會阻塞。
+- [x] 題目成功後保留編輯器與完成後內容，回饋顯示在下方。
+- [x] 完成回饋的按鍵解說預設收合，且只列出題目推薦解法中的 Vim 按鍵。
+- [x] 插入文字內容與使用者額外按鍵不會被分析為按鍵解說。
+- [x] 題庫驗證允許提示層級為 1–4 的任意子集合。
+- [x] 已加入服務、元件、題庫契約與 E2E 回歸測試。
+- [x] 執行所有必要驗證。
+- [x] Commit：`feat: simplify practice feedback flow`
