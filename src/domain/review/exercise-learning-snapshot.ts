@@ -25,8 +25,18 @@ function isParseableTimestamp(value: string): boolean {
   return Number.isFinite(Date.parse(value));
 }
 
-function calendarDate(isoTimestamp: string): string {
-  return isoTimestamp.slice(0, 10);
+/**
+ * The user's local calendar day, not the UTC date. Stored timestamps are
+ * UTC ISO strings, so slicing the string would compare UTC days instead -
+ * wrong near local midnight (e.g. 23:50 local can be a different UTC date
+ * than 00:10 local the same night, or a different UTC date than 00:10 local
+ * the next night, depending on the offset).
+ */
+function localCalendarDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function average(values: readonly number[]): number | null {
@@ -90,7 +100,9 @@ function buildSnapshot(
     averageSpeed: average(attempts.map((attempt) => attempt.speedScore)),
     highestRecentHintLevel: highestRecentHintLevel as HintLevel,
     sameDayAttemptCount: chronological.filter(
-      (attempt) => calendarDate(effectiveTimestamp(attempt)) === nowCalendarDate,
+      (attempt) =>
+        localCalendarDate(new Date(effectiveTimestamp(attempt))) ===
+        nowCalendarDate,
     ).length,
   };
 }
@@ -104,7 +116,7 @@ export function buildExerciseLearningSnapshots(
   attempts: readonly AttemptSyncInput[],
   now: Date,
 ): ReadonlyMap<string, ExerciseLearningSnapshot> {
-  const nowCalendarDate = calendarDate(now.toISOString());
+  const nowCalendarDate = localCalendarDate(now);
   const snapshots = new Map<string, ExerciseLearningSnapshot>();
 
   for (const [exerciseId, exerciseAttempts] of groupByExerciseId(attempts)) {

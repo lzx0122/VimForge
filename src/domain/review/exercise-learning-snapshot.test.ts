@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { AttemptSyncInput } from "../../features/practice/repositories/attempt-sync-repository";
 import { buildExerciseLearningSnapshots } from "./exercise-learning-snapshot";
@@ -34,6 +34,17 @@ function attempt(overrides: Partial<AttemptSyncInput> = {}): AttemptSyncInput {
 const NOW = new Date("2026-07-19T12:00:00.000Z");
 
 describe("buildExerciseLearningSnapshots", () => {
+  let originalTimeZone: string | undefined;
+
+  beforeEach(() => {
+    originalTimeZone = process.env.TZ;
+    process.env.TZ = "UTC";
+  });
+
+  afterEach(() => {
+    process.env.TZ = originalTimeZone;
+  });
+
   it("returns an empty map for no attempts", () => {
     expect(buildExerciseLearningSnapshots([], NOW).size).toBe(0);
   });
@@ -157,6 +168,33 @@ describe("buildExerciseLearningSnapshots", () => {
     );
 
     expect(snapshots.get("exercise-1")?.sameDayAttemptCount).toBe(2);
+  });
+
+  it("counts same-day attempts by the user's local calendar day, not the UTC date", () => {
+    process.env.TZ = "Asia/Taipei";
+
+    const now = new Date("2026-07-18T16:30:00.000Z");
+    // Local time: 2026-07-19 00:30 (Asia/Taipei, UTC+8)
+
+    const previousLocalDay = attempt({
+      startedAt: "2026-07-18T15:45:00.000Z",
+      completedAt: "2026-07-18T15:50:00.000Z",
+      // Local completion: 2026-07-18 23:50 - yesterday locally, even though
+      // the UTC date string also starts with "2026-07-18".
+    });
+    const sameLocalDay = attempt({
+      startedAt: "2026-07-18T16:05:00.000Z",
+      completedAt: "2026-07-18T16:10:00.000Z",
+      // Local completion: 2026-07-19 00:10 - today locally, even though the
+      // UTC date string starts with "2026-07-18", not "2026-07-19".
+    });
+
+    const snapshots = buildExerciseLearningSnapshots(
+      [previousLocalDay, sameLocalDay],
+      now,
+    );
+
+    expect(snapshots.get("exercise-1")?.sameDayAttemptCount).toBe(1);
   });
 
   it("ignores attempts with an unparseable timestamp when determining recency", () => {
