@@ -6,6 +6,7 @@ import type {
   PracticeCandidateRecord,
   PracticeCandidateRepository,
 } from "../repositories/practice-candidate-repository";
+import { topicSkillSlugs } from "../data/topic-definitions";
 import { PracticeSelectionService } from "./practice-selection-service";
 
 function candidate(
@@ -189,6 +190,46 @@ describe("PracticeSelectionService", () => {
       expect(result.requestedCount).toBe(10);
       expect(result.personalized).toBe(false);
     });
+
+    it("ignores stale selected topics when selectionType is daily_review", async () => {
+      const movementDue = candidate({
+        exerciseId: "movement-due",
+        skillIds: ["skill-movement"],
+        skillSlugs: ["basic-motion"],
+      });
+      const candidateRepository = createCandidateRepository([movementDue]);
+      const attempts = [
+        attempt({
+          clientAttemptId: "movement-due-attempt",
+          exerciseId: "movement-due",
+          completed: false,
+        }),
+      ];
+
+      const service = new PracticeSelectionService(
+        candidateRepository,
+        createAttemptRepository(attempts),
+      );
+
+      const result = await service.select({
+        learningMode: "memory_review",
+        selectionType: "daily_review",
+        questionCount: 5,
+        // Stale leftover from a previous topic_practice selection - must
+        // not narrow the daily_review candidate query.
+        selectedTopicSlugs: ["text-objects"],
+        localDate: LOCAL_DATE,
+      });
+
+      expect(candidateRepository.listPublishedCandidates).toHaveBeenCalledWith({
+        learningMode: "memory_review",
+      });
+      const calledOptions = vi.mocked(
+        candidateRepository.listPublishedCandidates,
+      ).mock.calls[0]?.[0];
+      expect(calledOptions).not.toHaveProperty("skillSlugs");
+      expect(result.exerciseIds).toContain("movement-due");
+    });
   });
 
   describe("topic practice", () => {
@@ -226,8 +267,13 @@ describe("PracticeSelectionService", () => {
         }),
       ];
 
+      const candidateRepository = createCandidateRepository([
+        unattempted,
+        repeated,
+        outOfTopic,
+      ]);
       const service = new PracticeSelectionService(
-        createCandidateRepository([unattempted, repeated, outOfTopic]),
+        candidateRepository,
         createAttemptRepository(attempts),
       );
 
@@ -239,6 +285,10 @@ describe("PracticeSelectionService", () => {
         localDate: LOCAL_DATE,
       });
 
+      expect(candidateRepository.listPublishedCandidates).toHaveBeenCalledWith({
+        learningMode: "efficiency",
+        skillSlugs: topicSkillSlugs(["text-objects"]),
+      });
       expect(result.exerciseIds).toEqual([
         "text-object-unattempted",
         "text-object-repeated",

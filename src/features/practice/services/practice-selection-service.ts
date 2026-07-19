@@ -177,15 +177,19 @@ export class PracticeSelectionService {
   public async select(
     request: PracticeSelectionRequest,
   ): Promise<PracticeSelectionResult> {
+    const candidateOptions =
+      request.selectionType === "topic_practice" &&
+      request.selectedTopicSlugs.length > 0
+        ? {
+            learningMode: request.learningMode,
+            skillSlugs: topicSkillSlugs(request.selectedTopicSlugs),
+          }
+        : {
+            learningMode: request.learningMode,
+          };
+
     const [rawCandidates, attempts] = await Promise.all([
-      this.candidateRepository.listPublishedCandidates(
-        request.selectedTopicSlugs.length > 0
-          ? {
-              learningMode: request.learningMode,
-              skillSlugs: topicSkillSlugs(request.selectedTopicSlugs),
-            }
-          : { learningMode: request.learningMode },
-      ),
+      this.candidateRepository.listPublishedCandidates(candidateOptions),
       this.attemptRepository.listAll(),
     ]);
 
