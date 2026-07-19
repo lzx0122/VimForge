@@ -252,6 +252,50 @@ async function readPersistedAttemptDraft(
   }, sessionId);
 }
 
+async function forceDatabaseClosureMidFlight(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const currentVersion = await new Promise<number>((resolve, reject) => {
+      const request = indexedDB.open("vim-forge");
+      request.addEventListener(
+        "success",
+        () => {
+          const version = request.result.version;
+          request.result.close();
+          resolve(version);
+        },
+        { once: true },
+      );
+      request.addEventListener(
+        "error",
+        () => reject(request.error ?? new Error("Unable to open IndexedDB")),
+        { once: true },
+      );
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      const upgradeRequest = indexedDB.open("vim-forge", currentVersion + 1);
+      upgradeRequest.addEventListener(
+        "success",
+        () => {
+          upgradeRequest.result.close();
+          resolve();
+        },
+        { once: true },
+      );
+      upgradeRequest.addEventListener(
+        "error",
+        () => reject(upgradeRequest.error ?? new Error("Unable to bump IndexedDB version")),
+        { once: true },
+      );
+      upgradeRequest.addEventListener(
+        "blocked",
+        () => reject(new Error("IndexedDB version bump was blocked")),
+        { once: true },
+      );
+    });
+  });
+}
+
 const SECOND_EXERCISE_ID = "00000000-0000-4000-8000-000000000403";
 
 async function mockTwoExerciseCatalogWithFlakySecondFetch(
@@ -759,6 +803,47 @@ test("autofocuses the target and restarts with a fresh timed attempt", async ({ 
   expect(timing.durationMs).toBeLessThan(10_000);
 });
 
+test("keeps the pre-restart attempt visible when the fresh draft fails to persist", async ({ page }) => {
+  await startPracticeSession(page);
+  const editor = page.locator(".cm-content");
+
+  await expect(editor).toBeFocused();
+  await page.keyboard.press("i");
+  await page.keyboard.type("zzz");
+  await page.keyboard.press("Escape");
+  await expect(editor).toContainText("const zzzname = true;");
+  await expect(page.getByRole("article", { name: "完成！" })).toHaveCount(0);
+
+  await forceDatabaseClosureMidFlight(page);
+  await page.getByRole("button", { name: "重新開始本題" }).click();
+
+  await expect(page.getByText("已重新開始本題。", { exact: true })).toHaveCount(0);
+  await expect(editor).toContainText("const zzzname = true;");
+  await expect(page.locator(".error-message")).toBeVisible();
+});
+
+test("restores the fresh restart draft, not the pre-restart draft, after an immediate reload", async ({ page }) => {
+  await startPracticeSession(page);
+  const editor = page.locator(".cm-content");
+
+  await expect(editor).toBeFocused();
+  await page.keyboard.press("i");
+  await page.keyboard.type("zzz");
+  await page.keyboard.press("Escape");
+  await expect(editor).toContainText("const zzzname = true;");
+
+  await page.getByRole("button", { name: "重新開始本題" }).click();
+  await expect(page.getByText("已重新開始本題。", { exact: true })).toBeVisible();
+
+  await page.reload();
+
+  await expect(page.getByRole("button", { name: "恢復未完成內容" })).toBeVisible();
+  await page.getByRole("button", { name: "恢復未完成內容" }).click();
+
+  await expect(editor).toHaveText("const name = true;");
+  await expect(editor).not.toContainText("zzz");
+});
+
 test("reveals available hints in order without playback or an attempt", async ({ page }) => {
   await startPracticeSession(page);
 
@@ -821,6 +906,7 @@ test("recovers from a failed next-exercise load without losing feedback or advan
   await expect(page.getByText("在 name 後插入 x，最後回到 Normal Mode。")).toBeVisible();
   await expect(page.getByText("第 2 / 2 題", { exact: true })).toBeVisible();
   await expect(page.getByRole("article", { name: "完成！" })).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
 
   await completeInsertExercise(page);
   await expect.poll(() => readAttemptCount(page)).toBe(2);

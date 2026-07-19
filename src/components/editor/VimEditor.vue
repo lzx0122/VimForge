@@ -47,6 +47,7 @@ function readOnlyExtensions(readOnly: boolean): Extension[] {
 }
 let vimModeHandler: ((event: unknown) => void) | null = null;
 let vimCommandDoneHandler: (() => void) | null = null;
+let stopReadOnlyWatch: (() => void) | null = null;
 let disposed = false;
 const actionRecorder = createVimActionRecorder((action) => {
   emit("actionRecorded", action);
@@ -167,7 +168,7 @@ onMounted(async () => {
   if (props.autoFocus && !(props.readOnly ?? false)) {
     view.focus();
   }
-  watch(
+  stopReadOnlyWatch = watch(
     () => props.readOnly ?? false,
     (readOnly) => {
       editorView?.dispatch({
@@ -181,6 +182,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   disposed = true;
+  stopReadOnlyWatch?.();
+  stopReadOnlyWatch = null;
   if (vimBridge && vimModeHandler) {
     vimBridge.off("vim-mode-change", vimModeHandler);
   }

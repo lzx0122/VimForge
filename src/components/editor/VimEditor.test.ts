@@ -7,12 +7,30 @@ import {
   afterEach,
   afterAll,
   beforeAll,
+  beforeEach,
   describe,
   expect,
   expectTypeOf,
   it,
   vi,
 } from "vitest";
+
+const { watchStopSpies } = vi.hoisted(() => ({
+  watchStopSpies: [] as Array<ReturnType<typeof vi.fn>>,
+}));
+
+vi.mock("vue", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("vue")>();
+  return {
+    ...actual,
+    watch: vi.fn((...args: Parameters<typeof actual.watch>) => {
+      const stop = actual.watch(...args);
+      const stopSpy = vi.fn(stop);
+      watchStopSpies.push(stopSpy);
+      return stopSpy;
+    }),
+  };
+});
 
 import type { CursorMatchRule, NormalizedAction } from "../../types";
 import VimEditor from "./VimEditor.vue";
@@ -73,6 +91,10 @@ function getEditorView(wrapper: VueWrapper) {
 
   return view;
 }
+
+beforeEach(() => {
+  watchStopSpies.length = 0;
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -181,6 +203,17 @@ describe("VimEditor", () => {
     expect(view.contentDOM.getAttribute("contenteditable")).not.toBe("false");
 
     wrapper.unmount();
+  });
+
+  it("stops the readOnly watcher on unmount instead of leaking it", async () => {
+    const wrapper = await mountEditor();
+
+    expect(watchStopSpies).toHaveLength(1);
+    const [stopSpy] = watchStopSpies;
+
+    wrapper.unmount();
+
+    expect(stopSpy).toHaveBeenCalledTimes(1);
   });
 
   it("emits content and cursor changes from real editor transactions", async () => {

@@ -34,7 +34,10 @@ import {
   type AttemptFeedback,
 } from "../services/attempt-outcome-service";
 import { evaluateAutoCompletion } from "../services/auto-completion-service";
-import { createFreshAttemptState } from "../services/fresh-attempt-service";
+import {
+  createFreshAttemptState,
+  type FreshAttemptState,
+} from "../services/fresh-attempt-service";
 import { scrollFeedbackIntoView } from "../services/feedback-scroll-service";
 import { advancePracticeSession } from "../services/practice-session-service";
 
@@ -201,13 +204,20 @@ function queueDraftSave(): void {
     });
 }
 
-function applyFreshAttempt(activeExercise: PracticeExercise): void {
-  const fresh = createFreshAttemptState({
+function createFreshAttemptForExercise(
+  activeExercise: PracticeExercise,
+): FreshAttemptState {
+  return createFreshAttemptState({
     exercise: activeExercise,
     clientAttemptId: crypto.randomUUID(),
     startedAt: new Date().toISOString(),
   });
+}
 
+function applyFreshAttempt(
+  activeExercise: PracticeExercise,
+  fresh: FreshAttemptState,
+): void {
   exercise.value = activeExercise;
   snapshot.value = fresh.snapshot;
   highestHintLevel.value = fresh.highestHintLevel;
@@ -223,6 +233,32 @@ function applyFreshAttempt(activeExercise: PracticeExercise): void {
   editorInstance.value += 1;
 }
 
+function buildFreshAttemptDraft(
+  activeExercise: PracticeExercise,
+  fresh: FreshAttemptState,
+): AttemptDraft {
+  return {
+    clientAttemptId: fresh.clientAttemptId,
+    exerciseId: activeExercise.id,
+    exerciseVersion: activeExercise.version,
+    learningMode: practiceStore.session?.learningMode ?? "beginner",
+    source: "web",
+    startedAt: fresh.startedAt,
+    completedAt: null,
+    initialContent: activeExercise.initialContent,
+    currentContent: fresh.snapshot.content,
+    initialCursor: { ...activeExercise.initialCursor },
+    currentCursor: { ...fresh.snapshot.cursor },
+    currentMode: fresh.snapshot.mode,
+    actions: fresh.recordedActions.map((action) => ({ ...action })),
+    mistakeCount: 0,
+    undoCount: 0,
+    resetCount: fresh.resetCount,
+    highestHintLevel: fresh.highestHintLevel,
+    completed: false,
+  };
+}
+
 function prepareExercise(activeExercise: PracticeExercise): void {
   const restoredDraft =
     practiceStore.attemptDraft?.exerciseId === activeExercise.id &&
@@ -231,7 +267,7 @@ function prepareExercise(activeExercise: PracticeExercise): void {
       : null;
 
   if (restoredDraft === null) {
-    applyFreshAttempt(activeExercise);
+    applyFreshAttempt(activeExercise, createFreshAttemptForExercise(activeExercise));
     return;
   }
 
@@ -389,23 +425,38 @@ function recordKeydown(event: KeyboardEvent): void {
   }
 }
 
-function startFreshAttempt(message: string): void {
+async function startFreshAttempt(message: string): Promise<void> {
   if (isSavingOutcome.value) {
     return;
   }
 
-  applyFreshAttempt(currentExercise());
-  practiceStore.discardAttemptDraft();
-  statusMessage.value = message;
-  queueDraftSave();
+  const activeExercise = currentExercise();
+  const fresh = createFreshAttemptForExercise(activeExercise);
+  const freshDraft = buildFreshAttemptDraft(activeExercise, fresh);
+
+  isSavingOutcome.value = true;
+  try {
+    await draftSaveQueue;
+    await requireRepository().saveAttemptDraft(sessionId.value, freshDraft);
+    draftSaveQueue = Promise.resolve();
+
+    applyFreshAttempt(activeExercise, fresh);
+    practiceStore.saveAttemptDraft(freshDraft);
+    statusMessage.value = message;
+    loadError.value = null;
+  } catch (error: unknown) {
+    reportActionError("practice.restart-exercise", error);
+  } finally {
+    isSavingOutcome.value = false;
+  }
 }
 
-function resetExercise(): void {
-  startFreshAttempt("已重新開始本題。");
+async function resetExercise(): Promise<void> {
+  await startFreshAttempt("已重新開始本題。");
 }
 
-function retryExercise(): void {
-  startFreshAttempt("已開始新的作答。");
+async function retryExercise(): Promise<void> {
+  await startFreshAttempt("已開始新的作答。");
 }
 
 function scheduleAutoEvaluation(): void {
@@ -491,6 +542,7 @@ async function recordOutcome(completed: boolean): Promise<void> {
     feedback.value = outcome.feedback;
     pendingOutcome.value = { completed, completedAt };
     unmetMessages.value = [];
+    loadError.value = null;
     void syncStore.notifyAttemptCommitted().catch((error: unknown) => {
       reportError("practice.notify-attempt-committed", error);
     });
