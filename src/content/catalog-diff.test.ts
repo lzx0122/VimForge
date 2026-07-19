@@ -97,6 +97,27 @@ describe("diffCatalog", () => {
     expect(diff.unchanged).toHaveLength(0);
   });
 
+  it("classifies displayOrder-only metadata changes without treating them as content changes", () => {
+    const base = snapshot([{ ...exercise("reorder"), displayOrder: 1 }]);
+    const next = snapshot([{ ...exercise("reorder"), displayOrder: 5 }]);
+
+    const diff = diffCatalog(base, next);
+
+    expect(diff.changed[0]).toMatchObject({
+      slug: "reorder",
+      unitChanged: false,
+      publicationChanged: false,
+      displayOrderChanged: true,
+    });
+    expect(diff.changed[0]?.fields.map((field) => field.field)).toContain(
+      "displayOrder",
+    );
+    expect(diff.changed[0]?.fields.map((field) => field.field)).not.toContain(
+      "title",
+    );
+    expect(diff.unchanged).toHaveLength(0);
+  });
+
   it("rejects a changed snapshot with a stale canonical hash or revision", () => {
     const base = snapshot([exercise("one")]);
     const staleHash = { ...base, catalogHash: "sha256:" + "0".repeat(64) };

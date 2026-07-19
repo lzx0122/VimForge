@@ -168,10 +168,11 @@ describe("production catalog export", () => {
     expect(run.mock.calls[1]?.[0]).toContain(PRODUCTION_EXPORT_QUERY);
   });
 
-  it("derives exercise display order from the production schema", () => {
-    expect(PRODUCTION_EXPORT_QUERY).toContain("computed_display_order");
-    expect(PRODUCTION_EXPORT_QUERY).toContain("row_number() over");
-    expect(PRODUCTION_EXPORT_QUERY).not.toContain("e.display_order");
+  it("exports exercise display order from public.exercises.display_order", () => {
+    expect(PRODUCTION_EXPORT_QUERY).toContain("'displayOrder', e.display_order");
+    expect(PRODUCTION_EXPORT_QUERY).toContain("order by e.display_order, e.slug");
+    expect(PRODUCTION_EXPORT_QUERY).not.toContain("computed_display_order");
+    expect(PRODUCTION_EXPORT_QUERY).not.toContain("row_number() over");
   });
 
   it("unwraps the rows envelope returned by supabase db query", async () => {

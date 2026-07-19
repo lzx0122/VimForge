@@ -56,7 +56,7 @@ with unit_payload as (
           'targetDurationMs', e.target_duration_ms,
           'version', e.version,
           'isPublished', e.is_published,
-          'displayOrder', e.computed_display_order,
+          'displayOrder', e.display_order,
           'skills', coalesce((
             select jsonb_agg(jsonb_build_object(
               'skillSlug', s2.slug,
@@ -88,19 +88,8 @@ with unit_payload as (
             from public.exercise_hints h
             where h.exercise_id = e.id
           ), '[]'::jsonb)
-        ) order by e.computed_display_order, e.slug)
-        from (
-          select e.*,
-            row_number() over (
-              partition by e.unit_id
-              order by case
-                when e.slug ~ '-[0-9]+$' then (regexp_match(e.slug, '([0-9]+)$'))[1]::integer
-                else 2147483647
-              end,
-              e.slug
-            ) as computed_display_order
-          from public.exercises e
-        ) e
+        ) order by e.display_order, e.slug)
+        from public.exercises e
         where e.unit_id = u.id
       ), '[]'::jsonb)
     ) as unit_json

@@ -33,6 +33,8 @@ export interface CatalogChangedExercise {
   unitChanged: boolean;
   /** True when only publication visibility changed. */
   publicationChanged: boolean;
+  /** True when only the non-versioned display position changed. */
+  displayOrderChanged: boolean;
 }
 
 export interface CatalogRemovedExercise {
@@ -157,13 +159,16 @@ export function diffCatalog(base: CatalogSnapshot, next: CatalogSnapshot): Catal
     const fields = fieldChanges(before, after);
     const unitChanged = beforeUnitBySlug.get(slug) !== afterUnitBySlug.get(slug);
     const publicationChanged = before.isPublished !== after.isPublished;
-    if (fields.length > 0 || unitChanged || publicationChanged) {
+    const displayOrderChanged =
+      (before.displayOrder ?? 0) !== (after.displayOrder ?? 0);
+    if (fields.length > 0 || unitChanged || publicationChanged || displayOrderChanged) {
       const metadataFields = [
         ...(unitChanged ? [{ field: "unitSlug", before: beforeUnitBySlug.get(slug), after: afterUnitBySlug.get(slug) }] : []),
         ...(publicationChanged ? [{ field: "isPublished", before: before.isPublished, after: after.isPublished }] : []),
+        ...(displayOrderChanged ? [{ field: "displayOrder", before: before.displayOrder, after: after.displayOrder }] : []),
       ];
       const allChanges = [...fields, ...metadataFields];
-      changed.push({ action: "change", slug, before, exercise: after, after, fields: allChanges, changes: allChanges, unitChanged, publicationChanged });
+      changed.push({ action: "change", slug, before, exercise: after, after, fields: allChanges, changes: allChanges, unitChanged, publicationChanged, displayOrderChanged });
     } else {
       unchanged.push({ action: "unchanged", slug, exercise: after });
     }

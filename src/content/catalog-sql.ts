@@ -52,8 +52,9 @@ function renderExercise(exercise: CatalogReleaseExercise): string {
   return lines.join("\n");
 }
 
-function renderPublicationUpdate(exercise: CatalogReleaseExercise): string {
-  return `update public.exercises set is_published = ${sqlBoolean(exercise.isPublished)}, updated_at = now() where slug = ${escapeSqlString(exercise.slug)};`;
+/** Update non-versioned exercise metadata (publication, display order) without touching content or children. */
+function renderMetadataUpdate(exercise: CatalogReleaseExercise): string {
+  return `update public.exercises set is_published = ${sqlBoolean(exercise.isPublished)}, display_order = ${exercise.exercise.displayOrder ?? 0}, updated_at = now() where slug = ${escapeSqlString(exercise.slug)};`;
 }
 
 function renderUnitSkillReconciliation(plan: CatalogReleasePlan): string {
@@ -109,7 +110,7 @@ export function renderCatalogMigration(plan: CatalogReleasePlan): string {
   for (const exercise of plan.added) lines.push(renderExercise(exercise));
   for (const exercise of plan.changed) {
     if (!exercise.versionChanged && !exercise.unitChanged) {
-      lines.push(renderPublicationUpdate(exercise));
+      lines.push(renderMetadataUpdate(exercise));
     } else {
       lines.push(renderExercise(exercise));
     }

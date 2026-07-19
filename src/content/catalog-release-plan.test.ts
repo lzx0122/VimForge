@@ -121,6 +121,45 @@ describe("catalog release planning", () => {
     expect(sql).toContain("display_order = excluded.display_order");
   });
 
+  it("updates display_order without advancing the exercise version", () => {
+    const base = snapshot([{ ...exercise("reorder"), displayOrder: 1 }]);
+    const next = snapshot([{ ...exercise("reorder"), displayOrder: 5 }]);
+
+    const plan = buildCatalogReleasePlan(base, next);
+    expect(plan.changed[0]).toMatchObject({
+      slug: "reorder",
+      version: 1,
+      versionChanged: false,
+      replaceChildren: false,
+    });
+
+    const sql = renderCatalogMigration(plan);
+    expect(sql).toMatch(/display_order = 5\b/);
+    expect(sql).not.toContain("insert into public.exercises");
+    expect(sql).not.toContain("delete from public.exercise_skills");
+    expect(sql).not.toContain("delete from public.exercise_solutions");
+    expect(sql).not.toContain("delete from public.exercise_hints");
+  });
+
+  it("updates is_published and display_order together when both change in one release", () => {
+    const base = snapshot([{ ...exercise("both"), displayOrder: 1 }]);
+    const next = snapshot([
+      { ...exercise("both"), displayOrder: 5, isPublished: false },
+    ]);
+
+    const plan = buildCatalogReleasePlan(base, next);
+    expect(plan.changed[0]).toMatchObject({
+      slug: "both",
+      versionChanged: false,
+      replaceChildren: false,
+    });
+
+    const sql = renderCatalogMigration(plan);
+    expect(sql).toMatch(
+      /update public\.exercises set is_published = false, display_order = 5/,
+    );
+  });
+
   it("models publication-only changes without advancing the exercise version or rewriting content", () => {
     const base = snapshot([exercise("visibility")]);
     const next = snapshot([{ ...exercise("visibility"), isPublished: false }]);
