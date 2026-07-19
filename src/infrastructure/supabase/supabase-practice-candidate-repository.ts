@@ -116,18 +116,30 @@ export class SupabasePracticeCandidateRepository
 
     const results: ExerciseSkillLinkRow[] = [];
     for (const idChunk of chunk(exerciseIds, PAGE_SIZE)) {
-      const { data, error } = await this.client
-        .from("exercise_skills")
-        .select(EXERCISE_SKILL_COLUMNS)
-        .in("exercise_id", idChunk);
+      let from = 0;
 
-      if (error !== null) {
-        throwQueryError(
-          "Unable to load practice candidate exercise skills.",
-          error,
-        );
+      for (;;) {
+        const { data, error } = await this.client
+          .from("exercise_skills")
+          .select(EXERCISE_SKILL_COLUMNS)
+          .in("exercise_id", idChunk)
+          .order("exercise_id", { ascending: true })
+          .order("skill_id", { ascending: true })
+          .range(from, from + PAGE_SIZE - 1);
+
+        if (error !== null) {
+          throwQueryError(
+            "Unable to load practice candidate exercise skills.",
+            error,
+          );
+        }
+
+        results.push(...data);
+        if (data.length < PAGE_SIZE) {
+          break;
+        }
+        from += PAGE_SIZE;
       }
-      results.push(...data);
     }
 
     return results;

@@ -269,4 +269,67 @@ describe("SupabasePracticeCandidateRepository", () => {
     );
     expect(exercisesRequests.length).toBeGreaterThanOrEqual(2);
   });
+
+  it("pages through exercise_skills relation rows within a single exercise-ID batch", async () => {
+    const exerciseCount = 150;
+    const allExercises = Array.from({ length: exerciseCount }, (_, index) => ({
+      id: `exercise-${String(index + 1).padStart(3, "0")}`,
+      unit_id: "unit-1",
+      slug: `exercise-${String(index + 1).padStart(3, "0")}`,
+      difficulty: "beginner",
+      display_order: index + 1,
+      supported_modes: ["beginner"],
+    }));
+    // Two relation rows per exercise, ordered by (exercise_id, skill_id) -
+    // the relation table's primary key - so exercise-150's second skill
+    // ("skill-b") only appears on the second page (rows 200-299).
+    const allExerciseSkillLinks = allExercises.flatMap((exercise) => [
+      { exercise_id: exercise.id, skill_id: "skill-a" },
+      { exercise_id: exercise.id, skill_id: "skill-b" },
+    ]);
+    expect(allExerciseSkillLinks).toHaveLength(300);
+
+    const { client, requests } = createMockClient((request) => {
+      const table = tableOf(request);
+      if (table === "exercises") {
+        return allExercises;
+      }
+      if (table === "exercise_skills") {
+        const url = new URL(request.url);
+        const offset = Number(url.searchParams.get("offset") ?? "0");
+        const limit = Number(url.searchParams.get("limit") ?? "0");
+        return allExerciseSkillLinks.slice(offset, offset + limit);
+      }
+      if (table === "skills") {
+        return [
+          { id: "skill-a", slug: "skill-a" },
+          { id: "skill-b", slug: "skill-b" },
+        ];
+      }
+      return [];
+    });
+    const repository = new SupabasePracticeCandidateRepository(client);
+
+    const result = await repository.listPublishedCandidates({
+      learningMode: "beginner",
+    });
+
+    const exerciseSkillsRequests = requests.filter(
+      (request) => tableOf(request) === "exercise_skills",
+    );
+    expect(exerciseSkillsRequests).toHaveLength(2);
+
+    const lastExercise = result.find(
+      (candidate) => candidate.exerciseSlug === "exercise-150",
+    );
+    expect(lastExercise?.skillSlugs).toEqual(["skill-a", "skill-b"]);
+
+    const filtered = await repository.listPublishedCandidates({
+      learningMode: "beginner",
+      skillSlugs: ["skill-b"],
+    });
+    expect(filtered.map((candidate) => candidate.exerciseSlug)).toContain(
+      "exercise-150",
+    );
+  });
 });
