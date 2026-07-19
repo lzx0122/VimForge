@@ -11,12 +11,13 @@ import type {
   LearningMode,
   QuestionCount,
 } from "../../../types";
-import type { PracticeSelectionType, PracticeSession } from "../../../types/session";
+import type { PracticeSelectionType } from "../../../types/session";
 import PracticeSourceSelector, {
   type PracticeSource,
 } from "../components/PracticeSourceSelector.vue";
 import QuestionCountSelector from "../components/QuestionCountSelector.vue";
 import TopicSelector from "../components/TopicSelector.vue";
+import { PracticeSessionStarter } from "../services/practice-session-starter";
 
 const route = useRoute();
 const router = useRouter();
@@ -76,24 +77,20 @@ async function startPractice(): Promise<void> {
       return;
     }
 
-    const now = new Date().toISOString();
-    const session = practiceStore.createSession({
-      id: crypto.randomUUID(),
-      learningMode: mode.value,
-      selectionType: selectionType(),
-      requestedCount: questionCount.value,
-      exerciseIds: exercises.map((exercise) => exercise.id),
-      selectedSkillIds: selectedTopics.value,
-      startedAt: now,
-    });
-    const sessionSnapshot = {
-      ...session,
-      exerciseIds: [...session.exerciseIds],
-      selectedSkillIds: [...session.selectedSkillIds],
-    } satisfies PracticeSession;
     const database = await openVimForgeDatabase();
+    let session;
     try {
-      await new SessionRepository(database).save(sessionSnapshot);
+      const starter = new PracticeSessionStarter(
+        new SessionRepository(database),
+        practiceStore,
+      );
+      session = await starter.start({
+        learningMode: mode.value,
+        selectionType: selectionType(),
+        requestedCount: questionCount.value,
+        exerciseIds: exercises.map((exercise) => exercise.id),
+        selectedSkillIds: selectedTopics.value,
+      });
     } finally {
       database.close();
     }
