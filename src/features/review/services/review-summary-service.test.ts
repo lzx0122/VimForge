@@ -6,6 +6,7 @@ import type {
   PracticeCandidateRecord,
   PracticeCandidateRepository,
 } from "../../practice/repositories/practice-candidate-repository";
+import type { StoredExerciseReview, StoredSkillMastery } from "../../../types/learning-projection";
 import { ReviewSummaryService } from "./review-summary-service";
 
 function candidate(
@@ -67,6 +68,55 @@ function createCandidateRepository(
 function createAttemptRepository(attempts: readonly AttemptSyncInput[]) {
   return {
     listAll: vi.fn(async () => attempts),
+  };
+}
+
+function masteryRecord(
+  overrides: Partial<StoredSkillMastery> = {},
+): StoredSkillMastery {
+  return {
+    skillId: "skill-1",
+    masteryScore: 50,
+    masteryLevel: 2,
+    successfulAttempts: 1,
+    uniqueExerciseIds: [],
+    consecutiveSuccesses: 1,
+    firstUnhintedSuccessAt: null,
+    latestUnhintedSuccessAt: null,
+    lastAttemptAt: "2026-07-18T00:00:00.000Z",
+    updatedAt: "2026-07-18T00:00:00.000Z",
+    revision: 1,
+    ...overrides,
+  };
+}
+
+function reviewRecord(
+  overrides: Partial<StoredExerciseReview> = {},
+): StoredExerciseReview {
+  return {
+    exerciseId: "exercise-1",
+    masteryLevel: 2,
+    currentIntervalDays: 3,
+    dueAt: "2026-07-19T08:00:00.000Z",
+    lastPerformanceQuality: 3,
+    lastAttemptAt: "2026-07-18T00:00:00.000Z",
+    updatedAt: "2026-07-18T00:00:00.000Z",
+    revision: 1,
+    ...overrides,
+  };
+}
+
+function createSkillMasteryRepository(records: readonly StoredSkillMastery[]) {
+  return {
+    listAll: vi.fn(async () => records),
+  };
+}
+
+function createExerciseReviewRepository(
+  records: readonly StoredExerciseReview[],
+) {
+  return {
+    listDue: vi.fn(async () => records),
   };
 }
 
@@ -274,5 +324,99 @@ describe("ReviewSummaryService", () => {
     expect(
       summary.weakSkills.some((skill) => skill.skillId === "skill-untouched"),
     ).toBe(false);
+  });
+
+  describe("persisted projections", () => {
+    it("agrees with Progress: due count is exactly ExerciseReviewRepository.listDue's length", async () => {
+      const candidates = [
+        candidate({ exerciseId: "exercise-1", skillIds: ["skill-1"] }),
+      ];
+      const dueReviews = [
+        reviewRecord({ exerciseId: "exercise-1" }),
+        reviewRecord({ exerciseId: "exercise-2" }),
+        reviewRecord({ exerciseId: "exercise-3" }),
+      ];
+      const service = new ReviewSummaryService(
+        createCandidateRepository(candidates),
+        createAttemptRepository([]),
+        createSkillMasteryRepository([masteryRecord({ skillId: "skill-1" })]),
+        createExerciseReviewRepository(dueReviews),
+      );
+
+      const summary = await service.getSummary(NOW);
+
+      expect(summary.hasLearningHistory).toBe(true);
+      expect(summary.dueCount).toBe(dueReviews.length);
+    });
+
+    it("agrees with Progress: weak skills rank by the same masteryScore Progress displays, weakest first", async () => {
+      const candidates = [
+        candidate({ exerciseId: "exercise-strong", skillIds: ["skill-strong"] }),
+        candidate({ exerciseId: "exercise-weak", skillIds: ["skill-weak"] }),
+      ];
+      const service = new ReviewSummaryService(
+        createCandidateRepository(candidates),
+        createAttemptRepository([]),
+        createSkillMasteryRepository([
+          masteryRecord({ skillId: "skill-strong", masteryScore: 90 }),
+          masteryRecord({ skillId: "skill-weak", masteryScore: 20 }),
+        ]),
+        createExerciseReviewRepository([]),
+      );
+
+      const summary = await service.getSummary(NOW);
+
+      expect(summary.weakSkills[0]?.skillId).toBe("skill-weak");
+      expect(summary.weakSkills[1]?.skillId).toBe("skill-strong");
+    });
+
+    it("uses the persisted-projection path over the attempt-snapshot fallback once mastery records exist", async () => {
+      const candidates = [
+        candidate({ exerciseId: "exercise-1", skillIds: ["skill-1"] }),
+      ];
+      const service = new ReviewSummaryService(
+        createCandidateRepository(candidates),
+        createAttemptRepository([
+          attempt({ exerciseId: "exercise-1", completed: false }),
+        ]),
+        createSkillMasteryRepository([masteryRecord({ skillId: "skill-1" })]),
+        createExerciseReviewRepository([]),
+      );
+
+      const summary = await service.getSummary(NOW);
+
+      // The attempt-snapshot fallback would have counted this failed
+      // attempt as due; the persisted projection path (zero due reviews)
+      // wins once mastery records exist.
+      expect(summary.dueCount).toBe(0);
+    });
+
+    it("excludes a mastery record whose skill id is no longer in the catalog", async () => {
+      const service = new ReviewSummaryService(
+        createCandidateRepository([]),
+        createAttemptRepository([]),
+        createSkillMasteryRepository([
+          masteryRecord({ skillId: "removed-skill" }),
+        ]),
+        createExerciseReviewRepository([]),
+      );
+
+      const summary = await service.getSummary(NOW);
+
+      expect(summary.weakSkills).toEqual([]);
+    });
+
+    it("reports learning history from mastery records alone, with zero attempts", async () => {
+      const service = new ReviewSummaryService(
+        createCandidateRepository([candidate()]),
+        createAttemptRepository([]),
+        createSkillMasteryRepository([masteryRecord()]),
+        createExerciseReviewRepository([]),
+      );
+
+      const summary = await service.getSummary(NOW);
+
+      expect(summary.hasLearningHistory).toBe(true);
+    });
   });
 });

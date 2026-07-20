@@ -41,6 +41,18 @@ vi.mock("../../../infrastructure/indexed-db/attempt-repository", () => ({
   })),
 }));
 
+vi.mock("../../../infrastructure/indexed-db/skill-mastery-repository", () => ({
+  SkillMasteryRepository: vi.fn().mockImplementation(() => ({
+    listAll: async () => [],
+  })),
+}));
+
+vi.mock("../../../infrastructure/indexed-db/exercise-review-repository", () => ({
+  ExerciseReviewRepository: vi.fn().mockImplementation(() => ({
+    listDue: async () => [],
+  })),
+}));
+
 vi.mock("../../../infrastructure/indexed-db/database", () => ({
   openVimForgeDatabase: openDatabase,
 }));

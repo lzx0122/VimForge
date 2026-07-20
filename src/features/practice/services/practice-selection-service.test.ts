@@ -71,6 +71,53 @@ function createAttemptRepository(attempts: readonly AttemptSyncInput[]) {
   };
 }
 
+function masteryRecord(overrides: Partial<{ skillId: string; masteryScore: number }> = {}) {
+  return {
+    skillId: "skill-1",
+    masteryScore: 50,
+    masteryLevel: 2 as const,
+    successfulAttempts: 1,
+    uniqueExerciseIds: [],
+    consecutiveSuccesses: 1,
+    firstUnhintedSuccessAt: null,
+    latestUnhintedSuccessAt: null,
+    lastAttemptAt: "2026-07-18T00:00:00.000Z",
+    updatedAt: "2026-07-18T00:00:00.000Z",
+    revision: 1,
+    ...overrides,
+  };
+}
+
+function reviewRecord(overrides: Partial<{ exerciseId: string }> = {}) {
+  return {
+    exerciseId: "exercise-1",
+    masteryLevel: 2 as const,
+    currentIntervalDays: 3,
+    dueAt: "2026-07-19T08:00:00.000Z",
+    lastPerformanceQuality: 3 as const,
+    lastAttemptAt: "2026-07-18T00:00:00.000Z",
+    updatedAt: "2026-07-18T00:00:00.000Z",
+    revision: 1,
+    ...overrides,
+  };
+}
+
+function createSkillMasteryRepository(
+  records: readonly ReturnType<typeof masteryRecord>[],
+) {
+  return {
+    listAll: vi.fn(async () => records),
+  };
+}
+
+function createExerciseReviewRepository(
+  records: readonly ReturnType<typeof reviewRecord>[],
+) {
+  return {
+    listDue: vi.fn(async () => records),
+  };
+}
+
 const LOCAL_DATE = "2026-07-19";
 
 describe("PracticeSelectionService", () => {
@@ -463,6 +510,182 @@ describe("PracticeSelectionService", () => {
       expect([...nextMonth.exerciseIds].sort()).toEqual(
         [...today.exerciseIds].sort(),
       );
+    });
+  });
+
+  describe("persisted projections", () => {
+    it("promotes a persisted-due exercise ahead of dynamically-familiar candidates", async () => {
+      const promoted = candidate({
+        exerciseId: "familiar-but-due",
+        skillIds: ["skill-shared"],
+      });
+      const fillers = Array.from({ length: 4 }, (_, index) =>
+        candidate({
+          exerciseId: `familiar-${index + 1}`,
+          skillIds: ["skill-shared"],
+        }),
+      );
+      const allCandidates = [promoted, ...fillers];
+      const attempts = allCandidates.flatMap((c) => [
+        attempt({
+          clientAttemptId: `${c.exerciseId}-attempt-1`,
+          exerciseId: c.exerciseId,
+          completed: true,
+          accuracyScore: 95,
+          speedScore: 95,
+        }),
+        attempt({
+          clientAttemptId: `${c.exerciseId}-attempt-2`,
+          exerciseId: c.exerciseId,
+          completed: true,
+          accuracyScore: 95,
+          speedScore: 95,
+        }),
+      ]);
+
+      const service = new PracticeSelectionService(
+        createCandidateRepository(allCandidates),
+        createAttemptRepository(attempts),
+        createSkillMasteryRepository([
+          masteryRecord({ skillId: "skill-shared", masteryScore: 50 }),
+        ]),
+        createExerciseReviewRepository([
+          reviewRecord({ exerciseId: "familiar-but-due" }),
+        ]),
+      );
+
+      const result = await service.select({
+        learningMode: "memory_review",
+        selectionType: "daily_review",
+        questionCount: 5,
+        selectedTopicSlugs: [],
+        localDate: LOCAL_DATE,
+      });
+
+      expect(result.exerciseIds[0]).toBe("familiar-but-due");
+    });
+
+    it("does not promote a due exercise when there is no persisted mastery record", async () => {
+      const promoted = candidate({
+        exerciseId: "familiar-but-due",
+        skillIds: ["skill-shared"],
+      });
+      const fillers = Array.from({ length: 4 }, (_, index) =>
+        candidate({
+          exerciseId: `familiar-${index + 1}`,
+          skillIds: ["skill-shared"],
+        }),
+      );
+      const allCandidates = [promoted, ...fillers];
+      const attempts = allCandidates.flatMap((c) => [
+        attempt({
+          clientAttemptId: `${c.exerciseId}-attempt-1`,
+          exerciseId: c.exerciseId,
+          completed: true,
+          accuracyScore: 95,
+          speedScore: 95,
+        }),
+        attempt({
+          clientAttemptId: `${c.exerciseId}-attempt-2`,
+          exerciseId: c.exerciseId,
+          completed: true,
+          accuracyScore: 95,
+          speedScore: 95,
+        }),
+      ]);
+
+      const service = new PracticeSelectionService(
+        createCandidateRepository(allCandidates),
+        createAttemptRepository(attempts),
+      );
+
+      const result = await service.select({
+        learningMode: "memory_review",
+        selectionType: "daily_review",
+        questionCount: 5,
+        selectedTopicSlugs: [],
+        localDate: LOCAL_DATE,
+      });
+
+      expect(result.exerciseIds).toHaveLength(5);
+      expect(result.exerciseIds[0]).not.toBe("familiar-but-due");
+    });
+
+    it("ranks the weak pool by persisted masteryScore instead of the dynamic accuracy heuristic", async () => {
+      const weakA = candidate({ exerciseId: "weak-a", skillIds: ["skill-a"] });
+      const weakB = candidate({ exerciseId: "weak-b", skillIds: ["skill-b"] });
+      const attempts = [
+        attempt({
+          clientAttemptId: "weak-a-attempt",
+          exerciseId: "weak-a",
+          completed: true,
+          accuracyScore: 65,
+          speedScore: 95,
+        }),
+        attempt({
+          clientAttemptId: "weak-b-attempt",
+          exerciseId: "weak-b",
+          completed: true,
+          accuracyScore: 60,
+          speedScore: 95,
+        }),
+      ];
+
+      const service = new PracticeSelectionService(
+        createCandidateRepository([weakA, weakB]),
+        createAttemptRepository(attempts),
+        createSkillMasteryRepository([
+          masteryRecord({ skillId: "skill-a", masteryScore: 10 }),
+          masteryRecord({ skillId: "skill-b", masteryScore: 80 }),
+        ]),
+        createExerciseReviewRepository([]),
+      );
+
+      const result = await service.select({
+        learningMode: "efficiency",
+        selectionType: "weakness_practice",
+        questionCount: 5,
+        selectedTopicSlugs: [],
+        localDate: LOCAL_DATE,
+      });
+
+      expect(result.exerciseIds[0]).toBe("weak-a");
+    });
+
+    it("ranks the weak pool by the dynamic accuracy heuristic when there is no persisted mastery record", async () => {
+      const weakA = candidate({ exerciseId: "weak-a", skillIds: ["skill-a"] });
+      const weakB = candidate({ exerciseId: "weak-b", skillIds: ["skill-b"] });
+      const attempts = [
+        attempt({
+          clientAttemptId: "weak-a-attempt",
+          exerciseId: "weak-a",
+          completed: true,
+          accuracyScore: 65,
+          speedScore: 95,
+        }),
+        attempt({
+          clientAttemptId: "weak-b-attempt",
+          exerciseId: "weak-b",
+          completed: true,
+          accuracyScore: 60,
+          speedScore: 95,
+        }),
+      ];
+
+      const service = new PracticeSelectionService(
+        createCandidateRepository([weakA, weakB]),
+        createAttemptRepository(attempts),
+      );
+
+      const result = await service.select({
+        learningMode: "efficiency",
+        selectionType: "weakness_practice",
+        questionCount: 5,
+        selectedTopicSlugs: [],
+        localDate: LOCAL_DATE,
+      });
+
+      expect(result.exerciseIds[0]).toBe("weak-b");
     });
   });
 });

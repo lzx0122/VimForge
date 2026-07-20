@@ -4,7 +4,9 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 
 import { AttemptRepository } from "../../../infrastructure/indexed-db/attempt-repository";
 import { openVimForgeDatabase } from "../../../infrastructure/indexed-db/database";
+import { ExerciseReviewRepository } from "../../../infrastructure/indexed-db/exercise-review-repository";
 import { SessionRepository } from "../../../infrastructure/indexed-db/session-repository";
+import { SkillMasteryRepository } from "../../../infrastructure/indexed-db/skill-mastery-repository";
 import { reportError } from "../../../infrastructure/monitoring/error-reporter";
 import { SupabasePracticeCandidateRepository } from "../../../infrastructure/supabase/supabase-practice-candidate-repository";
 import { usePracticeStore } from "../../../stores/practice-store";
@@ -150,6 +152,8 @@ async function previewSelection(): Promise<void> {
     const selectionService = new PracticeSelectionService(
       new SupabasePracticeCandidateRepository(),
       new AttemptRepository(database),
+      new SkillMasteryRepository(database),
+      new ExerciseReviewRepository(database),
     );
     selection = await selectionService.select(requestSnapshot);
   } finally {

@@ -4,6 +4,8 @@ import { RouterLink } from "vue-router";
 
 import { AttemptRepository } from "../../../infrastructure/indexed-db/attempt-repository";
 import { openVimForgeDatabase } from "../../../infrastructure/indexed-db/database";
+import { ExerciseReviewRepository } from "../../../infrastructure/indexed-db/exercise-review-repository";
+import { SkillMasteryRepository } from "../../../infrastructure/indexed-db/skill-mastery-repository";
 import { SupabasePracticeCandidateRepository } from "../../../infrastructure/supabase/supabase-practice-candidate-repository";
 import type { QuestionCount } from "../../../types/learning";
 import QuestionCountSelector from "../../practice/components/QuestionCountSelector.vue";
@@ -29,6 +31,8 @@ async function loadSummary(): Promise<void> {
       const service = new ReviewSummaryService(
         new SupabasePracticeCandidateRepository(),
         new AttemptRepository(database),
+        new SkillMasteryRepository(database),
+        new ExerciseReviewRepository(database),
       );
       result = await service.getSummary();
     } finally {

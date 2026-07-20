@@ -8,6 +8,10 @@ import {
   type PracticeCandidatePools,
 } from "../../../domain/review/practice-selector";
 import { stableSeededOrder } from "../../../domain/review/seeded-order";
+import type {
+  StoredExerciseReview,
+  StoredSkillMastery,
+} from "../../../types/learning-projection";
 import { TOPIC_DEFINITIONS } from "../data/topic-definitions";
 import { topicSkillSlugs } from "../data/topic-definitions";
 import type { AttemptSyncInput } from "../repositories/attempt-sync-repository";
@@ -40,6 +44,14 @@ export interface PracticeSelectionResult {
 
 export interface PracticeSelectionAttemptRepositoryPort {
   listAll(): Promise<readonly AttemptSyncInput[]>;
+}
+
+export interface PracticeSelectionSkillMasteryRepositoryPort {
+  listAll(): Promise<readonly StoredSkillMastery[]>;
+}
+
+export interface PracticeSelectionExerciseReviewRepositoryPort {
+  listDue(nowIso: string): Promise<readonly StoredExerciseReview[]>;
 }
 
 /** The order weakness_practice drains pools in - struggling exercises first. */
@@ -152,6 +164,65 @@ function buildResult(
   };
 }
 
+/** Maximum weakness rank (100 - masteryScore, since masteryScore is 0-100) - always outranks a dynamic priority. */
+const MAX_PRIORITY = 100;
+
+/**
+ * Corrects the P0.2 attempt-snapshot pools with the authoritative P0.3
+ * persisted projections, once a persisted skill mastery record exists for
+ * this learner: a candidate the spaced-repetition scheduler has actually
+ * marked due always counts as due (moving it into dueOrIncorrect, deduped,
+ * ranked highest so it drains first), and a still-weak candidate's priority
+ * is re-ranked by its skill's real mastery score - the lower the score, the
+ * higher the priority - instead of the raw accuracy/speed/hint heuristic.
+ * Pool *membership* otherwise stays governed by the dynamic snapshot
+ * classification (practice-pool-builder.ts, out of scope here): a candidate
+ * the P0.2 pipeline excluded entirely (touched-skill filter, or neutral/
+ * unclassified) is not injected even if it is due.
+ */
+function applyPersistedProjectionOverrides(
+  pools: PracticeCandidatePools,
+  dueExerciseIds: ReadonlySet<string>,
+  skillMasteryScoreById: ReadonlyMap<string, number>,
+): PracticeCandidatePools {
+  const adjusted: Record<keyof PracticeCandidatePools, PracticeCandidate[]> = {
+    dueOrIncorrect: [],
+    weak: [],
+    familiar: [],
+    stale: [],
+    sameDifficulty: [],
+  };
+  const movedToDue = new Set<string>();
+
+  for (const poolName of Object.keys(pools) as (keyof PracticeCandidatePools)[]) {
+    for (const candidate of pools[poolName]) {
+      if (dueExerciseIds.has(candidate.exerciseId)) {
+        if (!movedToDue.has(candidate.exerciseId)) {
+          movedToDue.add(candidate.exerciseId);
+          adjusted.dueOrIncorrect.push({ ...candidate, priority: MAX_PRIORITY });
+        }
+        continue;
+      }
+
+      if (poolName === "weak") {
+        const weaknessScores = candidate.skillIds
+          .map((skillId) => skillMasteryScoreById.get(skillId))
+          .filter((score): score is number => score !== undefined);
+        const priority =
+          weaknessScores.length > 0
+            ? MAX_PRIORITY - Math.min(...weaknessScores)
+            : candidate.priority;
+        adjusted.weak.push({ ...candidate, priority });
+        continue;
+      }
+
+      adjusted[poolName].push(candidate);
+    }
+  }
+
+  return adjusted;
+}
+
 function emptyResult(request: PracticeSelectionRequest): PracticeSelectionResult {
   return {
     exerciseIds: [],
@@ -172,6 +243,12 @@ export class PracticeSelectionService {
   public constructor(
     private readonly candidateRepository: PracticeCandidateRepository,
     private readonly attemptRepository: PracticeSelectionAttemptRepositoryPort,
+    private readonly skillMasteryRepository: PracticeSelectionSkillMasteryRepositoryPort = {
+      listAll: async () => [],
+    },
+    private readonly exerciseReviewRepository: PracticeSelectionExerciseReviewRepositoryPort = {
+      listDue: async () => [],
+    },
   ) {}
 
   public async select(
@@ -188,12 +265,15 @@ export class PracticeSelectionService {
             learningMode: request.learningMode,
           };
 
-    const [rawCandidates, attempts] = await Promise.all([
-      this.candidateRepository.listPublishedCandidates(candidateOptions),
-      this.attemptRepository.listAll(),
-    ]);
-
     const now = parseLocalDate(request.localDate);
+    const [rawCandidates, attempts, masteryRecords, dueReviews] =
+      await Promise.all([
+        this.candidateRepository.listPublishedCandidates(candidateOptions),
+        this.attemptRepository.listAll(),
+        this.skillMasteryRepository.listAll(),
+        this.exerciseReviewRepository.listDue(now.toISOString()),
+      ]);
+
     const candidates = stableSeededOrder(
       rawCandidates,
       request.localDate,
@@ -227,14 +307,25 @@ export class PracticeSelectionService {
       now,
     });
 
+    const hasPersistedProjections = masteryRecords.length > 0;
+    const adjustedPools = hasPersistedProjections
+      ? applyPersistedProjectionOverrides(
+          pools,
+          new Set(dueReviews.map((review) => review.exerciseId)),
+          new Map(
+            masteryRecords.map((mastery) => [mastery.skillId, mastery.masteryScore]),
+          ),
+        )
+      : pools;
+
     const exerciseIds =
       request.selectionType === "daily_review"
         ? selectPracticeExercises({
             questionCount: request.questionCount,
             touchedSkillIds: [...touchedSkillIds],
-            pools,
+            pools: adjustedPools,
           })
-        : selectWeaknessFirst(pools, request.questionCount);
+        : selectWeaknessFirst(adjustedPools, request.questionCount);
 
     return buildResult(request, exerciseIds, candidates, true);
   }
