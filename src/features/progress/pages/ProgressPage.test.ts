@@ -1,89 +1,87 @@
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { createMemoryHistory, createRouter } from "vue-router";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { ProgressDashboard } from "../services/progress-query-service";
+
+const { getDashboard, openDatabase } = vi.hoisted(() => ({
+  getDashboard: vi.fn(),
+  openDatabase: vi.fn(async () => ({ close: vi.fn() })),
+}));
+
+vi.mock("../services/progress-query-service", () => ({
+  ProgressQueryService: vi.fn().mockImplementation(() => ({
+    getDashboard,
+  })),
+}));
+
+vi.mock("../../../infrastructure/indexed-db/database", () => ({
+  openVimForgeDatabase: openDatabase,
+}));
+
+vi.mock("../../../infrastructure/supabase/supabase-course-repository", () => ({
+  SupabaseCourseRepository: vi.fn().mockImplementation(() => ({})),
+}));
 
 import ProgressPage from "./ProgressPage.vue";
 
-interface ProgressPageFixture {
-  hasLearningHistory?: boolean;
-  dueReviewCount?: number;
-  skills?: readonly {
-    id: string;
-    name: string;
-    masteryLevel: 0 | 1 | 2 | 3 | 4 | 5;
-    masteryScore: number;
-  }[];
-  units?: readonly {
-    id: string;
-    slug: string;
-    title: string;
-    completedExercises: number;
-    totalExercises: number;
-  }[];
-  recentAttempts?: readonly {
-    id: string;
-    exerciseTitle: string;
-    completed: boolean;
-    accuracyScore: number;
-    occurredAt: string;
-    errorSummary: string | null;
-  }[];
+function dashboard(overrides: Partial<ProgressDashboard> = {}): ProgressDashboard {
+  return {
+    hasLearningHistory: true,
+    dueReviewCount: 12,
+    skills: [
+      {
+        id: "basic-motion",
+        name: "基礎移動",
+        masteryLevel: 5,
+        masteryScore: 91,
+      },
+      {
+        id: "text-objects",
+        name: "文字物件",
+        masteryLevel: 0,
+        masteryScore: 8,
+      },
+    ],
+    units: [
+      {
+        id: "unit-movement",
+        slug: "basic-cursor-movement",
+        title: "基礎游標移動",
+        completedExercises: 8,
+        totalExercises: 8,
+      },
+      {
+        id: "unit-text-objects",
+        slug: "text-objects",
+        title: "文字物件",
+        completedExercises: 4,
+        totalExercises: 14,
+      },
+    ],
+    recentAttempts: [
+      {
+        id: "attempt-error",
+        exerciseTitle: "修改引號內容",
+        completed: false,
+        accuracyScore: 0,
+        occurredAt: "2026-07-16T08:00:00.000Z",
+        errorSummary: null,
+      },
+      {
+        id: "attempt-success",
+        exerciseTitle: "跳到下一個單字",
+        completed: true,
+        accuracyScore: 96,
+        occurredAt: "2026-07-16T07:30:00.000Z",
+        errorSummary: null,
+      },
+    ],
+    ...overrides,
+  };
 }
 
-const progressSummary = {
-  hasLearningHistory: true,
-  dueReviewCount: 12,
-  skills: [
-    {
-      id: "basic-motion",
-      name: "基礎移動",
-      masteryLevel: 5,
-      masteryScore: 91,
-    },
-    {
-      id: "text-objects",
-      name: "文字物件",
-      masteryLevel: 0,
-      masteryScore: 8,
-    },
-  ],
-  units: [
-    {
-      id: "unit-movement",
-      slug: "basic-cursor-movement",
-      title: "基礎游標移動",
-      completedExercises: 8,
-      totalExercises: 8,
-    },
-    {
-      id: "unit-text-objects",
-      slug: "text-objects",
-      title: "文字物件",
-      completedExercises: 4,
-      totalExercises: 14,
-    },
-  ],
-  recentAttempts: [
-    {
-      id: "attempt-error",
-      exerciseTitle: "修改引號內容",
-      completed: false,
-      accuracyScore: 0,
-      occurredAt: "2026-07-16T08:00:00.000Z",
-      errorSummary: "未回到 Normal Mode",
-    },
-    {
-      id: "attempt-success",
-      exerciseTitle: "跳到下一個單字",
-      completed: true,
-      accuracyScore: 96,
-      occurredAt: "2026-07-16T07:30:00.000Z",
-      errorSummary: null,
-    },
-  ],
-} as const;
-
-async function mountProgressPage(props: ProgressPageFixture = {}) {
+async function mountProgressPage() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -101,14 +99,29 @@ async function mountProgressPage(props: ProgressPageFixture = {}) {
   await router.isReady();
 
   return mount(ProgressPage, {
-    props,
     global: { plugins: [router] },
   });
 }
 
 describe("ProgressPage", () => {
+  beforeEach(() => {
+    getDashboard.mockReset();
+    openDatabase.mockReset().mockResolvedValue({ close: vi.fn() });
+  });
+
+  it("shows a loading state before the dashboard resolves", async () => {
+    getDashboard.mockReturnValue(new Promise(() => {}));
+
+    const wrapper = await mountProgressPage();
+
+    expect(wrapper.text()).toContain("正在載入學習進度");
+  });
+
   it("shows skill mastery from Level 0 through Level 5 and due reviews", async () => {
-    const wrapper = await mountProgressPage(progressSummary);
+    getDashboard.mockResolvedValue(dashboard());
+
+    const wrapper = await mountProgressPage();
+    await flushPromises();
 
     expect(wrapper.text()).toContain("基礎移動");
     expect(wrapper.text()).toContain("Level 5 / 5");
@@ -119,7 +132,10 @@ describe("ProgressPage", () => {
   });
 
   it("shows unit completion and recent errors", async () => {
-    const wrapper = await mountProgressPage(progressSummary);
+    getDashboard.mockResolvedValue(dashboard());
+
+    const wrapper = await mountProgressPage();
+    await flushPromises();
 
     expect(wrapper.get('[data-unit-slug="basic-cursor-movement"]').text()).toContain(
       "8 / 8 題",
@@ -128,7 +144,7 @@ describe("ProgressPage", () => {
       "4 / 14 題",
     );
     expect(wrapper.get('[data-attempt-id="attempt-error"]').text()).toContain(
-      "未回到 Normal Mode",
+      "未完成",
     );
     expect(wrapper.get('[data-attempt-id="attempt-success"]').text()).toContain(
       "準確 96",
@@ -136,24 +152,49 @@ describe("ProgressPage", () => {
   });
 
   it("does not introduce XP or rankings", async () => {
-    const wrapper = await mountProgressPage(progressSummary);
+    getDashboard.mockResolvedValue(dashboard());
+
+    const wrapper = await mountProgressPage();
+    await flushPromises();
 
     expect(wrapper.text()).not.toMatch(/XP|排名/);
   });
 
-  it("shows an honest empty state without fabricated progress", async () => {
-    const wrapper = await mountProgressPage({
-      hasLearningHistory: false,
-      dueReviewCount: 0,
-      skills: [],
-      units: [],
-      recentAttempts: [],
-    });
+  it("shows an honest empty state without fabricated progress when there is no learning history", async () => {
+    getDashboard.mockResolvedValue(
+      dashboard({
+        hasLearningHistory: false,
+        dueReviewCount: 0,
+        skills: [],
+        units: [],
+        recentAttempts: [],
+      }),
+    );
+
+    const wrapper = await mountProgressPage();
+    await flushPromises();
 
     expect(wrapper.text()).toContain("尚無學習紀錄");
     expect(wrapper.get('a[href="/courses"]').text()).toContain("前往課程");
     expect(wrapper.find('[data-testid="due-review-count"]').exists()).toBe(
       false,
     );
+  });
+
+  it("shows a retryable error state when loading fails, and recovers on retry", async () => {
+    getDashboard.mockRejectedValueOnce(new Error("db unavailable"));
+
+    const wrapper = await mountProgressPage();
+    await flushPromises();
+
+    expect(wrapper.get('[role="alert"]').text()).toContain(
+      "暫時無法載入學習進度，請稍後重試。",
+    );
+
+    getDashboard.mockResolvedValueOnce(dashboard());
+    await wrapper.get('[data-testid="progress-retry"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("基礎移動");
   });
 });
