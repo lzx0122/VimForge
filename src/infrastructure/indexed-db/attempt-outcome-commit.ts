@@ -67,7 +67,8 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return false;
 }
 
-function attemptPayloadsMatch(
+/** Shared with commitLearningProjection(), which needs the identical duplicate-vs-conflict rule. */
+export function attemptPayloadsMatch(
   existing: StoredAttempt,
   incoming: AttemptSyncInput,
 ): boolean {
