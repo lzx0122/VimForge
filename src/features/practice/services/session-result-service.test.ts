@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   deleteVimForgeDatabase,
@@ -11,7 +11,15 @@ import { SessionRepository } from "../../../infrastructure/indexed-db/session-re
 import type { StoredLearningOutcome } from "../../../types/learning-projection";
 import type { PracticeSession } from "../../../types/session";
 import type { AttemptSyncInput } from "../repositories/attempt-sync-repository";
-import { SessionResultService } from "./session-result-service";
+import {
+  PracticeSessionStarter,
+  type PracticeSessionRepositoryPort,
+  type PracticeSessionStorePort,
+} from "./practice-session-starter";
+import {
+  SessionResultService,
+  type PracticeSessionStarterPort,
+} from "./session-result-service";
 
 const DATABASE_NAME = "vim-forge-session-result-service-test";
 const NOW = new Date("2026-07-21T09:00:00.000Z");
@@ -89,6 +97,34 @@ function outcome(
   };
 }
 
+function restartedSessionFixture(): PracticeSession {
+  return {
+    id: "session-2",
+    learningMode: "memory_review",
+    selectionType: "daily_review",
+    requestedCount: 5,
+    actualCount: 3,
+    status: "active",
+    currentIndex: 0,
+    exerciseIds: ["exercise-1", "exercise-2", "exercise-3"],
+    selectedSkillIds: [],
+    startedAt: NOW.toISOString(),
+    completedAt: null,
+    updatedAt: NOW.toISOString(),
+  };
+}
+
+function stubStarter(
+  overrides: Partial<PracticeSessionStarterPort> = {},
+): PracticeSessionStarterPort {
+  return {
+    start: vi.fn(async () => {
+      throw new Error("start() should not be called in this test.");
+    }),
+    ...overrides,
+  };
+}
+
 async function seed(
   database: IDBDatabase,
   storeName: string,
@@ -114,32 +150,31 @@ describe("SessionResultService", () => {
 
   describe("getResult", () => {
     it("returns null when the session does not exist", async () => {
-      const service = new SessionResultService(database, () => NOW);
+      const service = new SessionResultService(database, stubStarter());
 
       expect(await service.getResult("session-missing")).toBeNull();
     });
 
     it("only counts the latest attempt for a retried exercise", async () => {
       await new SessionRepository(database).save(session(), null);
+      await seed(database, "attempts", {
+        ...attempt({ clientAttemptId: "attempt-1a", accuracyScore: 40 }),
+        syncStatus: "pending",
+      });
+      await seed(database, "attempts", {
+        ...attempt({
+          clientAttemptId: "attempt-1b",
+          accuracyScore: 95,
+          startedAt: "2026-07-21T08:02:00.000Z",
+          completedAt: "2026-07-21T08:03:00.000Z",
+        }),
+        syncStatus: "pending",
+      });
       await seed(
         database,
-        "attempts",
-        { ...attempt({ clientAttemptId: "attempt-1a", accuracyScore: 40 }), syncStatus: "pending" },
+        "learningOutcomes",
+        outcome({ clientAttemptId: "attempt-1a" }),
       );
-      await seed(
-        database,
-        "attempts",
-        {
-          ...attempt({
-            clientAttemptId: "attempt-1b",
-            accuracyScore: 95,
-            startedAt: "2026-07-21T08:02:00.000Z",
-            completedAt: "2026-07-21T08:03:00.000Z",
-          }),
-          syncStatus: "pending",
-        },
-      );
-      await seed(database, "learningOutcomes", outcome({ clientAttemptId: "attempt-1a" }));
       await seed(
         database,
         "learningOutcomes",
@@ -149,7 +184,7 @@ describe("SessionResultService", () => {
         }),
       );
 
-      const service = new SessionResultService(database, () => NOW);
+      const service = new SessionResultService(database, stubStarter());
       const result = await service.getResult("session-1");
 
       const exerciseOneResult = result?.exerciseResults.find(
@@ -157,6 +192,347 @@ describe("SessionResultService", () => {
       );
       expect(exerciseOneResult?.accuracyScore).toBe(95);
       expect(result?.exerciseResults).toHaveLength(1);
+    });
+
+    it("breaks a tied effective timestamp using startedAt", async () => {
+      await new SessionRepository(database).save(
+        session({ exerciseIds: ["exercise-1"] }),
+        null,
+      );
+      await seed(database, "attempts", {
+        ...attempt({
+          clientAttemptId: "attempt-a",
+          startedAt: "2026-07-21T08:00:00.000Z",
+          completedAt: "2026-07-21T08:05:00.000Z",
+          accuracyScore: 10,
+        }),
+        syncStatus: "pending",
+      });
+      await seed(database, "attempts", {
+        ...attempt({
+          clientAttemptId: "attempt-b",
+          startedAt: "2026-07-21T08:01:00.000Z",
+          completedAt: "2026-07-21T08:05:00.000Z",
+          accuracyScore: 20,
+        }),
+        syncStatus: "pending",
+      });
+
+      const service = new SessionResultService(database, stubStarter());
+      const result = await service.getResult("session-1");
+
+      expect(result?.exerciseResults[0]?.accuracyScore).toBe(20);
+    });
+
+    it("breaks a fully tied timestamp using clientAttemptId, seeded in ascending order", async () => {
+      await new SessionRepository(database).save(
+        session({ exerciseIds: ["exercise-1"] }),
+        null,
+      );
+      await seed(database, "attempts", {
+        ...attempt({
+          clientAttemptId: "attempt-a",
+          startedAt: "2026-07-21T08:00:00.000Z",
+          completedAt: "2026-07-21T08:01:00.000Z",
+          accuracyScore: 10,
+        }),
+        syncStatus: "pending",
+      });
+      await seed(database, "attempts", {
+        ...attempt({
+          clientAttemptId: "attempt-b",
+          startedAt: "2026-07-21T08:00:00.000Z",
+          completedAt: "2026-07-21T08:01:00.000Z",
+          accuracyScore: 20,
+        }),
+        syncStatus: "pending",
+      });
+
+      const service = new SessionResultService(database, stubStarter());
+      const result = await service.getResult("session-1");
+
+      expect(result?.exerciseResults[0]?.accuracyScore).toBe(20);
+    });
+
+    it("breaks a fully tied timestamp using clientAttemptId, seeded in descending order", async () => {
+      await new SessionRepository(database).save(
+        session({ exerciseIds: ["exercise-1"] }),
+        null,
+      );
+      await seed(database, "attempts", {
+        ...attempt({
+          clientAttemptId: "attempt-b",
+          startedAt: "2026-07-21T08:00:00.000Z",
+          completedAt: "2026-07-21T08:01:00.000Z",
+          accuracyScore: 20,
+        }),
+        syncStatus: "pending",
+      });
+      await seed(database, "attempts", {
+        ...attempt({
+          clientAttemptId: "attempt-a",
+          startedAt: "2026-07-21T08:00:00.000Z",
+          completedAt: "2026-07-21T08:01:00.000Z",
+          accuracyScore: 10,
+        }),
+        syncStatus: "pending",
+      });
+
+      const service = new SessionResultService(database, stubStarter());
+      const result = await service.getResult("session-1");
+
+      expect(result?.exerciseResults[0]?.accuracyScore).toBe(20);
+    });
+
+    it("includes hint level, performance quality, and a needs-practice flag derived from completion", async () => {
+      await new SessionRepository(database).save(
+        session({ exerciseIds: ["exercise-1", "exercise-2"] }),
+        null,
+      );
+      await seed(database, "attempts", {
+        ...attempt({
+          clientAttemptId: "attempt-1",
+          exerciseId: "exercise-1",
+          completed: true,
+          highestHintLevel: 2,
+          performanceQuality: 3,
+        }),
+        syncStatus: "pending",
+      });
+      await seed(database, "attempts", {
+        ...attempt({
+          clientAttemptId: "attempt-2",
+          exerciseId: "exercise-2",
+          completed: false,
+          highestHintLevel: 4,
+          performanceQuality: 0,
+          completedAt: "2026-07-21T08:02:00.000Z",
+        }),
+        syncStatus: "pending",
+      });
+
+      const service = new SessionResultService(database, stubStarter());
+      const result = await service.getResult("session-1");
+
+      expect(result?.exerciseResults).toEqual([
+        expect.objectContaining({
+          exerciseId: "exercise-1",
+          completed: true,
+          highestHintLevel: 2,
+          performanceQuality: 3,
+          needsPractice: false,
+        }),
+        expect.objectContaining({
+          exerciseId: "exercise-2",
+          completed: false,
+          highestHintLevel: 4,
+          performanceQuality: 0,
+          needsPractice: true,
+        }),
+      ]);
+    });
+
+    it("excludes attempts recorded under a different session", async () => {
+      await new SessionRepository(database).save(
+        session({ exerciseIds: ["exercise-1"] }),
+        null,
+      );
+      await seed(database, "attempts", {
+        ...attempt({
+          clientAttemptId: "attempt-other",
+          sessionId: "session-other",
+        }),
+        syncStatus: "pending",
+      });
+
+      const service = new SessionResultService(database, stubStarter());
+      const result = await service.getResult("session-1");
+
+      expect(result?.exerciseResults).toHaveLength(0);
+      expect(result?.completedExercises).toBe(0);
+    });
+
+    it("does not let a superseded retry affect completed/skipped counts", async () => {
+      await new SessionRepository(database).save(
+        session({ exerciseIds: ["exercise-1"] }),
+        null,
+      );
+      await seed(database, "attempts", {
+        ...attempt({ clientAttemptId: "attempt-1a", completed: false }),
+        syncStatus: "pending",
+      });
+      await seed(database, "attempts", {
+        ...attempt({
+          clientAttemptId: "attempt-1b",
+          completed: true,
+          startedAt: "2026-07-21T08:02:00.000Z",
+          completedAt: "2026-07-21T08:03:00.000Z",
+        }),
+        syncStatus: "pending",
+      });
+
+      const service = new SessionResultService(database, stubStarter());
+      const result = await service.getResult("session-1");
+
+      expect(result?.completedExercises).toBe(1);
+      expect(result?.skippedExercises).toBe(0);
+    });
+
+    it("does not let a superseded retry's scores pull down the averages", async () => {
+      await new SessionRepository(database).save(
+        session({ exerciseIds: ["exercise-1"] }),
+        null,
+      );
+      await seed(database, "attempts", {
+        ...attempt({
+          clientAttemptId: "attempt-1a",
+          accuracyScore: 10,
+          speedScore: 10,
+        }),
+        syncStatus: "pending",
+      });
+      await seed(database, "attempts", {
+        ...attempt({
+          clientAttemptId: "attempt-1b",
+          accuracyScore: 90,
+          speedScore: 95,
+          startedAt: "2026-07-21T08:02:00.000Z",
+          completedAt: "2026-07-21T08:03:00.000Z",
+        }),
+        syncStatus: "pending",
+      });
+
+      const service = new SessionResultService(database, stubStarter());
+      const result = await service.getResult("session-1");
+
+      expect(result?.averageAccuracy).toBe(90);
+      expect(result?.averageSpeed).toBe(95);
+    });
+
+    it("does not let a superseded retry's duration inflate the total", async () => {
+      await new SessionRepository(database).save(
+        session({ exerciseIds: ["exercise-1"] }),
+        null,
+      );
+      await seed(database, "attempts", {
+        ...attempt({ clientAttemptId: "attempt-1a", durationMs: 120_000 }),
+        syncStatus: "pending",
+      });
+      await seed(database, "attempts", {
+        ...attempt({
+          clientAttemptId: "attempt-1b",
+          durationMs: 30_000,
+          startedAt: "2026-07-21T08:02:00.000Z",
+          completedAt: "2026-07-21T08:03:00.000Z",
+        }),
+        syncStatus: "pending",
+      });
+
+      const service = new SessionResultService(database, stubStarter());
+      const result = await service.getResult("session-1");
+
+      expect(result?.totalDurationMs).toBe(30_000);
+    });
+
+    it("does not let a superseded retry's learning outcome affect the reported skill changes", async () => {
+      await new SessionRepository(database).save(
+        session({ exerciseIds: ["exercise-1"] }),
+        null,
+      );
+      await seed(database, "attempts", {
+        ...attempt({ clientAttemptId: "attempt-1a" }),
+        syncStatus: "pending",
+      });
+      await seed(database, "attempts", {
+        ...attempt({
+          clientAttemptId: "attempt-1b",
+          startedAt: "2026-07-21T08:02:00.000Z",
+          completedAt: "2026-07-21T08:03:00.000Z",
+        }),
+        syncStatus: "pending",
+      });
+      await seed(
+        database,
+        "learningOutcomes",
+        outcome({
+          clientAttemptId: "attempt-1a",
+          skillChanges: [
+            {
+              skillId: "skill-1",
+              previousScore: 40,
+              nextScore: 45,
+              previousLevel: 2,
+              nextLevel: 2,
+              delta: 5,
+            },
+          ],
+        }),
+      );
+      await seed(
+        database,
+        "learningOutcomes",
+        outcome({
+          clientAttemptId: "attempt-1b",
+          completedAt: "2026-07-21T08:03:00.000Z",
+          skillChanges: [
+            {
+              skillId: "skill-1",
+              previousScore: 45,
+              nextScore: 80,
+              previousLevel: 2,
+              nextLevel: 3,
+              delta: 35,
+            },
+          ],
+        }),
+      );
+
+      const service = new SessionResultService(database, stubStarter());
+      const result = await service.getResult("session-1");
+
+      expect(result?.skillChanges).toEqual([
+        {
+          skillId: "skill-1",
+          previousScore: 45,
+          nextScore: 80,
+          previousLevel: 2,
+          nextLevel: 3,
+        },
+      ]);
+    });
+
+    it("still reports an exercise result when its final attempt has no learning outcome", async () => {
+      await new SessionRepository(database).save(
+        session({ exerciseIds: ["exercise-1"] }),
+        null,
+      );
+      await seed(database, "attempts", {
+        ...attempt(),
+        syncStatus: "pending",
+      });
+
+      const service = new SessionResultService(database, stubStarter());
+      const result = await service.getResult("session-1");
+
+      expect(result?.exerciseResults).toHaveLength(1);
+      expect(result?.skillChanges).toEqual([]);
+    });
+
+    it("treats a null durationMs as zero rather than dropping the exercise", async () => {
+      await new SessionRepository(database).save(
+        session({ exerciseIds: ["exercise-1"] }),
+        null,
+      );
+      await seed(database, "attempts", {
+        ...attempt({ durationMs: null }),
+        syncStatus: "pending",
+      });
+
+      const service = new SessionResultService(database, stubStarter());
+      const result = await service.getResult("session-1");
+
+      expect(result?.exerciseResults[0]?.durationMs).toBe(0);
+      expect(result?.totalDurationMs).toBe(0);
     });
 
     it("averages accuracy and speed from completed exercises only, excluding skipped ones", async () => {
@@ -200,7 +576,7 @@ describe("SessionResultService", () => {
         }),
       );
 
-      const service = new SessionResultService(database, () => NOW);
+      const service = new SessionResultService(database, stubStarter());
       const result = await service.getResult("session-1");
 
       expect(result?.completedExercises).toBe(1);
@@ -220,7 +596,7 @@ describe("SessionResultService", () => {
       });
       await seed(database, "learningOutcomes", outcome());
 
-      const service = new SessionResultService(database, () => NOW);
+      const service = new SessionResultService(database, stubStarter());
       const result = await service.getResult("session-1");
 
       expect(result?.averageAccuracy).toBeNull();
@@ -264,7 +640,7 @@ describe("SessionResultService", () => {
         }),
       );
 
-      const service = new SessionResultService(database, () => NOW);
+      const service = new SessionResultService(database, stubStarter());
       const result = await service.getResult("session-1");
 
       expect(result?.totalDurationMs).toBe(75_000);
@@ -325,7 +701,7 @@ describe("SessionResultService", () => {
         }),
       );
 
-      const service = new SessionResultService(database, () => NOW);
+      const service = new SessionResultService(database, stubStarter());
       const result = await service.getResult("session-1");
 
       expect(result?.skillChanges).toEqual([
@@ -370,7 +746,7 @@ describe("SessionResultService", () => {
         );
       }
 
-      const service = new SessionResultService(database, () => NOW);
+      const service = new SessionResultService(database, stubStarter());
       const result = await service.getResult("session-1");
 
       expect(result?.exerciseResults.map((item) => item.exerciseId)).toEqual([
@@ -394,7 +770,7 @@ describe("SessionResultService", () => {
       });
       await seed(database, "learningOutcomes", outcome());
 
-      const service = new SessionResultService(database, () => NOW);
+      const service = new SessionResultService(database, stubStarter());
       const result = await service.getResult("session-1");
 
       expect(result).toMatchObject({
@@ -406,7 +782,19 @@ describe("SessionResultService", () => {
   });
 
   describe("restart", () => {
-    it("creates a new session id and preserves source, mode, and exercise ids", async () => {
+    it("uses the injected starter to create the restarted session", async () => {
+      await new SessionRepository(database).save(session(), null);
+      const restarted = restartedSessionFixture();
+      const starter = stubStarter({ start: vi.fn(async () => restarted) });
+      const service = new SessionResultService(database, starter);
+
+      const result = await service.restart("session-1");
+
+      expect(starter.start).toHaveBeenCalledTimes(1);
+      expect(result).toBe(restarted);
+    });
+
+    it("passes the original session's mode, source, count, exercises, and skills to the starter", async () => {
       const original = session({
         learningMode: "efficiency",
         selectionType: "topic_practice",
@@ -415,45 +803,66 @@ describe("SessionResultService", () => {
         selectedSkillIds: ["skill-1"],
       });
       await new SessionRepository(database).save(original, null);
+      const starter = stubStarter({
+        start: vi.fn(async () => restartedSessionFixture()),
+      });
+      const service = new SessionResultService(database, starter);
 
-      const service = new SessionResultService(
-        database,
-        () => NOW,
-        () => "session-2",
-      );
-      const restarted = await service.restart("session-1");
+      await service.restart("session-1");
 
-      expect(restarted.id).toBe("session-2");
-      expect(restarted.id).not.toBe(original.id);
-      expect(restarted.learningMode).toBe("efficiency");
-      expect(restarted.selectionType).toBe("topic_practice");
-      expect(restarted.requestedCount).toBe(10);
-      expect(restarted.exerciseIds).toEqual(["exercise-1", "exercise-2"]);
-      expect(restarted.selectedSkillIds).toEqual(["skill-1"]);
-      expect(restarted.status).toBe("active");
-      expect(restarted.currentIndex).toBe(0);
-      expect(restarted.completedAt).toBeNull();
-      expect(restarted.startedAt).toBe(NOW.toISOString());
+      expect(starter.start).toHaveBeenCalledWith({
+        learningMode: "efficiency",
+        selectionType: "topic_practice",
+        requestedCount: 10,
+        exerciseIds: ["exercise-1", "exercise-2"],
+        selectedSkillIds: ["skill-1"],
+      });
     });
 
-    it("persists the restarted session so it can be resumed", async () => {
+    it("leaves the original session record untouched", async () => {
+      const original = session();
+      await new SessionRepository(database).save(original, null);
+      const starter = stubStarter({
+        start: vi.fn(async () => restartedSessionFixture()),
+      });
+      const service = new SessionResultService(database, starter);
+
+      await service.restart("session-1");
+
+      const stored = await new SessionRepository(database).get("session-1");
+      expect(stored).toEqual(original);
+    });
+
+    it("leaves the practice store unchanged when the starter's persistence fails", async () => {
       await new SessionRepository(database).save(session(), null);
-      const service = new SessionResultService(
-        database,
-        () => NOW,
+      const repository: PracticeSessionRepositoryPort = {
+        save: vi.fn(async () => {
+          throw new Error("disk full");
+        }),
+      };
+      const store: PracticeSessionStorePort = {
+        restoreSession: vi.fn(),
+      };
+      const starter = new PracticeSessionStarter(
+        repository,
+        store,
         () => "session-2",
+        () => NOW,
       );
+      const service = new SessionResultService(database, starter);
 
-      const restarted = await service.restart("session-1");
-
-      const stored = await new SessionRepository(database).get("session-2");
-      expect(stored).toEqual(restarted);
+      await expect(service.restart("session-1")).rejects.toThrow(
+        "disk full",
+      );
+      expect(store.restoreSession).not.toHaveBeenCalled();
     });
 
-    it("rejects restarting a session that does not exist", async () => {
-      const service = new SessionResultService(database, () => NOW);
+    it("rejects restarting a session that does not exist without calling the starter", async () => {
+      const starter = stubStarter();
+      const service = new SessionResultService(database, starter);
 
       await expect(service.restart("session-missing")).rejects.toThrow();
+      expect(starter.start).not.toHaveBeenCalled();
     });
   });
 });

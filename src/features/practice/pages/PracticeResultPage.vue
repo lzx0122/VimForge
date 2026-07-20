@@ -3,8 +3,10 @@ import { computed, onMounted, ref } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 
 import { openVimForgeDatabase } from "../../../infrastructure/indexed-db/database";
+import { SessionRepository } from "../../../infrastructure/indexed-db/session-repository";
 import { reportError } from "../../../infrastructure/monitoring/error-reporter";
 import { usePracticeStore } from "../../../stores/practice-store";
+import { PracticeSessionStarter } from "../services/practice-session-starter";
 import {
   SessionResultService,
   type PracticeSessionResult,
@@ -20,11 +22,12 @@ const sessionId = computed(() => String(route.params.sessionId));
 const loadState = ref<ResultLoadState>("loading");
 const result = ref<PracticeSessionResult | null>(null);
 const isRestarting = ref(false);
+const restartError = ref<string | null>(null);
 
-const needsPracticeExerciseIds = computed<string[]>(() =>
-  (result.value?.exerciseResults ?? [])
-    .filter((exerciseResult) => !exerciseResult.completed)
-    .map((exerciseResult) => exerciseResult.exerciseId),
+const needsPracticeExercises = computed(() =>
+  (result.value?.exerciseResults ?? []).filter(
+    (exerciseResult) => exerciseResult.needsPractice,
+  ),
 );
 
 function formatDuration(durationMs: number): string {
@@ -34,14 +37,22 @@ function formatDuration(durationMs: number): string {
   return `${minutes} 分 ${seconds} 秒`;
 }
 
+function createSessionResultService(database: IDBDatabase): SessionResultService {
+  return new SessionResultService(
+    database,
+    new PracticeSessionStarter(new SessionRepository(database), practiceStore),
+  );
+}
+
 async function loadResult(): Promise<void> {
   loadState.value = "loading";
   try {
     const database = await openVimForgeDatabase();
     let loadedResult: PracticeSessionResult | null;
     try {
-      const service = new SessionResultService(database);
-      loadedResult = await service.getResult(sessionId.value);
+      loadedResult = await createSessionResultService(database).getResult(
+        sessionId.value,
+      );
     } finally {
       database.close();
     }
@@ -54,23 +65,29 @@ async function loadResult(): Promise<void> {
 }
 
 async function restartSession(): Promise<void> {
+  if (isRestarting.value) {
+    return;
+  }
+
   isRestarting.value = true;
+  restartError.value = null;
   try {
     const database = await openVimForgeDatabase();
     let restarted;
     try {
-      const service = new SessionResultService(database);
-      restarted = await service.restart(sessionId.value);
+      restarted = await createSessionResultService(database).restart(
+        sessionId.value,
+      );
     } finally {
       database.close();
     }
-    practiceStore.restoreSession(restarted, null);
     await router.push({
       name: "practice",
       params: { sessionId: restarted.id },
     });
   } catch (error: unknown) {
     reportError("practice-result.restart-session", error);
+    restartError.value = "暫時無法重新開始這個題組，請稍後重試。";
   } finally {
     isRestarting.value = false;
   }
@@ -168,18 +185,39 @@ onMounted(() => {
       </ul>
     </section>
 
+    <section class="exercise-results">
+      <h2>各題表現</h2>
+      <ul>
+        <li
+          v-for="exerciseResult in result.exerciseResults"
+          :key="exerciseResult.exerciseId"
+          :data-testid="`exercise-result-${exerciseResult.exerciseId}`"
+        >
+          <span class="exercise-id">{{ exerciseResult.exerciseId }}</span>
+          <span>{{ exerciseResult.completed ? "已完成" : "已略過" }}</span>
+          <span>正確率 {{ exerciseResult.accuracyScore.toFixed(0) }}%</span>
+          <span>速度 {{ exerciseResult.speedScore.toFixed(0) }}%</span>
+          <span>{{ formatDuration(exerciseResult.durationMs) }}</span>
+          <span>
+            提示等級 {{ exerciseResult.highestHintLevel }}／表現分數
+            {{ exerciseResult.performanceQuality }}
+          </span>
+        </li>
+      </ul>
+    </section>
+
     <section
-      v-if="needsPracticeExerciseIds.length > 0"
+      v-if="needsPracticeExercises.length > 0"
       class="needs-practice"
       data-testid="needs-practice-list"
     >
       <h2>建議再加強</h2>
       <ul>
         <li
-          v-for="exerciseId in needsPracticeExerciseIds"
-          :key="exerciseId"
+          v-for="exerciseResult in needsPracticeExercises"
+          :key="exerciseResult.exerciseId"
         >
-          {{ exerciseId }}
+          {{ exerciseResult.exerciseId }}
         </li>
       </ul>
     </section>
@@ -193,6 +231,13 @@ onMounted(() => {
       >
         再練本題組
       </button>
+      <p
+        v-if="restartError !== null"
+        role="alert"
+        data-testid="restart-error"
+      >
+        {{ restartError }}
+      </p>
       <RouterLink
         class="primary-link"
         :to="{ name: 'progress' }"
@@ -274,10 +319,38 @@ onMounted(() => {
   padding-left: 1.25rem;
 }
 
+.exercise-results ul {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.exercise-results li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #374151;
+  border-radius: 0.5rem;
+}
+
+.exercise-results .exercise-id {
+  font-weight: 600;
+  color: #f9fafb;
+}
+
 .result-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
   align-items: center;
+}
+
+.result-actions [data-testid="restart-error"] {
+  margin: 0;
+  width: 100%;
+  color: #fca5a5;
 }
 </style>

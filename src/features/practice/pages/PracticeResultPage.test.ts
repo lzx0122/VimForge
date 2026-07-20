@@ -53,6 +53,9 @@ function result(
         accuracyScore: 90,
         speedScore: 80,
         durationMs: 40_000,
+        highestHintLevel: 1,
+        performanceQuality: 4,
+        needsPractice: false,
       },
       {
         exerciseId: "exercise-2",
@@ -60,6 +63,9 @@ function result(
         accuracyScore: 86,
         speedScore: 72,
         durationMs: 35_000,
+        highestHintLevel: 0,
+        performanceQuality: 3,
+        needsPractice: false,
       },
       {
         exerciseId: "exercise-3",
@@ -67,6 +73,9 @@ function result(
         accuracyScore: 0,
         speedScore: 0,
         durationMs: 20_000,
+        highestHintLevel: 3,
+        performanceQuality: 0,
+        needsPractice: true,
       },
     ],
     ...overrides,
@@ -152,7 +161,35 @@ describe("PracticeResultPage", () => {
     expect(wrapper.text()).toContain("40 → 63");
   });
 
-  it("shows a needs-practice list of the exercises that were not completed", async () => {
+  it("renders a completed exercise row with accuracy, speed, duration, hint level, and performance quality", async () => {
+    getResult.mockResolvedValue(result());
+
+    const { wrapper } = await mountResultPage();
+    await flushPromises();
+
+    const row = wrapper.get('[data-testid="exercise-result-exercise-1"]');
+    expect(row.text()).toContain("exercise-1");
+    expect(row.text()).toContain("已完成");
+    expect(row.text()).toContain("90");
+    expect(row.text()).toContain("80");
+    expect(row.text()).toContain("0 分 40 秒");
+    expect(row.text()).toContain("1");
+    expect(row.text()).toContain("4");
+  });
+
+  it("renders a skipped exercise row with its skipped state, hint level, and performance quality", async () => {
+    getResult.mockResolvedValue(result());
+
+    const { wrapper } = await mountResultPage();
+    await flushPromises();
+
+    const row = wrapper.get('[data-testid="exercise-result-exercise-3"]');
+    expect(row.text()).toContain("exercise-3");
+    expect(row.text()).toContain("已略過");
+    expect(row.text()).toContain("3");
+  });
+
+  it("shows a needs-practice list derived from each exercise result's needsPractice flag", async () => {
     getResult.mockResolvedValue(result());
 
     const { wrapper } = await mountResultPage();
@@ -189,7 +226,7 @@ describe("PracticeResultPage", () => {
     expect(wrapper.text()).toContain("88");
   });
 
-  it("restarts the session and navigates to the new practice session", async () => {
+  it("restarts the session through the service and navigates to the new practice session", async () => {
     getResult.mockResolvedValue(result());
     restart.mockResolvedValue(restartedSession());
 
@@ -202,6 +239,59 @@ describe("PracticeResultPage", () => {
     expect(restart).toHaveBeenCalledWith("session-1");
     expect(router.currentRoute.value.name).toBe("practice");
     expect(router.currentRoute.value.params.sessionId).toBe("session-2");
+  });
+
+  it("navigates only after the restart promise resolves", async () => {
+    getResult.mockResolvedValue(result());
+    let resolveRestart: (session: PracticeSession) => void = () => {};
+    restart.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRestart = resolve;
+      }),
+    );
+
+    const { wrapper, router } = await mountResultPage();
+    await flushPromises();
+
+    await wrapper.get('[data-testid="restart-session"]').trigger("click");
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe("practice-result");
+
+    resolveRestart(restartedSession());
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe("practice");
+  });
+
+  it("shows a visible error and does not navigate when restart is rejected", async () => {
+    getResult.mockResolvedValue(result());
+    restart.mockRejectedValueOnce(new Error("disk full"));
+
+    const { wrapper, router } = await mountResultPage();
+    await flushPromises();
+
+    await wrapper.get('[data-testid="restart-session"]').trigger("click");
+    await flushPromises();
+
+    expect(router.currentRoute.value.name).toBe("practice-result");
+    expect(wrapper.get('[data-testid="restart-error"]').text()).toContain(
+      "暫時無法重新開始這個題組，請稍後重試。",
+    );
+  });
+
+  it("calls restart only once when the button is clicked twice while the first call is pending", async () => {
+    getResult.mockResolvedValue(result());
+    restart.mockReturnValue(new Promise(() => {}));
+
+    const { wrapper } = await mountResultPage();
+    await flushPromises();
+
+    const button = wrapper.get('[data-testid="restart-session"]');
+    const firstClick = button.trigger("click");
+    const secondClick = button.trigger("click");
+    await Promise.all([firstClick, secondClick]);
+    await flushPromises();
+
+    expect(restart).toHaveBeenCalledTimes(1);
   });
 
   it("shows the navigation links to progress, review, and home", async () => {
