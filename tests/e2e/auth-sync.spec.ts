@@ -5,7 +5,7 @@ const ATTEMPT_ID = "00000000-0000-4000-8000-000000000701";
 async function seedPendingAttempt(page: Page): Promise<void> {
   await page.evaluate(async (attemptId) => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("vim-forge", 1);
+      const request = indexedDB.open("vim-forge");
       request.addEventListener("success", () => resolve(request.result), { once: true });
       request.addEventListener(
         "error",
@@ -55,7 +55,7 @@ async function seedPendingAttempt(page: Page): Promise<void> {
 async function readSyncStatus(page: Page): Promise<string> {
   return page.evaluate(async (attemptId) => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("vim-forge", 1);
+      const request = indexedDB.open("vim-forge");
       request.addEventListener("success", () => resolve(request.result), { once: true });
       request.addEventListener(
         "error",

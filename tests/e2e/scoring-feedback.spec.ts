@@ -190,7 +190,7 @@ async function startPracticeSession(
 async function readAttemptCount(page: Page): Promise<number> {
   return page.evaluate(async () => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("vim-forge", 1);
+      const request = indexedDB.open("vim-forge");
       request.addEventListener("success", () => resolve(request.result), { once: true });
       request.addEventListener(
         "error",
@@ -218,7 +218,7 @@ async function readAttemptCount(page: Page): Promise<number> {
 async function readAttemptExerciseIds(page: Page): Promise<string[]> {
   return page.evaluate(async () => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("vim-forge", 1);
+      const request = indexedDB.open("vim-forge");
       request.addEventListener("success", () => resolve(request.result), { once: true });
       request.addEventListener(
         "error",
@@ -261,7 +261,7 @@ async function readPersistedAttemptDraft(
 ): Promise<unknown> {
   return page.evaluate(async (id) => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("vim-forge", 1);
+      const request = indexedDB.open("vim-forge");
       request.addEventListener("success", () => resolve(request.result), { once: true });
       request.addEventListener(
         "error",
@@ -561,7 +561,7 @@ async function readLatestAttemptTiming(
 ): Promise<{ startedAt: string; durationMs: number }> {
   return page.evaluate(async () => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("vim-forge", 1);
+      const request = indexedDB.open("vim-forge");
       request.addEventListener("success", () => resolve(request.result), { once: true });
       request.addEventListener(
         "error",

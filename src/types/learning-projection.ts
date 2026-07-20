@@ -1,4 +1,5 @@
 import type { MasteryLevel } from "../domain/mastery/mastery-config";
+import type { MasteryUpdate } from "../domain/mastery/mastery-calculator";
 import type { PerformanceQuality } from "../domain/scoring/scoring-calculator";
 
 export interface StoredSkillMastery {
@@ -26,13 +27,8 @@ export interface StoredExerciseReview {
   revision: number;
 }
 
-export interface SkillMasteryChange {
+export interface SkillMasteryChange extends MasteryUpdate {
   skillId: string;
-  previousScore: number;
-  nextScore: number;
-  previousLevel: MasteryLevel;
-  nextLevel: MasteryLevel;
-  delta: number;
 }
 
 export interface StoredLearningOutcome {

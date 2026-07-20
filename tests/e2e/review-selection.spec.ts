@@ -149,7 +149,7 @@ async function seedAttempts(
 ): Promise<void> {
   await page.evaluate(async (records) => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("vim-forge", 1);
+      const request = indexedDB.open("vim-forge");
       request.addEventListener(
         "upgradeneeded",
         () => {
@@ -203,7 +203,7 @@ async function readSessionExerciseIds(
 ): Promise<string[]> {
   return page.evaluate(async (id) => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("vim-forge", 1);
+      const request = indexedDB.open("vim-forge");
       request.addEventListener("success", () => resolve(request.result), {
         once: true,
       });

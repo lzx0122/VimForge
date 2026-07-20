@@ -357,8 +357,17 @@ describe("IndexedDB repositories", () => {
       syncStatus: "pending" as const,
     };
     const legacySession = createSession();
+    const legacySettings = {
+      editorFontSize: 18,
+      showLineNumbers: true,
+      showKeypresses: false,
+      soundEnabled: false,
+      preferredQuestionCount: 10,
+      lastLearningMode: "efficiency",
+      updatedAt: "2026-07-16T08:01:00.000Z",
+    } as const;
     const seedTransaction = v1Database.transaction(
-      ["attempts", "sessions"],
+      ["attempts", "sessions", "settings"],
       "readwrite",
     );
     seedTransaction.objectStore("attempts").put(legacyAttempt);
@@ -367,6 +376,10 @@ describe("IndexedDB repositories", () => {
       status: legacySession.status,
       session: legacySession,
       attemptDraft: null,
+    });
+    seedTransaction.objectStore("settings").put({
+      key: "preferences",
+      value: legacySettings,
     });
     await transactionToPromise(seedTransaction);
     v1Database.close();
@@ -390,6 +403,9 @@ describe("IndexedDB repositories", () => {
     expect(
       await new SessionRepository(upgradedDatabase).get(legacySession.id),
     ).toEqual(legacySession);
+    expect(
+      await new SettingsRepository(upgradedDatabase).get(),
+    ).toEqual(legacySettings);
 
     const attemptsStore = upgradedDatabase
       .transaction("attempts", "readonly")

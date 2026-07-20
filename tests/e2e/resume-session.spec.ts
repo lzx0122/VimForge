@@ -54,7 +54,7 @@ async function seedInterruptedSession(page: Page) {
   await page.evaluate(
     async ({ persistedSession, persistedDraft }) => {
       const database = await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open("vim-forge", 1);
+        const request = indexedDB.open("vim-forge");
         request.addEventListener(
           "upgradeneeded",
           () => {
@@ -111,7 +111,7 @@ async function seedInterruptedSession(page: Page) {
 async function readPersistedState(page: Page) {
   return page.evaluate(async (sessionId) => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("vim-forge", 1);
+      const request = indexedDB.open("vim-forge");
       request.addEventListener("success", () => resolve(request.result), {
         once: true,
       });
