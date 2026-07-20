@@ -1,39 +1,95 @@
 export const VIM_FORGE_DATABASE_NAME = "vim-forge";
-export const VIM_FORGE_DATABASE_VERSION = 1;
+export const VIM_FORGE_DATABASE_VERSION = 2;
 
 export const INDEXED_DB_STORES = {
   attempts: "attempts",
   sessions: "sessions",
   settings: "settings",
   metadata: "metadata",
+  skillMastery: "skillMastery",
+  exerciseReviews: "exerciseReviews",
+  learningOutcomes: "learningOutcomes",
 } as const;
 
-function createSchema(database: IDBDatabase): void {
-  if (!database.objectStoreNames.contains(INDEXED_DB_STORES.attempts)) {
-    const attempts = database.createObjectStore(INDEXED_DB_STORES.attempts, {
-      keyPath: "clientAttemptId",
-    });
-    attempts.createIndex("syncStatus", "syncStatus", { unique: false });
-  }
+/**
+ * Returns the object store, creating it first only if it doesn't already
+ * exist. Safe to call on every upgrade regardless of the database's
+ * starting version, so the schema never depends on which version a
+ * database is upgrading from and existing stores are never recreated
+ * (which would drop their data).
+ */
+function ensureStore(
+  database: IDBDatabase,
+  transaction: IDBTransaction,
+  name: string,
+  keyPath: string,
+): IDBObjectStore {
+  return database.objectStoreNames.contains(name)
+    ? transaction.objectStore(name)
+    : database.createObjectStore(name, { keyPath });
+}
 
-  if (!database.objectStoreNames.contains(INDEXED_DB_STORES.sessions)) {
-    const sessions = database.createObjectStore(INDEXED_DB_STORES.sessions, {
-      keyPath: "id",
-    });
-    sessions.createIndex("status", "status", { unique: false });
+function ensureIndex(
+  store: IDBObjectStore,
+  name: string,
+  keyPath: string,
+): void {
+  if (!store.indexNames.contains(name)) {
+    store.createIndex(name, keyPath, { unique: false });
   }
+}
 
-  if (!database.objectStoreNames.contains(INDEXED_DB_STORES.settings)) {
-    database.createObjectStore(INDEXED_DB_STORES.settings, {
-      keyPath: "key",
-    });
-  }
+function createSchema(
+  database: IDBDatabase,
+  transaction: IDBTransaction,
+): void {
+  const attempts = ensureStore(
+    database,
+    transaction,
+    INDEXED_DB_STORES.attempts,
+    "clientAttemptId",
+  );
+  ensureIndex(attempts, "syncStatus", "syncStatus");
+  ensureIndex(attempts, "sessionId", "sessionId");
+  ensureIndex(attempts, "exerciseId", "exerciseId");
+  ensureIndex(attempts, "completedAt", "completedAt");
 
-  if (!database.objectStoreNames.contains(INDEXED_DB_STORES.metadata)) {
-    database.createObjectStore(INDEXED_DB_STORES.metadata, {
-      keyPath: "key",
-    });
-  }
+  const sessions = ensureStore(
+    database,
+    transaction,
+    INDEXED_DB_STORES.sessions,
+    "id",
+  );
+  ensureIndex(sessions, "status", "status");
+
+  ensureStore(database, transaction, INDEXED_DB_STORES.settings, "key");
+  ensureStore(database, transaction, INDEXED_DB_STORES.metadata, "key");
+
+  ensureStore(
+    database,
+    transaction,
+    INDEXED_DB_STORES.skillMastery,
+    "skillId",
+  );
+
+  const exerciseReviews = ensureStore(
+    database,
+    transaction,
+    INDEXED_DB_STORES.exerciseReviews,
+    "exerciseId",
+  );
+  ensureIndex(exerciseReviews, "dueAt", "dueAt");
+  ensureIndex(exerciseReviews, "updatedAt", "updatedAt");
+
+  const learningOutcomes = ensureStore(
+    database,
+    transaction,
+    INDEXED_DB_STORES.learningOutcomes,
+    "clientAttemptId",
+  );
+  ensureIndex(learningOutcomes, "sessionId", "sessionId");
+  ensureIndex(learningOutcomes, "exerciseId", "exerciseId");
+  ensureIndex(learningOutcomes, "completedAt", "completedAt");
 }
 
 function requestError(request: IDBRequest, fallback: string): DOMException {
@@ -87,7 +143,13 @@ export function openVimForgeDatabase(
 
     request.addEventListener(
       "upgradeneeded",
-      () => createSchema(request.result),
+      () => {
+        const transaction = request.transaction;
+        if (transaction === null) {
+          throw new Error("Missing IndexedDB upgrade transaction.");
+        }
+        createSchema(request.result, transaction);
+      },
       { once: true },
     );
     request.addEventListener(

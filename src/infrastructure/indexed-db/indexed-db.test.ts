@@ -99,9 +99,43 @@ describe("IndexedDB repositories", () => {
   it("creates all required native IndexedDB object stores", () => {
     expect(Array.from(database.objectStoreNames).sort()).toEqual([
       "attempts",
+      "exerciseReviews",
+      "learningOutcomes",
       "metadata",
       "sessions",
       "settings",
+      "skillMastery",
+    ]);
+  });
+
+  it("indexes the attempts store by session, exercise, and completion time", () => {
+    const transaction = database.transaction("attempts", "readonly");
+    const attempts = transaction.objectStore("attempts");
+
+    expect(Array.from(attempts.indexNames).sort()).toEqual([
+      "completedAt",
+      "exerciseId",
+      "sessionId",
+      "syncStatus",
+    ]);
+  });
+
+  it("indexes exerciseReviews by dueAt and updatedAt, and learningOutcomes by session, exercise, and completion time", () => {
+    const transaction = database.transaction(
+      ["exerciseReviews", "learningOutcomes"],
+      "readonly",
+    );
+    const exerciseReviews = transaction.objectStore("exerciseReviews");
+    const learningOutcomes = transaction.objectStore("learningOutcomes");
+
+    expect(Array.from(exerciseReviews.indexNames).sort()).toEqual([
+      "dueAt",
+      "updatedAt",
+    ]);
+    expect(Array.from(learningOutcomes.indexNames).sort()).toEqual([
+      "completedAt",
+      "exerciseId",
+      "sessionId",
     ]);
   });
 
@@ -285,5 +319,89 @@ describe("IndexedDB repositories", () => {
     await expect(completion).rejects.toThrow();
     expect(await new AttemptRepository(database).get("attempt-1")).toBeNull();
     expect(await new SessionRepository(database).get("session-1")).toBeNull();
+  });
+
+  it("upgrades a version-1 database to version 2 without losing existing records", async () => {
+    const upgradeDatabaseName = `${DATABASE_NAME}-upgrade`;
+    await deleteVimForgeDatabase(upgradeDatabaseName);
+
+    const v1Database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open(upgradeDatabaseName, 1);
+      request.addEventListener(
+        "upgradeneeded",
+        () => {
+          const db = request.result;
+          const attempts = db.createObjectStore("attempts", {
+            keyPath: "clientAttemptId",
+          });
+          attempts.createIndex("syncStatus", "syncStatus", { unique: false });
+          const sessions = db.createObjectStore("sessions", {
+            keyPath: "id",
+          });
+          sessions.createIndex("status", "status", { unique: false });
+          db.createObjectStore("settings", { keyPath: "key" });
+          db.createObjectStore("metadata", { keyPath: "key" });
+        },
+        { once: true },
+      );
+      request.addEventListener("success", () => resolve(request.result), {
+        once: true,
+      });
+      request.addEventListener("error", () => reject(request.error), {
+        once: true,
+      });
+    });
+
+    const legacyAttempt = {
+      ...createSyncAttempt(),
+      syncStatus: "pending" as const,
+    };
+    const legacySession = createSession();
+    const seedTransaction = v1Database.transaction(
+      ["attempts", "sessions"],
+      "readwrite",
+    );
+    seedTransaction.objectStore("attempts").put(legacyAttempt);
+    seedTransaction.objectStore("sessions").put({
+      id: legacySession.id,
+      status: legacySession.status,
+      session: legacySession,
+      attemptDraft: null,
+    });
+    await transactionToPromise(seedTransaction);
+    v1Database.close();
+
+    const upgradedDatabase = await openVimForgeDatabase(upgradeDatabaseName);
+
+    expect(Array.from(upgradedDatabase.objectStoreNames).sort()).toEqual([
+      "attempts",
+      "exerciseReviews",
+      "learningOutcomes",
+      "metadata",
+      "sessions",
+      "settings",
+      "skillMastery",
+    ]);
+    expect(
+      await new AttemptRepository(upgradedDatabase).get(
+        legacyAttempt.clientAttemptId,
+      ),
+    ).toMatchObject({ clientAttemptId: legacyAttempt.clientAttemptId });
+    expect(
+      await new SessionRepository(upgradedDatabase).get(legacySession.id),
+    ).toEqual(legacySession);
+
+    const attemptsStore = upgradedDatabase
+      .transaction("attempts", "readonly")
+      .objectStore("attempts");
+    expect(Array.from(attemptsStore.indexNames).sort()).toEqual([
+      "completedAt",
+      "exerciseId",
+      "sessionId",
+      "syncStatus",
+    ]);
+
+    upgradedDatabase.close();
+    await deleteVimForgeDatabase(upgradeDatabaseName);
   });
 });
