@@ -1,12 +1,27 @@
 import type { MasteryLevel } from "../../../domain/mastery/mastery-config";
-import { AttemptRepository } from "../../../infrastructure/indexed-db/attempt-repository";
-import { ExerciseReviewRepository } from "../../../infrastructure/indexed-db/exercise-review-repository";
-import { SkillMasteryRepository } from "../../../infrastructure/indexed-db/skill-mastery-repository";
+import type { StoredAttempt } from "../../../infrastructure/indexed-db/attempt-repository";
+import type {
+  StoredExerciseReview,
+  StoredSkillMastery,
+} from "../../../types/learning-projection";
 import type {
   CourseRepository,
   CourseUnitDetail,
 } from "../../course/repositories/course-repository";
 import type { AttemptSyncInput } from "../../practice/repositories/attempt-sync-repository";
+
+export interface SkillMasteryQueryPort {
+  listAll(): Promise<StoredSkillMastery[]>;
+}
+
+export interface ExerciseReviewQueryPort {
+  listDue(nowIso: string): Promise<StoredExerciseReview[]>;
+  listAll(): Promise<StoredExerciseReview[]>;
+}
+
+export interface AttemptQueryPort {
+  listAll(): Promise<StoredAttempt[]>;
+}
 
 export interface SkillProgressSummary {
   id: string;
@@ -40,8 +55,6 @@ export interface ProgressDashboard {
   recentAttempts: RecentAttemptSummary[];
 }
 
-const RECENT_ATTEMPT_LIMIT = 10;
-
 function effectiveAttemptTimestamp(attempt: AttemptSyncInput): string {
   return attempt.completedAt ?? attempt.startedAt;
 }
@@ -73,18 +86,38 @@ interface CourseCatalogIndex {
   skillNameById: Map<string, string>;
   exerciseTitleById: Map<string, string>;
   unitExerciseIds: Map<string, string[]>;
+  /** Every catalog skill id, in unit displayOrder -> skill displayOrder -> slug -> id order, deduped at first occurrence. */
+  orderedSkillIds: string[];
+  /** Unit details sorted by displayOrder, then slug. */
+  orderedUnitDetails: CourseUnitDetail[];
 }
 
 function indexCatalog(
   unitDetails: readonly CourseUnitDetail[],
 ): CourseCatalogIndex {
+  const orderedUnitDetails = [...unitDetails].sort(
+    (a, b) => a.displayOrder - b.displayOrder || a.slug.localeCompare(b.slug),
+  );
+
   const skillNameById = new Map<string, string>();
   const exerciseTitleById = new Map<string, string>();
   const unitExerciseIds = new Map<string, string[]>();
+  const orderedSkillIds: string[] = [];
+  const seenSkillIds = new Set<string>();
 
-  for (const detail of unitDetails) {
-    for (const skill of detail.skills) {
+  for (const detail of orderedUnitDetails) {
+    const orderedSkills = [...detail.skills].sort(
+      (a, b) =>
+        a.displayOrder - b.displayOrder ||
+        a.slug.localeCompare(b.slug) ||
+        a.id.localeCompare(b.id),
+    );
+    for (const skill of orderedSkills) {
       skillNameById.set(skill.id, skill.name);
+      if (!seenSkillIds.has(skill.id)) {
+        seenSkillIds.add(skill.id);
+        orderedSkillIds.push(skill.id);
+      }
     }
 
     const exerciseIds: string[] = [];
@@ -95,7 +128,17 @@ function indexCatalog(
     unitExerciseIds.set(detail.id, exerciseIds);
   }
 
-  return { skillNameById, exerciseTitleById, unitExerciseIds };
+  return {
+    skillNameById,
+    exerciseTitleById,
+    unitExerciseIds,
+    orderedSkillIds,
+    orderedUnitDetails,
+  };
+}
+
+function removedExerciseTitle(exerciseId: string): string {
+  return `已移除的題目（${exerciseId}）`;
 }
 
 /**
@@ -106,8 +149,10 @@ function indexCatalog(
  */
 export class ProgressQueryService {
   public constructor(
-    private readonly database: IDBDatabase,
     private readonly courseRepository: CourseRepository,
+    private readonly skillMasteryRepository: SkillMasteryQueryPort,
+    private readonly exerciseReviewRepository: ExerciseReviewQueryPort,
+    private readonly attemptRepository: AttemptQueryPort,
   ) {}
 
   public async getDashboard(
@@ -123,10 +168,11 @@ export class ProgressQueryService {
     ).filter((detail): detail is CourseUnitDetail => detail !== null);
     const catalog = indexCatalog(unitDetails);
 
-    const [masteryRecords, dueReviews, attempts] = await Promise.all([
-      new SkillMasteryRepository(this.database).listAll(),
-      new ExerciseReviewRepository(this.database).listDue(now.toISOString()),
-      new AttemptRepository(this.database).listAll(),
+    const [masteryRecords, dueReviews, allReviews, attempts] = await Promise.all([
+      this.skillMasteryRepository.listAll(),
+      this.exerciseReviewRepository.listDue(now.toISOString()),
+      this.exerciseReviewRepository.listAll(),
+      this.attemptRepository.listAll(),
     ]);
 
     const successfulExerciseIds = new Set(
@@ -135,22 +181,28 @@ export class ProgressQueryService {
         .map((attempt) => attempt.exerciseId),
     );
 
-    const skills: SkillProgressSummary[] = masteryRecords
-      .filter((mastery) => catalog.skillNameById.has(mastery.skillId))
-      .map((mastery) => ({
-        id: mastery.skillId,
-        name: catalog.skillNameById.get(mastery.skillId) as string,
-        masteryLevel: mastery.masteryLevel,
-        masteryScore: mastery.masteryScore,
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const masteryBySkillId = new Map(
+      masteryRecords.map((mastery) => [mastery.skillId, mastery]),
+    );
+    const skills: SkillProgressSummary[] = catalog.orderedSkillIds.flatMap(
+      (skillId) => {
+        const mastery = masteryBySkillId.get(skillId);
+        if (mastery === undefined) {
+          return [];
+        }
+        return [
+          {
+            id: skillId,
+            name: catalog.skillNameById.get(skillId) as string,
+            masteryLevel: mastery.masteryLevel,
+            masteryScore: mastery.masteryScore,
+          },
+        ];
+      },
+    );
 
-    const units: UnitProgressSummary[] = [...unitDetails]
-      .sort(
-        (a, b) =>
-          a.displayOrder - b.displayOrder || a.slug.localeCompare(b.slug),
-      )
-      .map((detail) => {
+    const units: UnitProgressSummary[] = catalog.orderedUnitDetails.map(
+      (detail) => {
         const exerciseIds = catalog.unitExerciseIds.get(detail.id) ?? [];
         return {
           id: detail.id,
@@ -161,17 +213,16 @@ export class ProgressQueryService {
           ).length,
           totalExercises: exerciseIds.length,
         };
-      });
+      },
+    );
 
     const recentAttempts: RecentAttemptSummary[] = [...attempts]
-      .filter((attempt) => catalog.exerciseTitleById.has(attempt.exerciseId))
       .sort(compareAttemptsByRecencyDescending)
-      .slice(0, RECENT_ATTEMPT_LIMIT)
       .map((attempt) => ({
         id: attempt.clientAttemptId,
-        exerciseTitle: catalog.exerciseTitleById.get(
-          attempt.exerciseId,
-        ) as string,
+        exerciseTitle:
+          catalog.exerciseTitleById.get(attempt.exerciseId) ??
+          removedExerciseTitle(attempt.exerciseId),
         completed: attempt.completed,
         accuracyScore: attempt.accuracyScore,
         occurredAt: effectiveAttemptTimestamp(attempt),
@@ -179,7 +230,10 @@ export class ProgressQueryService {
       }));
 
     return {
-      hasLearningHistory: attempts.length > 0,
+      hasLearningHistory:
+        attempts.length > 0 ||
+        masteryRecords.length > 0 ||
+        allReviews.length > 0,
       dueReviewCount: dueReviews.length,
       skills,
       units,

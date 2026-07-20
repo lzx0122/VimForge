@@ -2,7 +2,10 @@
 import { onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 
+import { AttemptRepository } from "../../../infrastructure/indexed-db/attempt-repository";
 import { openVimForgeDatabase } from "../../../infrastructure/indexed-db/database";
+import { ExerciseReviewRepository } from "../../../infrastructure/indexed-db/exercise-review-repository";
+import { SkillMasteryRepository } from "../../../infrastructure/indexed-db/skill-mastery-repository";
 import { SupabaseCourseRepository } from "../../../infrastructure/supabase/supabase-course-repository";
 import RecentAttempts from "../components/RecentAttempts.vue";
 import SkillMasteryList from "../components/SkillMasteryList.vue";
@@ -24,8 +27,10 @@ async function loadDashboard(): Promise<void> {
     let loadedDashboard: ProgressDashboard;
     try {
       const service = new ProgressQueryService(
-        database,
         new SupabaseCourseRepository(),
+        new SkillMasteryRepository(database),
+        new ExerciseReviewRepository(database),
+        new AttemptRepository(database),
       );
       loadedDashboard = await service.getDashboard();
     } finally {
