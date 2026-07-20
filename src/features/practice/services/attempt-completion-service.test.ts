@@ -3,13 +3,18 @@ import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { AttemptConflictError } from "../../../infrastructure/indexed-db/attempt-outcome-commit";
+import { AttemptRepository } from "../../../infrastructure/indexed-db/attempt-repository";
 import {
   deleteVimForgeDatabase,
   openVimForgeDatabase,
 } from "../../../infrastructure/indexed-db/database";
 import { ExerciseReviewRepository } from "../../../infrastructure/indexed-db/exercise-review-repository";
+import { SessionRepository } from "../../../infrastructure/indexed-db/session-repository";
 import { SkillMasteryRepository } from "../../../infrastructure/indexed-db/skill-mastery-repository";
-import type { StoredSkillMastery } from "../../../types/learning-projection";
+import type {
+  StoredExerciseReview,
+  StoredSkillMastery,
+} from "../../../types/learning-projection";
 import type { PracticeSession } from "../../../types/session";
 import type { AttemptSyncInput } from "../repositories/attempt-sync-repository";
 import type { PracticeExercise } from "../repositories/exercise-repository";
@@ -98,6 +103,20 @@ async function seedMastery(
 ): Promise<void> {
   const transaction = database.transaction("skillMastery", "readwrite");
   transaction.objectStore("skillMastery").put(record);
+  await new Promise<void>((resolve, reject) => {
+    transaction.addEventListener("complete", () => resolve(), { once: true });
+    transaction.addEventListener("error", () => reject(transaction.error), {
+      once: true,
+    });
+  });
+}
+
+async function seedReview(
+  database: IDBDatabase,
+  record: StoredExerciseReview,
+): Promise<void> {
+  const transaction = database.transaction("exerciseReviews", "readwrite");
+  transaction.objectStore("exerciseReviews").put(record);
   await new Promise<void>((resolve, reject) => {
     transaction.addEventListener("complete", () => resolve(), { once: true });
     transaction.addEventListener("error", () => reject(transaction.error), {
@@ -231,5 +250,77 @@ describe("AttemptCompletionService", () => {
         session: session(),
       }),
     ).rejects.toThrow(AttemptConflictError);
+  });
+
+  it("returns the persisted session, not a stale request session, on a duplicate retry", async () => {
+    const service = new AttemptCompletionService(database, () => NOW);
+    const sessionRepository = new SessionRepository(database);
+
+    await service.complete({
+      attempt: attempt(),
+      exercise: exercise(),
+      session: session(),
+    });
+
+    const newerSession = session({
+      currentIndex: 1,
+      updatedAt: "2026-07-20T08:05:00.000Z",
+    });
+    await sessionRepository.save(newerSession, null);
+
+    const result = await service.complete({
+      attempt: attempt(),
+      exercise: exercise(),
+      // A stale snapshot of the session as it was before the newer save
+      // above - the duplicate commit does not write it, so the result
+      // must reflect what is actually persisted, not this request.
+      session: session(),
+    });
+
+    expect(result.session).toEqual(newerSession);
+  });
+
+  it("rejects a duplicate attempt that exists without a stored learning outcome", async () => {
+    const service = new AttemptCompletionService(database, () => NOW);
+    // Simulates a corrupted/partial write: an attempt record exists (so
+    // commitLearningProjection sees a duplicate) but its projection never
+    // landed, so there is nothing real to return.
+    await new AttemptRepository(database).save(attempt());
+
+    await expect(
+      service.complete({
+        attempt: attempt(),
+        exercise: exercise(),
+        session: session(),
+      }),
+    ).rejects.toThrow(/learning outcome/u);
+  });
+
+  it("carries the previous review's due date and revision into the resulting projection", async () => {
+    const reviewRepository = new ExerciseReviewRepository(database);
+    await seedReview(database, {
+      exerciseId: "exercise-1",
+      masteryLevel: 3,
+      currentIntervalDays: 7,
+      dueAt: "2026-07-19T08:00:00.000Z",
+      lastPerformanceQuality: 4,
+      lastAttemptAt: "2026-07-13T08:00:00.000Z",
+      updatedAt: "2026-07-13T08:00:00.000Z",
+      revision: 5,
+    });
+
+    const service = new AttemptCompletionService(database, () => NOW);
+    const result = await service.complete({
+      attempt: attempt(),
+      exercise: exercise(),
+      session: session(),
+    });
+
+    expect(result.learningOutcome.previousDueAt).toBe(
+      "2026-07-19T08:00:00.000Z",
+    );
+    const storedReview = await reviewRepository.get("exercise-1");
+    expect(storedReview?.revision).toBe(6);
+    expect(storedReview?.currentIntervalDays).not.toBe(7);
   });
 });

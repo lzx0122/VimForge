@@ -2,6 +2,7 @@ import { calculateLearningProjection } from "../../../domain/mastery/learning-pr
 import { ExerciseReviewRepository } from "../../../infrastructure/indexed-db/exercise-review-repository";
 import { LearningOutcomeRepository } from "../../../infrastructure/indexed-db/learning-outcome-repository";
 import { commitLearningProjection } from "../../../infrastructure/indexed-db/learning-projection-commit";
+import { SessionRepository } from "../../../infrastructure/indexed-db/session-repository";
 import { SkillMasteryRepository } from "../../../infrastructure/indexed-db/skill-mastery-repository";
 import type {
   StoredExerciseReview,
@@ -79,17 +80,40 @@ export class AttemptCompletionService {
       learningOutcome: projection.learningOutcome,
     });
 
-    const learningOutcome =
-      commitResult === "duplicate"
-        ? ((await new LearningOutcomeRepository(this.database).get(
-            request.attempt.clientAttemptId,
-          )) ?? projection.learningOutcome)
-        : projection.learningOutcome;
+    if (commitResult === "created") {
+      return {
+        attempt: request.attempt,
+        learningOutcome: projection.learningOutcome,
+        session: request.session,
+      };
+    }
+
+    // A duplicate commit is a no-op: projection.learningOutcome was
+    // calculated but never written, and request.session may already be
+    // stale (the first commit's session write, or anything since, could
+    // have moved past it). Return only what is actually persisted.
+    const storedOutcome = await new LearningOutcomeRepository(
+      this.database,
+    ).get(request.attempt.clientAttemptId);
+    if (storedOutcome === null) {
+      throw new Error(
+        `Duplicate attempt ${request.attempt.clientAttemptId} has no stored learning outcome.`,
+      );
+    }
+
+    const storedSession = await new SessionRepository(this.database).get(
+      storedOutcome.sessionId,
+    );
+    if (storedSession === null) {
+      throw new Error(
+        `Duplicate attempt ${request.attempt.clientAttemptId} has no stored session.`,
+      );
+    }
 
     return {
       attempt: request.attempt,
-      learningOutcome,
-      session: request.session,
+      learningOutcome: storedOutcome,
+      session: storedSession,
     };
   }
 }
