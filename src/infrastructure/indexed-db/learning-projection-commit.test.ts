@@ -149,6 +149,8 @@ function createLearningOutcome(
         delta: 5,
       },
     ],
+    masteryRevisions: [{ skillId: "skill-1", revision: 1 }],
+    reviewRevision: 1,
     previousDueAt: "2026-07-19T08:00:00.000Z",
     nextDueAt: "2026-07-26T08:01:00.000Z",
     projectionSource: "local",

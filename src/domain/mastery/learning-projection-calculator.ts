@@ -205,6 +205,11 @@ export function calculateLearningProjection(
     exerciseId: exercise.id,
     completedAt,
     skillChanges: projections.map((projection) => projection.change),
+    masteryRevisions: projections.map((projection) => ({
+      skillId: projection.mastery.skillId,
+      revision: projection.mastery.revision,
+    })),
+    reviewRevision: reviewUpdate.revision,
     previousDueAt: previousReview?.dueAt ?? null,
     nextDueAt: reviewUpdate.dueAt,
     projectionSource: "local",

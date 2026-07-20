@@ -21,24 +21,48 @@ export interface SyncedAttemptCommitter {
   commit(input: SyncedAttemptCommitInput): Promise<void>;
 }
 
+export class InconsistentProjectionRevisionError extends Error {}
+
+function hasRevisionSnapshots(
+  outcome: StoredLearningOutcome,
+): outcome is StoredLearningOutcome & {
+  masteryRevisions: NonNullable<StoredLearningOutcome["masteryRevisions"]>;
+  reviewRevision: NonNullable<StoredLearningOutcome["reviewRevision"]>;
+} {
+  return (
+    Array.isArray(outcome.masteryRevisions) &&
+    typeof outcome.reviewRevision === "number"
+  );
+}
+
 /**
  * Reconciles a successful remote sync response into local state: the
  * attempt is always marked synced (it really was accepted by the server),
  * but the server's absolute mastery/dueAt values only replace local state
- * when they are not stale. Staleness is judged the same way for both,
- * against the touched record's lastAttemptAt: since Task 19's local commit
- * already sets skillMastery/exerciseReviews lastAttemptAt to this exact
- * attempt's completedAt before it is ever queued for sync, a strictly
- * *newer* lastAttemptAt on the stored record means a later local attempt
- * has since advanced past what this response reflects (a stale, out-of-
- * order response), so its snapshot is discarded rather than regressing
- * local state backward. An equal or older lastAttemptAt is the normal
- * (or first-application) case and is applied.
+ * when doing so is safe.
  *
- * An attempt with no local learning outcome (recorded through a path that
- * predates or bypasses the local projection commit) is still marked
- * synced - there is simply nothing local to reconcile the response
- * against, not an error.
+ * The version guard is each touched skill/review's *revision*, not a
+ * timestamp: every learning outcome stamps masteryRevisions/reviewRevision
+ * with the exact revision its own local commit produced (Task 17). A
+ * remote response is for that exact snapshot, so:
+ *   - local revision === the outcome's snapshot -> nothing has touched the
+ *     record since this attempt's local commit; apply the remote value and
+ *     advance the revision by exactly one.
+ *   - local revision > the snapshot -> a later local attempt has already
+ *     advanced the record past what this response reflects (stale,
+ *     out-of-order response); discard it rather than regress local state.
+ *   - local revision < the snapshot -> the record is missing revisions
+ *     that this outcome's own commit should already have produced -
+ *     genuinely inconsistent local state, not merely stale. Abort the
+ *     whole transaction rather than risk silently corrupting it further.
+ * lastAttemptAt is still set when a value is applied (an audit trail), but
+ * it is never used as a guard - equal-millisecond completions, clock
+ * changes, or imported data can make two different revisions share a
+ * timestamp.
+ *
+ * An attempt with no local learning outcome, or an outcome recorded
+ * before revision snapshots existed, is still marked synced - there is
+ * simply nothing safe to reconcile the response against, not an error.
  */
 export class IndexedDbSyncedAttemptCommitter implements SyncedAttemptCommitter {
   public constructor(
@@ -85,16 +109,17 @@ export class IndexedDbSyncedAttemptCommitter implements SyncedAttemptCommitter {
         } satisfies StoredAttempt);
       }
 
-      // Nothing local to reconcile against: either this attempt has no
-      // learning outcome at all (recorded through a path that predates or
-      // bypasses the local projection commit, e.g. legacy data), or this
-      // exact attempt's remote response was already reconciled by an
-      // earlier call (re-applying it would double-increment mastery and
-      // review revisions). Either way the attempt is still (idempotently)
-      // marked synced above; there is nothing else to do.
+      // Nothing local to safely reconcile against: no learning outcome at
+      // all (a path that predates or bypasses the local projection
+      // commit), an outcome from before revision snapshots existed, or
+      // this exact attempt's response was already reconciled by an
+      // earlier call (re-applying it would double-increment revisions).
+      // Either way the attempt is still (idempotently) marked synced
+      // above; there is nothing else to do.
       if (
         existingOutcome === undefined ||
-        existingOutcome.projectionSource === "remote"
+        existingOutcome.projectionSource === "remote" ||
+        !hasRevisionSnapshots(existingOutcome)
       ) {
         await completion;
         return;
@@ -104,18 +129,38 @@ export class IndexedDbSyncedAttemptCommitter implements SyncedAttemptCommitter {
       const nowIso = this.now().toISOString();
       let appliedRemoteData = false;
 
+      const masteryRevisionBySkillId = new Map(
+        existingOutcome.masteryRevisions.map((entry) => [
+          entry.skillId,
+          entry.revision,
+        ]),
+      );
+
       const masteryStore = transaction.objectStore(
         INDEXED_DB_STORES.skillMastery,
       );
       for (const remoteSkill of input.result.mastery) {
+        const expectedRevision = masteryRevisionBySkillId.get(
+          remoteSkill.skillId,
+        );
+        if (expectedRevision === undefined) {
+          // The server reported a skill this attempt's local commit never
+          // recorded a revision snapshot for - nothing to check against.
+          continue;
+        }
+
         const localMastery = await requestToPromise<
           StoredSkillMastery | undefined
         >(masteryStore.get(remoteSkill.skillId));
-        const isStale =
-          localMastery !== undefined &&
-          localMastery.lastAttemptAt > attemptCompletedAt;
-        if (isStale) {
+        const localRevision = localMastery?.revision ?? 0;
+
+        if (localRevision > expectedRevision) {
           continue;
+        }
+        if (localRevision < expectedRevision) {
+          throw new InconsistentProjectionRevisionError(
+            `Local mastery revision for skill ${remoteSkill.skillId} (${localRevision}) is behind the revision (${expectedRevision}) attempt ${input.clientAttemptId}'s own local commit already produced.`,
+          );
         }
 
         masteryStore.put({
@@ -130,23 +175,28 @@ export class IndexedDbSyncedAttemptCommitter implements SyncedAttemptCommitter {
             localMastery?.latestUnhintedSuccessAt ?? null,
           lastAttemptAt: attemptCompletedAt,
           updatedAt: nowIso,
-          revision: (localMastery?.revision ?? 0) + 1,
+          revision: expectedRevision + 1,
         } satisfies StoredSkillMastery);
         appliedRemoteData = true;
       }
 
       if (input.result.dueAt !== null) {
+        const expectedReviewRevision = existingOutcome.reviewRevision;
         const reviewStore = transaction.objectStore(
           INDEXED_DB_STORES.exerciseReviews,
         );
         const localReview = await requestToPromise<
           StoredExerciseReview | undefined
         >(reviewStore.get(input.exerciseId));
-        const isStale =
-          localReview !== undefined &&
-          localReview.lastAttemptAt > attemptCompletedAt;
+        const localReviewRevision = localReview?.revision ?? 0;
 
-        if (!isStale) {
+        if (localReviewRevision < expectedReviewRevision) {
+          throw new InconsistentProjectionRevisionError(
+            `Local review revision for exercise ${input.exerciseId} (${localReviewRevision}) is behind the revision (${expectedReviewRevision}) attempt ${input.clientAttemptId}'s own local commit already produced.`,
+          );
+        }
+
+        if (localReviewRevision === expectedReviewRevision) {
           reviewStore.put({
             exerciseId: input.exerciseId,
             masteryLevel: localReview?.masteryLevel ?? 0,
@@ -155,7 +205,7 @@ export class IndexedDbSyncedAttemptCommitter implements SyncedAttemptCommitter {
             lastPerformanceQuality: localReview?.lastPerformanceQuality ?? 0,
             lastAttemptAt: attemptCompletedAt,
             updatedAt: nowIso,
-            revision: (localReview?.revision ?? 0) + 1,
+            revision: expectedReviewRevision + 1,
           } satisfies StoredExerciseReview);
           appliedRemoteData = true;
         }

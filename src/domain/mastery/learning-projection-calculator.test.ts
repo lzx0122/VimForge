@@ -445,6 +445,55 @@ describe("calculateLearningProjection", () => {
     });
   });
 
+  it("stamps the learning outcome with the exact revisions the mastery and review updates carry", () => {
+    const result = calculateLearningProjection({
+      attempt: attempt(),
+      exercise: exercise({
+        skills: [
+          exerciseSkill({ skillId: "primary-skill", weight: 1, primary: true }),
+          exerciseSkill({
+            skillId: "secondary-skill",
+            weight: 1,
+            primary: false,
+          }),
+        ],
+      }),
+      previousMastery: new Map([
+        [
+          "primary-skill",
+          priorMastery({ skillId: "primary-skill", revision: 4 }),
+        ],
+        [
+          "secondary-skill",
+          priorMastery({ skillId: "secondary-skill", revision: 9 }),
+        ],
+      ]),
+      previousReview: priorReview({ revision: 6 }),
+      now: NOW,
+    });
+
+    // Not independently recalculated: matches masteryUpdates'/reviewUpdate's
+    // own revisions exactly, whatever they turn out to be.
+    const expectedMasteryRevisions = result.masteryUpdates
+      .map((update) => [update.skillId, update.revision] as const)
+      .sort();
+    expect(
+      result.learningOutcome.masteryRevisions
+        .map((entry) => [entry.skillId, entry.revision] as const)
+        .sort(),
+    ).toEqual(expectedMasteryRevisions);
+    expect(expectedMasteryRevisions).toEqual(
+      [
+        ["primary-skill", 5],
+        ["secondary-skill", 10],
+      ].sort(),
+    );
+    expect(result.learningOutcome.reviewRevision).toBe(
+      result.reviewUpdate.revision,
+    );
+    expect(result.learningOutcome.reviewRevision).toBe(7);
+  });
+
   it("increments revision from the prior mastery and review records", () => {
     const result = calculateLearningProjection({
       attempt: attempt(),

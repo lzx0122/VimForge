@@ -71,6 +71,8 @@ function learningOutcome(
         delta: 5,
       },
     ],
+    masteryRevisions: [{ skillId: "skill-1", revision: 1 }],
+    reviewRevision: 1,
     previousDueAt: "2026-07-10T00:00:00.000Z",
     nextDueAt: "2026-07-20T00:00:00.000Z",
     projectionSource: "local",

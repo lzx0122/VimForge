@@ -18,7 +18,10 @@ import {
 import { ExerciseReviewRepository } from "./exercise-review-repository";
 import { LearningOutcomeRepository } from "./learning-outcome-repository";
 import { SkillMasteryRepository } from "./skill-mastery-repository";
-import { IndexedDbSyncedAttemptCommitter } from "./synced-attempt-committer";
+import {
+  IndexedDbSyncedAttemptCommitter,
+  InconsistentProjectionRevisionError,
+} from "./synced-attempt-committer";
 
 const DATABASE_NAME = "vim-forge-synced-attempt-committer-test";
 const NOW = new Date("2026-07-20T09:00:00.000Z");
@@ -98,6 +101,8 @@ function outcome(overrides: Partial<StoredLearningOutcome> = {}): StoredLearning
         delta: 7,
       },
     ],
+    masteryRevisions: [{ skillId: "skill-1", revision: 4 }],
+    reviewRevision: 4,
     previousDueAt: "2026-07-13T08:00:00.000Z",
     nextDueAt: "2026-07-27T08:00:00.000Z",
     projectionSource: "local",
@@ -169,7 +174,7 @@ describe("IndexedDbSyncedAttemptCommitter", () => {
     expect(stored?.syncStatus).toBe("synced");
   });
 
-  it("replaces local mastery with the remote's absolute score and level", async () => {
+  it("replaces local mastery with the remote's absolute score and level when the revision matches exactly", async () => {
     await seedCommittedAttempt(database);
     const committer = new IndexedDbSyncedAttemptCommitter(database, () => NOW);
 
@@ -187,7 +192,7 @@ describe("IndexedDbSyncedAttemptCommitter", () => {
     expect(stored?.revision).toBe(5);
   });
 
-  it("replaces the local review's due date", async () => {
+  it("replaces the local review's due date when the revision matches exactly", async () => {
     await seedCommittedAttempt(database);
     const committer = new IndexedDbSyncedAttemptCommitter(database, () => NOW);
 
@@ -238,13 +243,14 @@ describe("IndexedDbSyncedAttemptCommitter", () => {
     expect((await reviewRepository.get("exercise-1"))?.revision).toBe(5);
   });
 
-  it("does not regress mastery or the review when a newer local attempt already advanced them (stale response)", async () => {
-    // A later local attempt (Task 19) has already advanced skill-1's mastery
-    // and the review past this attempt's completedAt before this attempt's
-    // (older) sync response arrives.
+  it("does not overwrite mastery with a strictly newer local revision, even when lastAttemptAt is identical", async () => {
+    // A later local attempt (Task 19) has already advanced skill-1's
+    // mastery to revision 6, but happens to share attempt-1's exact
+    // completedAt timestamp (equal-millisecond completion, a device clock
+    // change, or imported data). A timestamp-only guard would wrongly
+    // treat this as "not newer" and overwrite it; the revision must not.
     await seedCommittedAttempt(database, {
-      mastery: { lastAttemptAt: "2026-07-21T08:00:00.000Z", revision: 6 },
-      review: { lastAttemptAt: "2026-07-21T08:00:00.000Z", revision: 6 },
+      mastery: { revision: 6, lastAttemptAt: "2026-07-20T08:00:00.000Z" },
     });
     const committer = new IndexedDbSyncedAttemptCommitter(database, () => NOW);
 
@@ -254,57 +260,138 @@ describe("IndexedDbSyncedAttemptCommitter", () => {
       result: syncResult(),
     });
 
-    const masteryRepository = new SkillMasteryRepository(database);
-    const reviewRepository = new ExerciseReviewRepository(database);
-    const storedMastery = await masteryRepository.get("skill-1");
-    const storedReview = await reviewRepository.get("exercise-1");
-
-    expect(storedMastery?.masteryScore).toBe(62);
-    expect(storedMastery?.revision).toBe(6);
-    expect(storedReview?.dueAt).toBe("2026-07-27T08:00:00.000Z");
-    expect(storedReview?.revision).toBe(6);
-
-    // The attempt itself still synced successfully even though its stale
-    // projection snapshot was not applied.
-    expect((await new AttemptRepository(database).get("attempt-1"))?.syncStatus).toBe(
-      "synced",
-    );
-    const storedOutcome = await new LearningOutcomeRepository(database).get(
-      "attempt-1",
-    );
-    expect(storedOutcome?.projectionSource).toBe("local");
+    const stored = await new SkillMasteryRepository(database).get("skill-1");
+    expect(stored?.masteryScore).toBe(62);
+    expect(stored?.revision).toBe(6);
   });
 
-  it("rolls back the synced status when a projection write is invalid, retaining the attempt as pending", async () => {
-    await seedCommittedAttempt(database);
+  it("does not overwrite the review with a strictly newer local revision, even when lastAttemptAt is identical", async () => {
+    await seedCommittedAttempt(database, {
+      review: { revision: 6, lastAttemptAt: "2026-07-20T08:00:00.000Z" },
+    });
+    const committer = new IndexedDbSyncedAttemptCommitter(database, () => NOW);
+
+    await committer.commit({
+      clientAttemptId: "attempt-1",
+      exerciseId: "exercise-1",
+      result: syncResult(),
+    });
+
+    const stored = await new ExerciseReviewRepository(database).get(
+      "exercise-1",
+    );
+    expect(stored?.dueAt).toBe("2026-07-27T08:00:00.000Z");
+    expect(stored?.revision).toBe(6);
+  });
+
+  it("still marks the stale attempt as synced and leaves its outcome as local", async () => {
+    await seedCommittedAttempt(database, {
+      mastery: { revision: 6, lastAttemptAt: "2026-07-20T08:00:00.000Z" },
+      review: { revision: 6, lastAttemptAt: "2026-07-20T08:00:00.000Z" },
+    });
+    const committer = new IndexedDbSyncedAttemptCommitter(database, () => NOW);
+
+    await committer.commit({
+      clientAttemptId: "attempt-1",
+      exerciseId: "exercise-1",
+      result: syncResult(),
+    });
+
+    expect(
+      (await new AttemptRepository(database).get("attempt-1"))?.syncStatus,
+    ).toBe("synced");
+    expect(
+      (await new LearningOutcomeRepository(database).get("attempt-1"))
+        ?.projectionSource,
+    ).toBe("local");
+  });
+
+  it("aborts the whole transaction when the local mastery revision is behind the outcome's snapshot", async () => {
+    // Genuinely inconsistent local state: this outcome's own local commit
+    // should already have produced mastery revision 4, but the stored
+    // mastery record is somehow at revision 2.
+    await seedCommittedAttempt(database, { mastery: { revision: 2 } });
     const committer = new IndexedDbSyncedAttemptCommitter(database, () => NOW);
 
     await expect(
       committer.commit({
         clientAttemptId: "attempt-1",
         exerciseId: "exercise-1",
-        result: syncResult({
-          mastery: [
-            { skillId: undefined, masteryLevel: 4, masteryScore: 78 },
-          ] as unknown as AttemptSyncResult["mastery"],
-        }),
+        result: syncResult(),
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(InconsistentProjectionRevisionError);
 
-    const stored = await new AttemptRepository(database).get("attempt-1");
-    expect(stored?.syncStatus).toBe("pending");
+    expect(
+      (await new AttemptRepository(database).get("attempt-1"))?.syncStatus,
+    ).toBe("pending");
+    expect(
+      (await new SkillMasteryRepository(database).get("skill-1"))?.revision,
+    ).toBe(2);
+    expect(
+      (await new ExerciseReviewRepository(database).get("exercise-1"))
+        ?.revision,
+    ).toBe(4);
+    expect(
+      (await new LearningOutcomeRepository(database).get("attempt-1"))
+        ?.projectionSource,
+    ).toBe("local");
   });
 
-  it("rejects when no local attempt exists for the given clientAttemptId", async () => {
+  it("aborts the whole transaction when the local review revision is behind the outcome's snapshot", async () => {
+    await seedCommittedAttempt(database, { review: { revision: 2 } });
     const committer = new IndexedDbSyncedAttemptCommitter(database, () => NOW);
 
     await expect(
       committer.commit({
-        clientAttemptId: "attempt-missing",
+        clientAttemptId: "attempt-1",
         exerciseId: "exercise-1",
-        result: syncResult({ attemptId: "attempt-missing" }),
+        result: syncResult(),
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(InconsistentProjectionRevisionError);
+
+    expect(
+      (await new AttemptRepository(database).get("attempt-1"))?.syncStatus,
+    ).toBe("pending");
+    expect(
+      (await new SkillMasteryRepository(database).get("skill-1"))?.revision,
+    ).toBe(4);
+    expect(
+      (await new ExerciseReviewRepository(database).get("exercise-1"))
+        ?.revision,
+    ).toBe(2);
+  });
+
+  it("marks a legacy outcome's attempt as synced without touching mastery or review, when the outcome has no revision snapshots", async () => {
+    await new AttemptRepository(database).save(attempt(), "pending");
+    await seed(database, "skillMastery", mastery());
+    await seed(database, "exerciseReviews", review());
+    const legacyOutcome = { ...outcome() } as Partial<StoredLearningOutcome>;
+    delete legacyOutcome.masteryRevisions;
+    delete legacyOutcome.reviewRevision;
+    await seed(database, "learningOutcomes", legacyOutcome);
+
+    const committer = new IndexedDbSyncedAttemptCommitter(database, () => NOW);
+    await expect(
+      committer.commit({
+        clientAttemptId: "attempt-1",
+        exerciseId: "exercise-1",
+        result: syncResult(),
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(
+      (await new AttemptRepository(database).get("attempt-1"))?.syncStatus,
+    ).toBe("synced");
+    const storedMastery = await new SkillMasteryRepository(database).get(
+      "skill-1",
+    );
+    expect(storedMastery?.masteryScore).toBe(62);
+    expect(storedMastery?.revision).toBe(4);
+    const storedReview = await new ExerciseReviewRepository(database).get(
+      "exercise-1",
+    );
+    expect(storedReview?.dueAt).toBe("2026-07-27T08:00:00.000Z");
+    expect(storedReview?.revision).toBe(4);
   });
 
   it("marks a legacy attempt with no local learning outcome as synced without reconciling any projection", async () => {
@@ -324,10 +411,52 @@ describe("IndexedDbSyncedAttemptCommitter", () => {
       }),
     ).resolves.toBeUndefined();
 
-    expect((await new AttemptRepository(database).get("attempt-1"))?.syncStatus).toBe(
-      "synced",
-    );
+    expect(
+      (await new AttemptRepository(database).get("attempt-1"))?.syncStatus,
+    ).toBe("synced");
     const masteryRepository = new SkillMasteryRepository(database);
     expect(await masteryRepository.get("skill-1")).toBeNull();
+  });
+
+  it("rolls back every store, including the sync status, when a projection write is invalid", async () => {
+    await seedCommittedAttempt(database);
+    const committer = new IndexedDbSyncedAttemptCommitter(database, () => NOW);
+
+    // A valid mastery result (matches the outcome's revision snapshot and
+    // would normally apply cleanly) paired with a missing exerciseId - the
+    // exerciseReviews store's keyPath - forces a real synchronous
+    // IndexedDB failure partway through the transaction.
+    await expect(
+      committer.commit({
+        clientAttemptId: "attempt-1",
+        exerciseId: undefined as unknown as string,
+        result: syncResult(),
+      }),
+    ).rejects.toThrow();
+
+    expect(
+      (await new AttemptRepository(database).get("attempt-1"))?.syncStatus,
+    ).toBe("pending");
+    expect(await new SkillMasteryRepository(database).get("skill-1")).toEqual(
+      mastery(),
+    );
+    expect(
+      await new ExerciseReviewRepository(database).get("exercise-1"),
+    ).toEqual(review());
+    expect(
+      await new LearningOutcomeRepository(database).get("attempt-1"),
+    ).toEqual(outcome());
+  });
+
+  it("rejects when no local attempt exists for the given clientAttemptId", async () => {
+    const committer = new IndexedDbSyncedAttemptCommitter(database, () => NOW);
+
+    await expect(
+      committer.commit({
+        clientAttemptId: "attempt-missing",
+        exerciseId: "exercise-1",
+        result: syncResult({ attemptId: "attempt-missing" }),
+      }),
+    ).rejects.toThrow();
   });
 });
