@@ -242,6 +242,106 @@ function sessionIdFromUrl(url: string): string {
   return id;
 }
 
+function firstOrThrow<T>(values: readonly T[]): T {
+  const [value] = values;
+  if (value === undefined) {
+    throw new Error("Expected at least one value.");
+  }
+  return value;
+}
+
+interface SeedSkillMastery {
+  skillId: string;
+  masteryScore: number;
+  masteryLevel: number;
+}
+
+interface SeedExerciseReview {
+  exerciseId: string;
+  dueAt: string;
+}
+
+function toStoredSkillMastery(seed: SeedSkillMastery) {
+  return {
+    skillId: seed.skillId,
+    masteryScore: seed.masteryScore,
+    masteryLevel: seed.masteryLevel,
+    successfulAttempts: 1,
+    uniqueExerciseIds: [],
+    consecutiveSuccesses: 1,
+    firstUnhintedSuccessAt: "2026-06-01T00:00:00.000Z",
+    latestUnhintedSuccessAt: "2026-06-01T00:00:00.000Z",
+    lastAttemptAt: "2026-06-01T00:00:00.000Z",
+    updatedAt: "2026-06-01T00:00:00.000Z",
+    revision: 1,
+  };
+}
+
+function toStoredExerciseReview(seed: SeedExerciseReview) {
+  return {
+    exerciseId: seed.exerciseId,
+    masteryLevel: 2,
+    currentIntervalDays: 3,
+    dueAt: seed.dueAt,
+    lastPerformanceQuality: 3,
+    lastAttemptAt: "2026-06-01T00:00:00.000Z",
+    updatedAt: "2026-06-01T00:00:00.000Z",
+    revision: 1,
+  };
+}
+
+/** Seeds the persisted P0.3 projection stores directly - no local attempts involved. */
+async function seedPersistedProjections(
+  page: Page,
+  masteryRecords: readonly SeedSkillMastery[],
+  reviewRecords: readonly SeedExerciseReview[],
+): Promise<void> {
+  await page.evaluate(
+    async ({ mastery, reviews }) => {
+      const database = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open("vim-forge");
+        request.addEventListener("success", () => resolve(request.result), {
+          once: true,
+        });
+        request.addEventListener(
+          "error",
+          () => reject(request.error ?? new Error("Unable to open IndexedDB")),
+          { once: true },
+        );
+      });
+
+      const transaction = database.transaction(
+        ["skillMastery", "exerciseReviews"],
+        "readwrite",
+      );
+      const completion = new Promise<void>((resolve, reject) => {
+        transaction.addEventListener("complete", () => resolve(), {
+          once: true,
+        });
+        transaction.addEventListener(
+          "error",
+          () => reject(transaction.error ?? new Error("Transaction failed")),
+          { once: true },
+        );
+      });
+      const masteryStore = transaction.objectStore("skillMastery");
+      for (const record of mastery) {
+        masteryStore.put(record);
+      }
+      const reviewStore = transaction.objectStore("exerciseReviews");
+      for (const record of reviews) {
+        reviewStore.put(record);
+      }
+      await completion;
+      database.close();
+    },
+    {
+      mastery: masteryRecords.map(toStoredSkillMastery),
+      reviews: reviewRecords.map(toStoredExerciseReview),
+    },
+  );
+}
+
 test("switches from daily review to required topic practice", async ({ page }) => {
   await page.goto("/practice/setup?mode=memory_review");
 
@@ -331,4 +431,37 @@ test("reshuffles tied-priority candidates differently on different local dates",
   expect(exerciseIdsA).toHaveLength(10);
   expect(exerciseIdsB).toHaveLength(10);
   expect([...exerciseIdsA].sort()).not.toEqual([...exerciseIdsB].sort());
+});
+
+test("agrees on a persisted-due exercise from real skillMastery and exerciseReviews records, with no local attempts", async ({
+  page,
+}) => {
+  await mockDailyReviewCatalog(page);
+  await page.goto("/review");
+
+  const seededDueExercise = firstOrThrow(dueExercises);
+  await seedPersistedProjections(
+    page,
+    [{ skillId: SKILL_DUE_ID, masteryScore: 40, masteryLevel: 2 }],
+    [{ exerciseId: seededDueExercise.id, dueAt: "2026-01-01T00:00:00.000Z" }],
+  );
+  await page.reload();
+
+  // The Review page's due count is sourced from ExerciseReviewRepository.listDue
+  // directly - only one exerciseReviews record was seeded, and no attempts
+  // exist at all.
+  await expect(page.getByTestId("due-count")).toHaveText("1");
+
+  await page.getByRole("link", { name: "建立今日複習" }).click();
+  await page.getByRole("button", { name: "開始練習" }).click();
+  await expect(page).toHaveURL(/\/practice\/[0-9a-f-]+$/u);
+
+  const exerciseIds = await readSessionExerciseIds(
+    page,
+    sessionIdFromUrl(page.url()),
+  );
+
+  // The persisted-due exercise must be selected even though the P0.2
+  // attempt-snapshot pipeline has nothing to classify it with.
+  expect(exerciseIds).toContain(seededDueExercise.id);
 });

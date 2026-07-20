@@ -172,16 +172,18 @@ const MAX_PRIORITY = 100;
  * persisted projections, once a persisted skill mastery record exists for
  * this learner: a candidate the spaced-repetition scheduler has actually
  * marked due always counts as due (moving it into dueOrIncorrect, deduped,
- * ranked highest so it drains first), and a still-weak candidate's priority
- * is re-ranked by its skill's real mastery score - the lower the score, the
- * higher the priority - instead of the raw accuracy/speed/hint heuristic.
- * Pool *membership* otherwise stays governed by the dynamic snapshot
- * classification (practice-pool-builder.ts, out of scope here): a candidate
- * the P0.2 pipeline excluded entirely (touched-skill filter, or neutral/
- * unclassified) is not injected even if it is due.
+ * ranked highest so it drains first) - including a candidate the P0.2
+ * classifier excluded from every pool entirely (e.g. one successful,
+ * unhinted, non-stale attempt: neither failed, stale, weak, nor yet
+ * "familiar", since familiar requires a second success). A still-weak
+ * candidate's priority is re-ranked by its skill's real mastery score -
+ * the lower the score, the higher the priority - instead of the raw
+ * accuracy/speed/hint heuristic. A due review for an exercise no longer in
+ * the published candidate catalog is ignored rather than injected.
  */
 function applyPersistedProjectionOverrides(
   pools: PracticeCandidatePools,
+  candidates: readonly PracticeCandidateRecord[],
   dueExerciseIds: ReadonlySet<string>,
   skillMasteryScoreById: ReadonlyMap<string, number>,
 ): PracticeCandidatePools {
@@ -218,6 +220,25 @@ function applyPersistedProjectionOverrides(
 
       adjusted[poolName].push(candidate);
     }
+  }
+
+  const candidateByExerciseId = new Map(
+    candidates.map((candidate) => [candidate.exerciseId, candidate]),
+  );
+  for (const exerciseId of dueExerciseIds) {
+    if (movedToDue.has(exerciseId)) {
+      continue;
+    }
+    const candidate = candidateByExerciseId.get(exerciseId);
+    if (candidate === undefined) {
+      continue;
+    }
+    movedToDue.add(exerciseId);
+    adjusted.dueOrIncorrect.push({
+      exerciseId: candidate.exerciseId,
+      skillIds: candidate.skillIds,
+      priority: MAX_PRIORITY,
+    });
   }
 
   return adjusted;
@@ -280,7 +301,18 @@ export class PracticeSelectionService {
       (candidate) => candidate.exerciseId,
     );
     const snapshots = buildExerciseLearningSnapshots(attempts, now);
+    const hasPersistedProjections = masteryRecords.length > 0;
+    // A skill the persisted projections have already touched establishes
+    // personalized scope even when local attempts are empty (e.g. a synced
+    // account with no local attempt history yet) - the persisted path
+    // below must still get a chance to run before the !personalized early
+    // return short-circuits daily_review to an empty result.
     const touchedSkillIds = deriveTouchedSkillIds(candidates, snapshots);
+    if (hasPersistedProjections) {
+      for (const mastery of masteryRecords) {
+        touchedSkillIds.add(mastery.skillId);
+      }
+    }
     const personalized = touchedSkillIds.size > 0;
 
     if (request.selectionType === "topic_practice") {
@@ -307,10 +339,10 @@ export class PracticeSelectionService {
       now,
     });
 
-    const hasPersistedProjections = masteryRecords.length > 0;
     const adjustedPools = hasPersistedProjections
       ? applyPersistedProjectionOverrides(
           pools,
+          candidates,
           new Set(dueReviews.map((review) => review.exerciseId)),
           new Map(
             masteryRecords.map((mastery) => [mastery.skillId, mastery.masteryScore]),

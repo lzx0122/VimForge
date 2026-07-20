@@ -7,6 +7,7 @@ import type {
   PracticeCandidateRepository,
 } from "../repositories/practice-candidate-repository";
 import { topicSkillSlugs } from "../data/topic-definitions";
+import { ReviewSummaryService } from "../../review/services/review-summary-service";
 import { PracticeSelectionService } from "./practice-selection-service";
 
 function candidate(
@@ -514,6 +515,111 @@ describe("PracticeSelectionService", () => {
   });
 
   describe("persisted projections", () => {
+    it("selects a persisted-due exercise when mastery exists but local attempts are empty", async () => {
+      const dueCandidate = candidate({
+        exerciseId: "exercise-1",
+        skillIds: ["skill-1"],
+      });
+
+      const service = new PracticeSelectionService(
+        createCandidateRepository([dueCandidate]),
+        createAttemptRepository([]),
+        createSkillMasteryRepository([masteryRecord({ skillId: "skill-1" })]),
+        createExerciseReviewRepository([
+          reviewRecord({ exerciseId: "exercise-1" }),
+        ]),
+      );
+
+      const result = await service.select({
+        learningMode: "memory_review",
+        selectionType: "daily_review",
+        questionCount: 5,
+        selectedTopicSlugs: [],
+        localDate: LOCAL_DATE,
+      });
+
+      expect(result.personalized).toBe(true);
+      expect(result.exerciseIds).toContain("exercise-1");
+    });
+
+    it("selects a persisted-due exercise whose single successful snapshot is dynamically unclassified", async () => {
+      const dueCandidate = candidate({
+        exerciseId: "exercise-1",
+        skillIds: ["skill-1"],
+      });
+      const attempts = [
+        attempt({
+          clientAttemptId: "attempt-1",
+          exerciseId: "exercise-1",
+          completed: true,
+          accuracyScore: 90,
+          speedScore: 90,
+          highestHintLevel: 0,
+        }),
+      ];
+
+      const service = new PracticeSelectionService(
+        createCandidateRepository([dueCandidate]),
+        createAttemptRepository(attempts),
+        createSkillMasteryRepository([masteryRecord({ skillId: "skill-1" })]),
+        createExerciseReviewRepository([
+          reviewRecord({ exerciseId: "exercise-1" }),
+        ]),
+      );
+
+      const result = await service.select({
+        learningMode: "memory_review",
+        selectionType: "daily_review",
+        questionCount: 5,
+        selectedTopicSlugs: [],
+        localDate: LOCAL_DATE,
+      });
+
+      expect(result.exerciseIds).toContain("exercise-1");
+    });
+
+    it("agrees with ReviewSummaryService: the due count and the selected due exercise come from the same persisted repositories", async () => {
+      const dueExerciseId = "exercise-1";
+      const dueCandidate = candidate({
+        exerciseId: dueExerciseId,
+        skillIds: ["skill-1"],
+      });
+      const candidateRepository = createCandidateRepository([dueCandidate]);
+      const skillMasteryRepository = createSkillMasteryRepository([
+        masteryRecord({ skillId: "skill-1" }),
+      ]);
+      const exerciseReviewRepository = createExerciseReviewRepository([
+        reviewRecord({ exerciseId: dueExerciseId }),
+      ]);
+
+      const reviewSummaryService = new ReviewSummaryService(
+        candidateRepository,
+        createAttemptRepository([]),
+        skillMasteryRepository,
+        exerciseReviewRepository,
+      );
+      const practiceSelectionService = new PracticeSelectionService(
+        candidateRepository,
+        createAttemptRepository([]),
+        skillMasteryRepository,
+        exerciseReviewRepository,
+      );
+
+      const reviewSummary = await reviewSummaryService.getSummary(
+        new Date("2026-07-19T12:00:00.000Z"),
+      );
+      const practiceSelection = await practiceSelectionService.select({
+        learningMode: "memory_review",
+        selectionType: "daily_review",
+        questionCount: 5,
+        selectedTopicSlugs: [],
+        localDate: LOCAL_DATE,
+      });
+
+      expect(reviewSummary.dueCount).toBe(1);
+      expect(practiceSelection.exerciseIds).toContain(dueExerciseId);
+    });
+
     it("promotes a persisted-due exercise ahead of dynamically-familiar candidates", async () => {
       const promoted = candidate({
         exerciseId: "familiar-but-due",
