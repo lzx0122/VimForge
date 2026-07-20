@@ -24,6 +24,7 @@ async function mockExerciseCatalog(
         supported_modes: ["beginner", "memory_review", "efficiency"],
         target_duration_ms: 12000,
         version: 1,
+        display_order: 1,
         initial_content: "abc",
         expected_content: "abc",
         initial_cursor: { line: 0, column: 0 },
@@ -45,6 +46,7 @@ async function mockExerciseCatalog(
         supported_modes: ["beginner", "memory_review", "efficiency"],
         target_duration_ms: 12000,
         version: 1,
+        display_order: 1,
         initial_content: "const name = true;",
         expected_content: "const xname = true;",
         initial_cursor: { line: 0, column: 6 },
@@ -75,12 +77,19 @@ async function mockExerciseCatalog(
             supported_modes: exercise.supported_modes,
             target_duration_ms: exercise.target_duration_ms,
             version: exercise.version,
+            display_order: exercise.display_order,
           }];
     } else if (table === "exercise_skills") {
       body = [{
+        exercise_id: exercise.id,
         skill_id: "00000000-0000-4000-8000-000000000101",
         weight: 1,
         is_primary: true,
+      }];
+    } else if (table === "skills") {
+      body = [{
+        id: "00000000-0000-4000-8000-000000000101",
+        slug: "basic-motion",
       }];
     } else if (table === "exercise_solutions") {
       body = isMovement
@@ -125,6 +134,40 @@ async function mockExerciseCatalog(
   });
 }
 
+/**
+ * Task 12's setup page previews a partial match instead of navigating
+ * immediately: when fewer exercises are available than requested, the first
+ * click stays on the setup page and shows this message, and a second click
+ * is required to actually create the session and navigate.
+ */
+async function startPracticeAfterPartialMatchPreview(
+  page: Page,
+  availableCount: number,
+): Promise<void> {
+  await page.getByRole("button", { name: "開始練習" }).click();
+  await expect(
+    page.getByText(
+      `目前符合條件的題目共有 ${availableCount} 題，本次將安排全部可用題目。`,
+    ),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "使用這些題目開始練習" })
+    .click();
+  await expect(page).toHaveURL(/\/practice\/[0-9a-f-]+$/u);
+}
+
+/**
+ * daily_review requires existing personalization history and returns
+ * nothing for a brand-new guest (Task 11), so these fixtures - which mock a
+ * guest with zero attempt history - select 指定主題 / 基礎移動 instead.
+ * Topic practice has no such history requirement and matches the mocked
+ * exercises' "basic-motion" skill.
+ */
+async function selectTopicPractice(page: Page): Promise<void> {
+  await page.getByLabel("指定主題").check();
+  await page.getByTestId("topic-selector").getByLabel("基礎移動").check();
+}
+
 async function startPracticeSession(
   page: Page,
   scenario: ExerciseScenario = "insert",
@@ -132,8 +175,8 @@ async function startPracticeSession(
   await mockExerciseCatalog(page, scenario);
   await page.goto("/practice/setup?mode=memory_review");
   await page.getByLabel("5 題").check();
-  await page.getByRole("button", { name: "開始練習" }).click();
-  await expect(page).toHaveURL(/\/practice\/[0-9a-f-]+$/u);
+  await selectTopicPractice(page);
+  await startPracticeAfterPartialMatchPreview(page, 1);
   await expect(
     page.getByText(
       scenario === "movement"
@@ -314,6 +357,7 @@ async function mockTwoExerciseCatalogWithFlakySecondFetch(
     supported_modes: ["beginner", "memory_review"],
     target_duration_ms: 12000,
     version: 1,
+    display_order: 1,
     initial_content: "const name = true;",
     expected_content: "const xname = true;",
     initial_cursor: { line: 0, column: 6 },
@@ -335,6 +379,7 @@ async function mockTwoExerciseCatalogWithFlakySecondFetch(
     supported_modes: ["beginner", "memory_review"],
     target_duration_ms: 12000,
     version: 1,
+    display_order: 2,
     initial_content: "const name = true;",
     expected_content: "const namxe = true;",
     initial_cursor: { line: 0, column: 9 },
@@ -419,6 +464,7 @@ async function mockTwoExerciseCatalogWithFlakySecondFetch(
             supported_modes: exercise.supported_modes,
             target_duration_ms: exercise.target_duration_ms,
             version: exercise.version,
+            display_order: exercise.display_order,
           })),
         ),
       });
@@ -429,10 +475,23 @@ async function mockTwoExerciseCatalogWithFlakySecondFetch(
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify([{
+        body: JSON.stringify([firstExercise, secondExercise].map((ex) => ({
+          exercise_id: ex.id,
           skill_id: "00000000-0000-4000-8000-000000000101",
           weight: 1,
           is_primary: true,
+        }))),
+      });
+      return;
+    }
+
+    if (table === "skills") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([{
+          id: "00000000-0000-4000-8000-000000000101",
+          slug: "basic-motion",
         }]),
       });
       return;
@@ -678,8 +737,7 @@ test("does not let the calculation summary bar overlap the metric definitions", 
   await mockExerciseCatalog(page);
   await page.goto("/practice/setup?mode=efficiency");
   await page.getByLabel("5 題").check();
-  await page.getByRole("button", { name: "開始練習" }).click();
-  await expect(page).toHaveURL(/\/practice\/[0-9a-f-]+$/u);
+  await startPracticeAfterPartialMatchPreview(page, 1);
 
   await completeInsertExercise(page);
   await expect(page.locator('[data-testid="keystroke-gap"]')).toBeVisible();
@@ -909,10 +967,17 @@ test("brings the skipped result into view after skipping an exercise", async ({ 
 
 test("recovers from a failed next-exercise load without losing feedback or advancing the session", async ({ page }) => {
   const { failNextSecondExerciseFetch } = await mockTwoExerciseCatalogWithFlakySecondFetch(page);
+  // Both candidates are unattempted and tie on every topic-practice ranking
+  // key, so their relative order otherwise depends on the date-seeded
+  // shuffle (Task 10). Pin the clock so exercise order - which this test's
+  // "second exercise" fetch failure targets by id - stays deterministic.
+  // This date was chosen by running domain/review/seeded-order.ts's hash
+  // against both exercise ids and confirming it orders EXERCISE_ID first.
+  await page.clock.install({ time: new Date("2026-07-21T12:00:00.000Z") });
   await page.goto("/practice/setup?mode=memory_review");
   await page.getByLabel("5 題").check();
-  await page.getByRole("button", { name: "開始練習" }).click();
-  await expect(page).toHaveURL(/\/practice\/[0-9a-f-]+$/u);
+  await selectTopicPractice(page);
+  await startPracticeAfterPartialMatchPreview(page, 2);
   await expect(page.getByText("在 name 前插入 x，最後回到 Normal Mode。")).toBeVisible();
 
   await completeInsertExercise(page);

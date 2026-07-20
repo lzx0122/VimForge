@@ -388,7 +388,11 @@ function updateMode(mode: VimMode): void {
     return;
   }
 
-  if (snapshot.value !== null) {
+  // VimEditor also emits modeChanged once on mount to sync its starting
+  // mode, not just on a real mode switch. Ignoring a no-op value here stops
+  // that initial sync from persisting an attempt draft before the learner
+  // has actually touched the exercise.
+  if (snapshot.value !== null && snapshot.value.mode !== mode) {
     snapshot.value = { ...snapshot.value, mode };
     queueDraftSave();
     scheduleAutoEvaluation();
