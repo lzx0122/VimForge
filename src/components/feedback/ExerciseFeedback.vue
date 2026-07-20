@@ -1,14 +1,15 @@
 <script lang="ts">
 import type { LearningMode } from "../../types";
 import type { MasteryLevel } from "../../domain/mastery/mastery-config";
+import type { SkillMasteryChange } from "../../types/learning-projection";
 
 export interface ExerciseFeedbackProps {
   completed: boolean;
   learningMode: LearningMode;
   accuracyScore: number;
   speedScore: number;
-  previousMasteryLevel: MasteryLevel;
-  nextMasteryLevel: MasteryLevel;
+  primarySkillChange: SkillMasteryChange | null;
+  secondarySkillChanges: SkillMasteryChange[];
   userSequence: string;
   recommendedSequence: string;
   improvementReason: string;
@@ -31,9 +32,7 @@ const emit = defineEmits<{
   requestNext: [];
 }>();
 
-const MASTERY_LABELS: Readonly<
-  Record<ExerciseFeedbackProps["nextMasteryLevel"], string>
-> = {
+const MASTERY_LABELS: Readonly<Record<MasteryLevel, string>> = {
   0: "未學習",
   1: "不熟",
   2: "練習中",
@@ -75,8 +74,23 @@ const accuracySummary = computed(() =>
   accuracyDescription(props.accuracyScore),
 );
 const speedSummary = computed(() => speedDescription(props.speedScore));
-const masterySummary = computed(
-  () => MASTERY_LABELS[props.nextMasteryLevel],
+const masteryValue = computed(() => {
+  const change = props.primarySkillChange;
+  return change === null ? "—" : `${change.previousLevel} → ${change.nextLevel}`;
+});
+const masteryLevelLabel = computed(() => {
+  const change = props.primarySkillChange;
+  return change === null ? "尚無技能資料" : MASTERY_LABELS[change.nextLevel];
+});
+const masteryDescription = computed(() => {
+  const change = props.primarySkillChange;
+  if (change === null) {
+    return masteryLevelLabel.value;
+  }
+  return `${masteryLevelLabel.value} · ${change.previousScore} → ${change.nextScore} 分`;
+});
+const masteryAccessibilityLabel = computed(
+  () => `熟練：${masteryValue.value}，${masteryDescription.value}`,
 );
 const speedLabel = computed(() =>
   props.learningMode === "beginner" ? "速度（參考）" : "速度",
@@ -156,9 +170,9 @@ const trimmedRecommendedExplanation = computed(() =>
       <section data-feedback-section="mastery">
         <MetricCard
           label="熟練"
-          :value="`${previousMasteryLevel} → ${nextMasteryLevel}`"
-          :description="masterySummary"
-          :accessibility-label="`熟練：${previousMasteryLevel} 到 ${nextMasteryLevel}，${masterySummary}`"
+          :value="masteryValue"
+          :description="masteryDescription"
+          :accessibility-label="masteryAccessibilityLabel"
         />
         <p class="metric-definition">
           熟練：跨題目、跨時間累積的 0–5 長期程度，不是單題分數。
@@ -185,6 +199,24 @@ const trimmedRecommendedExplanation = computed(() =>
           <p>熟練是跨題目、跨時間累積的長期指標，不是單題分數。</p>
         </section>
       </div>
+    </details>
+
+    <details
+      v-if="secondarySkillChanges.length > 0"
+      class="secondary-skill-changes"
+      data-testid="secondary-skill-changes"
+    >
+      <summary>其他技能變化（{{ secondarySkillChanges.length }}）</summary>
+      <ul>
+        <li
+          v-for="change in secondarySkillChanges"
+          :key="change.skillId"
+        >
+          <span class="skill-id">{{ change.skillId }}</span>
+          <span>{{ change.previousLevel }} → {{ change.nextLevel }}</span>
+          <span>{{ change.previousScore }} → {{ change.nextScore }} 分</span>
+        </li>
+      </ul>
     </details>
 
     <section
@@ -342,6 +374,45 @@ h2 {
   color: #d1d5db;
   font-size: 0.88rem;
   line-height: 1.55;
+}
+
+.secondary-skill-changes {
+  border: 1px solid #374151;
+  border-radius: 0.75rem;
+  background: #18202d;
+}
+
+.secondary-skill-changes summary {
+  padding: 0.85rem 1rem;
+  color: #f9fafb;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.secondary-skill-changes summary:focus-visible {
+  outline: 2px solid #facc15;
+  outline-offset: 2px;
+}
+
+.secondary-skill-changes ul {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0 1rem 1rem;
+  list-style: none;
+}
+
+.secondary-skill-changes li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  color: #d1d5db;
+  font-size: 0.88rem;
+}
+
+.secondary-skill-changes .skill-id {
+  color: #86efac;
+  font-weight: 700;
 }
 
 .keystroke-gap {

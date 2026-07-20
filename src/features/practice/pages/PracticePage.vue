@@ -5,7 +5,6 @@ import { useRoute, useRouter } from "vue-router";
 import VimEditor from "../../../components/editor/VimEditor.vue";
 import ExerciseFeedback from "../../../components/feedback/ExerciseFeedback.vue";
 import type { EditorSnapshot } from "../../../domain/exercise/exercise-evaluator";
-import { commitAttemptOutcome } from "../../../infrastructure/indexed-db/attempt-outcome-commit";
 import {
   openVimForgeDatabase,
 } from "../../../infrastructure/indexed-db/database";
@@ -22,6 +21,7 @@ import type {
   HintLevel,
   NormalizedAction,
 } from "../../../types/attempt";
+import type { SkillMasteryChange } from "../../../types/learning-projection";
 import type { VimMode } from "../../../types/learning";
 import type { PracticeSession } from "../../../types/session";
 import type { ExerciseRepository, PracticeExercise } from "../repositories/exercise-repository";
@@ -29,6 +29,7 @@ import PracticeEditorStatusBar from "../components/PracticeEditorStatusBar.vue";
 import ProgressiveHintPanel from "../components/ProgressiveHintPanel.vue";
 import ResumeSessionDialog from "../components/ResumeSessionDialog.vue";
 import { useAttemptElapsedTime } from "../composables/use-attempt-elapsed-time";
+import { AttemptCompletionService } from "../services/attempt-completion-service";
 import {
   createAttemptOutcome,
   type AttemptFeedback,
@@ -65,6 +66,8 @@ const editorInstance = ref(0);
 const attemptClientId = ref("");
 const attemptStartedAt = ref("");
 const feedback = ref<AttemptFeedback | null>(null);
+const primarySkillChange = ref<SkillMasteryChange | null>(null);
+const secondarySkillChanges = ref<SkillMasteryChange[]>([]);
 const feedbackAnchor = ref<HTMLElement | null>(null);
 
 interface PendingExerciseOutcome {
@@ -229,6 +232,8 @@ function applyFreshAttempt(
   attemptClientId.value = fresh.clientAttemptId;
   attemptStartedAt.value = fresh.startedAt;
   feedback.value = null;
+  primarySkillChange.value = null;
+  secondarySkillChanges.value = [];
   pendingOutcome.value = null;
   editorInstance.value += 1;
 }
@@ -286,6 +291,8 @@ function prepareExercise(activeExercise: PracticeExercise): void {
   keystrokeCount.value = 0;
   unmetMessages.value = [];
   feedback.value = null;
+  primarySkillChange.value = null;
+  secondarySkillChanges.value = [];
   pendingOutcome.value = null;
   editorInstance.value += 1;
 }
@@ -536,12 +543,25 @@ async function recordOutcome(completed: boolean): Promise<void> {
       exerciseIds: [...activeSession.exerciseIds],
       selectedSkillIds: [...activeSession.selectedSkillIds],
     } satisfies PracticeSession;
-    await commitAttemptOutcome(requireDatabase(), {
+    const completionService = new AttemptCompletionService(requireDatabase());
+    const completionResult = await completionService.complete({
       attempt: outcome.attempt,
+      exercise: activeExercise,
       session: sessionSnapshot,
-      attemptDraft: null,
     });
     practiceStore.discardAttemptDraft();
+
+    const primarySkillId =
+      activeExercise.skills.find((skill) => skill.primary)?.skillId ??
+      activeExercise.skills[0]?.skillId;
+    primarySkillChange.value =
+      completionResult.learningOutcome.skillChanges.find(
+        (change) => change.skillId === primarySkillId,
+      ) ?? null;
+    secondarySkillChanges.value =
+      completionResult.learningOutcome.skillChanges.filter(
+        (change) => change.skillId !== primarySkillId,
+      );
 
     feedback.value = outcome.feedback;
     pendingOutcome.value = { completed, completedAt };
@@ -617,6 +637,8 @@ async function goToNext(): Promise<void> {
 
     pendingOutcome.value = null;
     feedback.value = null;
+    primarySkillChange.value = null;
+    secondarySkillChanges.value = [];
     if (sessionSnapshot.status === "completed") {
       await router.push({
         name: "practice-result",
@@ -839,8 +861,8 @@ onUnmounted(() => {
         :learning-mode="practiceStore.session.learningMode"
         :accuracy-score="feedback.score.accuracyScore"
         :speed-score="feedback.score.speedScore"
-        :previous-mastery-level="feedback.previousMasteryLevel"
-        :next-mastery-level="feedback.nextMasteryLevel"
+        :primary-skill-change="primarySkillChange"
+        :secondary-skill-changes="secondarySkillChanges"
         :user-sequence="feedback.userSequence"
         :recommended-sequence="feedback.recommendedSequence"
         :improvement-reason="feedback.improvementReason"

@@ -76,13 +76,13 @@ describe("createAttemptOutcome", () => {
     });
     expect(outcome.feedback).toMatchObject({
       completed: true,
-      previousMasteryLevel: 0,
-      nextMasteryLevel: 1,
       userSequence: "ax<Esc>",
       recommendedSequence: "ix<Esc>",
       recommendedExplanation: "使用 i 插入後按 Esc。",
     });
     expect(outcome.feedback).not.toHaveProperty("recommendedActions");
+    expect(outcome.feedback).not.toHaveProperty("previousMasteryLevel");
+    expect(outcome.feedback).not.toHaveProperty("nextMasteryLevel");
     expect(outcome.feedback.improvementReason).toContain("操作未收錄於題庫");
   });
 
@@ -101,8 +101,8 @@ describe("createAttemptOutcome", () => {
     });
     expect(outcome.feedback).toMatchObject({
       completed: false,
-      nextMasteryLevel: 0,
     });
+    expect(outcome.feedback).not.toHaveProperty("nextMasteryLevel");
   });
 
   it("falls back to the default improvement text when the recommended explanation is blank", () => {

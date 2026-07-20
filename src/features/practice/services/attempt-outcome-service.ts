@@ -1,7 +1,4 @@
-import type {
-  MasteryLevel,
-  MasteryPracticeContext,
-} from "../../../domain/mastery/mastery-config";
+import type { MasteryPracticeContext } from "../../../domain/mastery/mastery-config";
 import {
   calculateAttemptScore,
   type ScoreResult,
@@ -39,8 +36,6 @@ export interface AttemptOutcomeInput {
 export interface AttemptFeedback {
   completed: boolean;
   score: ScoreResult;
-  previousMasteryLevel: MasteryLevel;
-  nextMasteryLevel: MasteryLevel;
   userSequence: string;
   recommendedSequence: string;
   improvementReason: string;
@@ -145,8 +140,6 @@ export function createAttemptOutcome(
     feedback: {
       completed: input.completed,
       score,
-      previousMasteryLevel: 0,
-      nextMasteryLevel: input.completed ? 1 : 0,
       userSequence,
       recommendedSequence,
       improvementReason: feedbackReason(solutionMatch, improvementExplanation),

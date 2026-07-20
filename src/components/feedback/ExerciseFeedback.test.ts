@@ -1,17 +1,32 @@
 import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 
+import type { SkillMasteryChange } from "../../types/learning-projection";
 import ExerciseFeedback, {
   type ExerciseFeedbackProps,
 } from "./ExerciseFeedback.vue";
+
+function skillChange(
+  overrides: Partial<SkillMasteryChange> = {},
+): SkillMasteryChange {
+  return {
+    skillId: "skill-1",
+    previousScore: 45,
+    nextScore: 62,
+    previousLevel: 2,
+    nextLevel: 3,
+    delta: 17,
+    ...overrides,
+  };
+}
 
 const defaultProps: ExerciseFeedbackProps = {
   completed: true,
   learningMode: "memory_review",
   accuracyScore: 100,
   speedScore: 78,
-  previousMasteryLevel: 2,
-  nextMasteryLevel: 3,
+  primarySkillChange: skillChange(),
+  secondarySkillChanges: [],
   userSequence: "hliciwcustomerName<Esc>",
   recommendedSequence: "ciwcustomerName<Esc>",
   improvementReason: "起始游標已位於變數名稱內，因此不需要先按 ww。",
@@ -70,6 +85,76 @@ describe("ExerciseFeedback", () => {
     );
   });
 
+  it("shows the primary skill's level and score transition", () => {
+    const wrapper = mount(ExerciseFeedback, {
+      props: {
+        ...defaultProps,
+        primarySkillChange: skillChange({
+          previousScore: 45,
+          nextScore: 62,
+          previousLevel: 2,
+          nextLevel: 3,
+        }),
+      },
+    });
+    const masterySection = wrapper.get('[data-feedback-section="mastery"]');
+
+    expect(masterySection.text()).toContain("2 → 3");
+    expect(masterySection.text()).toContain("45 → 62");
+  });
+
+  it("shows a neutral mastery state when the exercise has no skill change", () => {
+    const wrapper = mount(ExerciseFeedback, {
+      props: { ...defaultProps, primarySkillChange: null },
+    });
+    const masterySection = wrapper.get('[data-feedback-section="mastery"]');
+
+    expect(masterySection.text()).toContain("—");
+    expect(masterySection.text()).toContain("尚無技能資料");
+  });
+
+  it("lists secondary skill changes in an expandable section", () => {
+    const wrapper = mount(ExerciseFeedback, {
+      props: {
+        ...defaultProps,
+        secondarySkillChanges: [
+          skillChange({
+            skillId: "skill-2",
+            previousLevel: 1,
+            nextLevel: 2,
+            previousScore: 30,
+            nextScore: 48,
+          }),
+          skillChange({
+            skillId: "skill-3",
+            previousLevel: 0,
+            nextLevel: 1,
+            previousScore: 0,
+            nextScore: 22,
+          }),
+        ],
+      },
+    });
+
+    const details = wrapper.get('[data-testid="secondary-skill-changes"]');
+    expect(details.get("summary").text()).toContain("2");
+    expect(details.text()).toContain("skill-2");
+    expect(details.text()).toContain("1 → 2");
+    expect(details.text()).toContain("30 → 48");
+    expect(details.text()).toContain("skill-3");
+    expect(details.text()).toContain("0 → 1");
+  });
+
+  it("hides the secondary skill section when there are no secondary skills", () => {
+    const wrapper = mount(ExerciseFeedback, {
+      props: { ...defaultProps, secondarySkillChanges: [] },
+    });
+
+    expect(
+      wrapper.find('[data-testid="secondary-skill-changes"]').exists(),
+    ).toBe(false);
+  });
+
   it("provides textual accessibility labels for every metric", () => {
     const wrapper = mount(ExerciseFeedback, { props: defaultProps });
     const metricLabels = wrapper
@@ -79,7 +164,7 @@ describe("ExerciseFeedback", () => {
     expect(metricLabels).toEqual([
       "準確：100 分，一次完成",
       "速度：78 分，流暢",
-      "熟練：2 到 3，熟悉",
+      "熟練：2 → 3，熟悉 · 45 → 62 分",
     ]);
     expect(wrapper.get('[role="status"]').text()).toContain("完成");
     expect(wrapper.get("article").attributes("aria-labelledby")).toBe(
@@ -105,7 +190,7 @@ describe("ExerciseFeedback", () => {
       "熟練：跨題目、跨時間累積的 0–5 長期程度，不是單題分數。",
     );
 
-    const details = wrapper.get("details");
+    const details = wrapper.get(".metric-explanation");
     expect(details.get("summary").text()).toBe("查看計算方式");
     expect(details.text()).toContain("一般誤操作 -5");
     expect(details.text()).toContain("Undo -3");
