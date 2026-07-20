@@ -7,6 +7,7 @@ import {
 } from "../features/guest-sync/services/guest-sync-service";
 import { AttemptRepository } from "../infrastructure/indexed-db/attempt-repository";
 import { openVimForgeDatabase } from "../infrastructure/indexed-db/database";
+import { IndexedDbSyncedAttemptCommitter } from "../infrastructure/indexed-db/synced-attempt-committer";
 import { reportError } from "../infrastructure/monitoring/error-reporter";
 import { SupabaseAttemptSyncRepository } from "../infrastructure/supabase/supabase-attempt-sync-repository";
 import { useAuthStore } from "./auth-store";
@@ -31,6 +32,7 @@ async function createDefaultService(): Promise<GuestSyncService> {
     new AttemptRepository(database),
     new SupabaseAttemptSyncRepository(),
     createBrowserNetworkMonitor(),
+    new IndexedDbSyncedAttemptCommitter(database),
   );
 }
 

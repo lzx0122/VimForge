@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { SyncedAttemptCommitter } from "../../../infrastructure/indexed-db/synced-attempt-committer";
 import type {
   AttemptSyncInput,
   AttemptSyncRepository,
@@ -43,7 +44,6 @@ function createQueue(
   return {
     save: vi.fn(async () => undefined),
     listPending: vi.fn(async () => pending),
-    markSynced: vi.fn(async () => undefined),
   };
 }
 
@@ -54,6 +54,12 @@ function createRemoteRepository(): AttemptSyncRepository {
       mastery: [],
       dueAt: null,
     })),
+  };
+}
+
+function createCommitter(): SyncedAttemptCommitter {
+  return {
+    commit: vi.fn(async () => undefined),
   };
 }
 
@@ -89,7 +95,12 @@ describe("GuestSyncService", () => {
         }),
     );
     const remote = createRemoteRepository();
-    const service = new GuestSyncService(queue, remote, createNetwork());
+    const service = new GuestSyncService(
+      queue,
+      remote,
+      createNetwork(),
+      createCommitter(),
+    );
     const attempt = createAttempt("attempt-local-first");
 
     const saving = service.saveCompletedAttempt(attempt);
@@ -100,22 +111,29 @@ describe("GuestSyncService", () => {
     await saving;
   });
 
-  it("syncs every pending attempt and marks only successes as synced", async () => {
+  it("syncs every pending attempt and commits only successes", async () => {
     const first = createAttempt("attempt-success");
     const second = createAttempt("attempt-failure");
     const queue = createQueue([first, second]);
     const remote = createRemoteRepository();
+    const remoteResult = {
+      attemptId: first.clientAttemptId,
+      mastery: [{ skillId: "skill-1", masteryLevel: 3 as const, masteryScore: 62 }],
+      dueAt: "2026-07-23T08:00:00.000Z",
+    };
     remote.recordAttempt = vi.fn(async (attempt) => {
       if (attempt.clientAttemptId === second.clientAttemptId) {
         throw new Error("network unavailable");
       }
-      return {
-        attemptId: attempt.clientAttemptId,
-        mastery: [],
-        dueAt: null,
-      };
+      return remoteResult;
     });
-    const service = new GuestSyncService(queue, remote, createNetwork());
+    const committer = createCommitter();
+    const service = new GuestSyncService(
+      queue,
+      remote,
+      createNetwork(),
+      committer,
+    );
 
     await expect(service.syncPending()).resolves.toEqual({
       total: 2,
@@ -123,21 +141,50 @@ describe("GuestSyncService", () => {
       failed: 1,
       pending: 1,
     });
-    expect(queue.markSynced).toHaveBeenCalledOnce();
-    expect(queue.markSynced).toHaveBeenCalledWith(first.clientAttemptId);
-    expect(queue.markSynced).not.toHaveBeenCalledWith(
-      second.clientAttemptId,
+    expect(committer.commit).toHaveBeenCalledOnce();
+    expect(committer.commit).toHaveBeenCalledWith({
+      clientAttemptId: first.clientAttemptId,
+      exerciseId: first.exerciseId,
+      result: remoteResult,
+    });
+    expect(committer.commit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ clientAttemptId: second.clientAttemptId }),
     );
+  });
+
+  it("counts an attempt as failed when the committer itself rejects", async () => {
+    const attempt = createAttempt("attempt-commit-fails");
+    const queue = createQueue([attempt]);
+    const remote = createRemoteRepository();
+    const committer = createCommitter();
+    committer.commit = vi.fn(async () => {
+      throw new Error("local commit failed");
+    });
+    const service = new GuestSyncService(
+      queue,
+      remote,
+      createNetwork(),
+      committer,
+    );
+
+    await expect(service.syncPending()).resolves.toEqual({
+      total: 1,
+      synced: 0,
+      failed: 1,
+      pending: 1,
+    });
   });
 
   it("keeps every attempt pending while offline", async () => {
     const pending = [createAttempt("attempt-offline")];
     const queue = createQueue(pending);
     const remote = createRemoteRepository();
+    const committer = createCommitter();
     const service = new GuestSyncService(
       queue,
       remote,
       createNetwork(false),
+      committer,
     );
 
     await expect(service.syncPending()).resolves.toEqual({
@@ -147,14 +194,19 @@ describe("GuestSyncService", () => {
       pending: 1,
     });
     expect(remote.recordAttempt).not.toHaveBeenCalled();
-    expect(queue.markSynced).not.toHaveBeenCalled();
+    expect(committer.commit).not.toHaveBeenCalled();
   });
 
   it("coalesces concurrent batch requests", async () => {
     const attempt = createAttempt("attempt-once");
     const queue = createQueue([attempt]);
     const remote = createRemoteRepository();
-    const service = new GuestSyncService(queue, remote, createNetwork());
+    const service = new GuestSyncService(
+      queue,
+      remote,
+      createNetwork(),
+      createCommitter(),
+    );
 
     const firstSync = service.syncPending();
     const secondSync = service.syncPending();
@@ -168,16 +220,17 @@ describe("GuestSyncService", () => {
     const attempt = createAttempt("attempt-retry");
     const queue = createQueue([attempt]);
     const remote = createRemoteRepository();
+    const committer = createCommitter();
     const network = createNetwork(false);
-    const service = new GuestSyncService(queue, remote, network);
+    const service = new GuestSyncService(queue, remote, network, committer);
     const onResult = vi.fn();
 
     const stopRetrying = service.retryWhenOnline(onResult);
     network.emit(true);
 
     await vi.waitFor(() => {
-      expect(queue.markSynced).toHaveBeenCalledWith(
-        attempt.clientAttemptId,
+      expect(committer.commit).toHaveBeenCalledWith(
+        expect.objectContaining({ clientAttemptId: attempt.clientAttemptId }),
       );
       expect(onResult).toHaveBeenCalledWith({
         total: 1,
@@ -197,7 +250,12 @@ describe("GuestSyncService", () => {
       createAttempt("attempt-2"),
     ]);
     const remote = createRemoteRepository();
-    const service = new GuestSyncService(queue, remote, createNetwork());
+    const service = new GuestSyncService(
+      queue,
+      remote,
+      createNetwork(),
+      createCommitter(),
+    );
 
     await expect(service.countPending()).resolves.toBe(2);
     expect(remote.recordAttempt).not.toHaveBeenCalled();

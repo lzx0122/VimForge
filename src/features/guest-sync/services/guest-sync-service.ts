@@ -1,3 +1,4 @@
+import type { SyncedAttemptCommitter } from "../../../infrastructure/indexed-db/synced-attempt-committer";
 import type {
   AttemptSyncInput,
   AttemptSyncRepository,
@@ -6,7 +7,6 @@ import type {
 export interface LocalAttemptQueue {
   save(attempt: AttemptSyncInput): Promise<void>;
   listPending(): Promise<readonly AttemptSyncInput[]>;
-  markSynced(clientAttemptId: string): Promise<void>;
 }
 
 export interface NetworkMonitor {
@@ -45,6 +45,7 @@ export class GuestSyncService {
     private readonly localQueue: LocalAttemptQueue,
     private readonly remoteRepository: AttemptSyncRepository,
     private readonly network: NetworkMonitor,
+    private readonly committer: SyncedAttemptCommitter,
   ) {}
 
   public isOnline(): boolean {
@@ -102,8 +103,12 @@ export class GuestSyncService {
 
     for (const attempt of attempts) {
       try {
-        await this.remoteRepository.recordAttempt(attempt);
-        await this.localQueue.markSynced(attempt.clientAttemptId);
+        const result = await this.remoteRepository.recordAttempt(attempt);
+        await this.committer.commit({
+          clientAttemptId: attempt.clientAttemptId,
+          exerciseId: attempt.exerciseId,
+          result,
+        });
         synced += 1;
       } catch {
         failed += 1;
