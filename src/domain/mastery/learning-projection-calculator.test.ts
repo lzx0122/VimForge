@@ -457,4 +457,74 @@ describe("calculateLearningProjection", () => {
     expect(result.masteryUpdates[0]?.revision).toBe(5);
     expect(result.reviewUpdate.revision).toBe(7);
   });
+
+  it("rejects an attempt with no session id instead of fabricating one", () => {
+    expect(() =>
+      calculateLearningProjection({
+        attempt: attempt({ sessionId: null }),
+        exercise: exercise(),
+        previousMastery: new Map(),
+        previousReview: null,
+        now: NOW,
+      }),
+    ).toThrow(/session id/u);
+  });
+
+  it("rejects an attempt with no completed-at timestamp instead of substituting startedAt", () => {
+    expect(() =>
+      calculateLearningProjection({
+        attempt: attempt({ completedAt: null }),
+        exercise: exercise(),
+        previousMastery: new Map(),
+        previousReview: null,
+        now: NOW,
+      }),
+    ).toThrow(/completed-at/u);
+  });
+
+  it("qualifies for Level 5 when the unhinted success is exactly seven days old", () => {
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    const qualifyingHistory = priorMastery({
+      masteryScore: 85,
+      masteryLevel: 4,
+      successfulAttempts: 10,
+      uniqueExerciseIds: Array.from({ length: 5 }, (_, i) => `exercise-${i}`),
+      consecutiveSuccesses: 5,
+      firstUnhintedSuccessAt: new Date(NOW.getTime() - sevenDaysMs).toISOString(),
+    });
+
+    const result = calculateLearningProjection({
+      attempt: attempt(),
+      exercise: exercise(),
+      previousMastery: new Map([["skill-1", qualifyingHistory]]),
+      previousReview: null,
+      now: NOW,
+    });
+
+    expect(result.masteryUpdates[0]?.masteryLevel).toBe(5);
+  });
+
+  it("does not qualify for Level 5 one millisecond short of seven days", () => {
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    const almostQualifyingHistory = priorMastery({
+      masteryScore: 85,
+      masteryLevel: 4,
+      successfulAttempts: 10,
+      uniqueExerciseIds: Array.from({ length: 5 }, (_, i) => `exercise-${i}`),
+      consecutiveSuccesses: 5,
+      firstUnhintedSuccessAt: new Date(
+        NOW.getTime() - sevenDaysMs + 1,
+      ).toISOString(),
+    });
+
+    const result = calculateLearningProjection({
+      attempt: attempt(),
+      exercise: exercise(),
+      previousMastery: new Map([["skill-1", almostQualifyingHistory]]),
+      previousReview: null,
+      now: NOW,
+    });
+
+    expect(result.masteryUpdates[0]?.masteryLevel).toBe(4);
+  });
 });

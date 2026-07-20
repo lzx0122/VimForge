@@ -34,8 +34,29 @@ interface SkillProjection {
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
-function effectiveAttemptTimestamp(attempt: AttemptSyncInput): string {
-  return attempt.completedAt ?? attempt.startedAt;
+/**
+ * StoredLearningOutcome requires a real sessionId and completedAt - silently
+ * substituting "" or startedAt would let a malformed attempt produce a
+ * corrupted projection record. Fail loudly instead.
+ */
+function requireCompletedAttemptContext(attempt: AttemptSyncInput): {
+  sessionId: string;
+  completedAt: string;
+} {
+  if (attempt.sessionId === null) {
+    throw new Error(
+      "Learning projection requires an attempt with a session id.",
+    );
+  }
+  if (attempt.completedAt === null) {
+    throw new Error(
+      "Learning projection requires a completed-at timestamp.",
+    );
+  }
+  return {
+    sessionId: attempt.sessionId,
+    completedAt: attempt.completedAt,
+  };
 }
 
 function hasSevenDayUnhintedSuccess(
@@ -53,12 +74,12 @@ function projectSkill(
   skillLink: ExerciseSkillLink,
   attempt: AttemptSyncInput,
   exerciseId: string,
+  completedAt: string,
   previous: StoredSkillMastery | undefined,
   now: Date,
 ): SkillProjection {
   const isSuccess = attempt.completed;
   const isUnhinted = attempt.highestHintLevel === 0;
-  const attemptTimestamp = effectiveAttemptTimestamp(attempt);
 
   const uniqueExerciseIds = new Set(previous?.uniqueExerciseIds ?? []);
   if (isSuccess) {
@@ -73,9 +94,9 @@ function projectSkill(
   const isFirstUnhintedSuccess = isSuccess && isUnhinted;
   const firstUnhintedSuccessAt =
     previous?.firstUnhintedSuccessAt ??
-    (isFirstUnhintedSuccess ? attemptTimestamp : null);
+    (isFirstUnhintedSuccess ? completedAt : null);
   const latestUnhintedSuccessAt = isFirstUnhintedSuccess
-    ? attemptTimestamp
+    ? completedAt
     : (previous?.latestUnhintedSuccessAt ?? null);
 
   const change = calculateMasteryUpdate({
@@ -105,7 +126,7 @@ function projectSkill(
       consecutiveSuccesses,
       firstUnhintedSuccessAt,
       latestUnhintedSuccessAt,
-      lastAttemptAt: attemptTimestamp,
+      lastAttemptAt: completedAt,
       updatedAt: now.toISOString(),
       revision: (previous?.revision ?? 0) + 1,
     },
@@ -141,13 +162,14 @@ export function calculateLearningProjection(
   input: LearningProjectionInput,
 ): LearningProjectionResult {
   const { attempt, exercise, previousMastery, previousReview, now } = input;
-  const attemptTimestamp = effectiveAttemptTimestamp(attempt);
+  const { sessionId, completedAt } = requireCompletedAttemptContext(attempt);
 
   const projections = exercise.skills.map((skillLink) =>
     projectSkill(
       skillLink,
       attempt,
       exercise.id,
+      completedAt,
       previousMastery.get(skillLink.skillId),
       now,
     ),
@@ -172,19 +194,16 @@ export function calculateLearningProjection(
     currentIntervalDays: schedule.intervalDays,
     dueAt: schedule.dueAt.toISOString(),
     lastPerformanceQuality: attempt.performanceQuality,
-    lastAttemptAt: attemptTimestamp,
+    lastAttemptAt: completedAt,
     updatedAt: now.toISOString(),
     revision: (previousReview?.revision ?? 0) + 1,
   };
 
   const learningOutcome: StoredLearningOutcome = {
     clientAttemptId: attempt.clientAttemptId,
-    // Attempts recorded through the real completion flow always carry a
-    // concrete session id; sessionId is only nullable on AttemptSyncInput
-    // for contexts outside that flow, which never reach this calculator.
-    sessionId: attempt.sessionId ?? "",
+    sessionId,
     exerciseId: exercise.id,
-    completedAt: attemptTimestamp,
+    completedAt,
     skillChanges: projections.map((projection) => projection.change),
     previousDueAt: previousReview?.dueAt ?? null,
     nextDueAt: reviewUpdate.dueAt,
