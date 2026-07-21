@@ -2,6 +2,8 @@
 
 VimForge 是以 Vue 3、TypeScript、CodeMirror 6 與 Supabase 建立的瀏覽器 Vim 練習平台。訪客資料會先保存至 IndexedDB；登入後再同步至受 RLS 保護的 Supabase PostgreSQL。
 
+完成題目時，系統會在本機以單一 IndexedDB transaction 原子提交 Attempt 與技能熟練、複習排程投影（見[架構文件](docs/architecture.md)第 17、10.1 節）；學習進度、今日複習與首頁個人化摘要都讀取這份本機投影，而不是各自重新計算。登入同步後，本機的熟練預測值會被伺服器回傳的絕對值取代。
+
 ## 本機啟動
 
 需求：Node.js 20.19 以上與 npm。
@@ -27,7 +29,7 @@ npm run test:e2e
 題庫另可執行：
 
 ```bash
-npx vite-node --script scripts/validate-seed.ts
+npm run content:validate -- content/catalog-v2.json
 ```
 
 ## 文件

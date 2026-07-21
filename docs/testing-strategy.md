@@ -15,7 +15,12 @@
 - MasteryCalculator
 - ReviewScheduler
 - PracticeSelector
-- IndexedDB Repositories
+- IndexedDB Repositories（含 P0.3 新增的 `SkillMasteryRepository`、`ExerciseReviewRepository`、`LearningOutcomeRepository`——皆為唯讀，寫入只透過原子提交流程）
+- `learning-projection-commit.ts`（原子 transaction，任一 store 寫入失敗須整體 rollback）
+- `synced-attempt-committer.ts`（依 `masteryRevisions`／`reviewRevision` 版本調和，而非時間戳）
+- `PracticeSessionStarter`（先持久化、成功後才更新 store）
+- `ReviewSummaryService`、`PracticeSelectionService`（有本機投影時優先使用；沒有投影紀錄時的 P0.2 fallback 需各自獨立測試覆蓋）
+- `ProgressQueryService`、`HomeLearningSummaryService`
 
 ### Component Tests
 
@@ -41,6 +46,8 @@
 - 題組恢復。
 - 同步失敗後重試。
 
+**Component 與 Integration Tests 只能證明邏輯或元件本身正確，不能證明頁面真的整合了本機或雲端資料。** 任何以 prop-driven 方式掛載頁面元件（例如直接把假的 `ProgressDashboard`／`HomeLearningSummary` 傳進 props）的測試，都必須額外有對應的 End-to-End 測試，確認執行期頁面真的呼叫了 repository／service、讀寫了真實的 IndexedDB，才能視為該功能完成（見 `docs/acceptance-verification.md` 的驗收規則）。
+
 ### End-to-End Tests
 
 工具：Playwright。
@@ -53,6 +60,15 @@
 4. 紀錄仍存在。
 5. 進入結果頁。
 
+完整 P0 學習迴圈（`tests/e2e/learning-loop.spec.ts`）：
+
+1. 訪客從首頁進入課程單元、完成一題。
+2. 單題回饋顯示真實（非虛構）的熟練分數變化。
+3. 完成 session，結果頁顯示彙總數字。
+4. 學習進度頁顯示同一技能與單元的真實進度。
+5. 今日複習顯示與學習進度相同的到期題數。
+6. 重新整理後上述資料不變。
+
 其他：
 
 - 自由選擇課程單元。
@@ -61,6 +77,9 @@
 - 內容正確但 Mode 錯誤時提示回 Normal。
 - 同步錯誤不阻止下一題。
 - 深層路由重新整理可正常載入。
+- 本機學習投影的 transaction 失敗時（`scoring-feedback.spec.ts`），Attempt、`skillMastery`、`exerciseReviews`、`learningOutcomes` 都不留下部分寫入，也不呼叫同步 RPC。
+- 登入同步（`auth-sync.spec.ts`）：本機熟練預測值在同步後被伺服器絕對值取代，且已同步的 Attempt 不會重送——RPC handler 在第二次呼叫時直接讓測試失敗，而不是只在特定時間點檢查呼叫次數。
+- 今日複習的到期題數與持久化 `exerciseReviews` 一致，即使該使用者完全沒有本機 Attempt（`review-selection.spec.ts`）。
 
 ## 2. Scoring Tests
 
@@ -121,6 +140,8 @@ due 不足
 ```
 
 同一 Exercise 不得重複。
+
+上述比例與遞補規則描述的是 `buildPracticeCandidatePools` 動態分類演算法（P0.2），至今未修改。使用者已有本機技能熟練投影時，`PracticeSelectionService` 會另外覆寫這些池：持久化到期清單中的題目一律進入到期池，弱項題目改依真實 `masteryScore` 排序（見 `docs/architecture.md` 第 10.2 節）。因此 `practice-selection-service.test.ts` 需要涵蓋兩種情境：沒有投影紀錄時維持本節既有行為，以及有投影紀錄時到期／弱項判斷改由持久化資料主導。
 
 ## 4. RLS Tests
 

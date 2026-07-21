@@ -56,6 +56,7 @@ src/
 ├── features/
 │   ├── auth/
 │   ├── course/
+│   ├── home/
 │   ├── practice/
 │   ├── review/
 │   ├── progress/
@@ -298,18 +299,47 @@ export interface AttemptDraft {
 ```text
 Google OAuth 成功
 → 讀取 pending / local Attempt
-→ 呼叫 Supabase 記錄函式
+→ 呼叫 Supabase 記錄函式（record_exercise_attempt RPC）
 → 依 clientAttemptId 去重
-→ 重新取得雲端摘要
+→ 以 IndexedDbSyncedAttemptCommitter 依 revision 調和本機投影
 → 標記本機紀錄 synced
 ```
 
 衝突規則：
 
 - Attempt 是 append-only。
-- 熟練摘要以 Attempts 重新計算或由資料庫函式更新。
-- 不直接以本機熟練度覆蓋雲端熟練度。
-- 合併失敗保留本機資料。
+- 伺服器回傳的絕對熟練分數／等級與 `dueAt` 會覆蓋本機由 `calculateLearningProjection` 算出的預測值——本機值只是暫時預測，伺服器值才是權威來源（見第 10.1 節版本規則）。
+- 合併失敗保留本機資料；已標記 `synced` 的 Attempt 不會重送 RPC。
+
+### 10.1 本機學習投影與版本調和（P0.3）
+
+`AttemptCompletionService`（`features/practice/services/attempt-completion-service.ts`）在完成或跳過題目時：
+
+1. 讀取該題所屬技能目前的 `StoredSkillMastery` 與該題目的 `StoredExerciseReview`。
+2. 呼叫純函式 `calculateLearningProjection`（`domain/mastery/learning-projection-calculator.ts`），同時輸出：
+   - 每個受影響技能的 `StoredSkillMastery` 更新（呼叫既有 `calculateMasteryUpdate`）。
+   - 由主要技能等級與提示層級算出的下一個 `StoredExerciseReview`（呼叫既有 `scheduleReview`）。
+   - 一筆 `StoredLearningOutcome`，記錄每個技能提交後的 `masteryRevisions` 與 `reviewRevision`，作為之後版本比對的基準快照。
+3. 呼叫 `commitLearningProjection`（`infrastructure/indexed-db/learning-projection-commit.ts`），在**同一個 IndexedDB transaction**中寫入 `attempts`、`sessions`、`skillMastery`、`exerciseReviews`、`learningOutcomes` 五個 object store；任一 `put()` 失敗即整個 transaction abort，五個 store 都不會留下部分寫入。
+4. 本機 transaction 成功後才呼叫 `syncStore.notifyAttemptCommitted()`；transaction 失敗時，不會呼叫任何背景同步或遠端 RPC。
+
+重複送出同一 `clientAttemptId`（例如重試）是安全的：`commitLearningProjection` 以既有 payload 比對判斷是否為重複提交，重複時不重算、不重寫，直接回傳先前實際持久化的結果。
+
+登入後同步時，`IndexedDbSyncedAttemptCommitter`（`infrastructure/indexed-db/synced-attempt-committer.ts`）依 `StoredLearningOutcome.masteryRevisions` 與 `reviewRevision`（而非時間戳）判斷是否可以安全套用伺服器的絕對值：
+
+- 本機目前 revision 等於這筆 outcome 提交時的快照 → 套用伺服器絕對值，revision 加一。
+- 本機 revision 已經比快照新（例如使用者在同步前又完成了其他題目）→ 判定為過期回應，捨棄不套用。
+- 本機 revision 比快照舊 → 視為本機狀態損壞，中止整個調和 transaction 而不是靜默覆蓋。
+- Attempt 一律標記為 `synced`（伺服器確實已收到），即使沒有可調和的投影紀錄。
+
+### 10.2 訪客/舊資料退回路徑（P0.2 fallback）
+
+`ReviewSummaryService`、`PracticeSelectionService`（皆在 `features/*/services/`）優先讀取上述持久化投影：
+
+- 有任何 `StoredSkillMastery` 紀錄時，到期題數直接讀 `ExerciseReviewRepository.listDue`，弱項技能直接依 `masteryScore` 由低到高排序；`daily_review` 與 `weakness_practice` 的候選池會以持久化到期清單覆寫既有的動態分類（把到期但被動態分類排除的題目直接插入到期池），弱項題目的排序也改用真實 `masteryScore`。
+- 完全沒有投影紀錄、只有原始 Attempt 的使用者（例如尚未跑過本機投影提交的舊資料），退回既有 P0.2 動態演算法：`buildExerciseLearningSnapshots` + `buildPracticeCandidatePools`，行為與升級前完全一致。
+
+兩個服務的建構子都以「可選 port、預設回傳空陣列」的方式接受這兩個新 repository，因此既有呼叫端與測試在不注入它們時，行為不變。
 
 ## 11. 路由
 
@@ -419,3 +449,47 @@ with check ((select auth.uid()) = user_id)
 - 離開練習頁銷毀 View。
 - 語言 Extension 動態載入。
 - 不一次下載完整 100 題內容。
+
+## 17. IndexedDB v2 Schema
+
+資料庫名稱 `vim-forge`，目前 version 2。Schema 建立以「已存在的 store／index 不重建」為原則（`ensureStore`／`ensureIndex`），因此升級不會遺失既有資料：
+
+| Store | keyPath | Index | 說明 |
+|---|---|---|---|
+| `attempts` | `clientAttemptId` | `syncStatus`、`sessionId`、`exerciseId`、`completedAt` | 沿用自 P0.1／P0.2。 |
+| `sessions` | `id` | `status` | 沿用自 P0.1／P0.2。 |
+| `settings` | `key` | — | 沿用自 P0.1／P0.2。 |
+| `metadata` | `key` | — | 沿用自 P0.1／P0.2。 |
+| `skillMastery` | `skillId` | — | P0.3 新增：本機技能熟練投影（`StoredSkillMastery`）。 |
+| `exerciseReviews` | `exerciseId` | `dueAt`、`updatedAt` | P0.3 新增：本機間隔複習排程（`StoredExerciseReview`）。 |
+| `learningOutcomes` | `clientAttemptId` | `sessionId`、`exerciseId`、`completedAt` | P0.3 新增：每次提交的投影快照，作為第 10.1 節版本調和的基準（`StoredLearningOutcome`）。 |
+
+`skillMastery`、`exerciseReviews` 各自提供對應的唯讀 repository（`SkillMasteryRepository`、`ExerciseReviewRepository`），只有 `get`／`list*` 方法；寫入一律經第 10.1 節的原子提交流程，repository 本身不提供 `save`。
+
+## 18. 題組建立（Session Starter）
+
+`PracticeSessionStarter`（`features/practice/services/practice-session-starter.ts`）是課程模式、每日複習、指定主題、弱項練習共用的題組建立入口：
+
+```ts
+class PracticeSessionStarter {
+  start(input: StartPracticeSessionInput): Promise<PracticeSession>;
+}
+```
+
+流程固定為「先持久化，成功後才寫入 Pinia store」：
+
+1. 以純函式 `createPracticeSession` 建立 `PracticeSession`。
+2. `await repository.save(session, null)`。
+3. 只有第 2 步成功後才呼叫 `store.restoreSession(session, null)`。
+
+若第 2 步失敗，store 完全不變；呼叫端（`PracticeSetupPage.vue`、`CourseUnitPage.vue`）不需要各自處理「session 已建立但 store 沒同步」的中間狀態。
+
+## 19. 學習進度與首頁個人化的真實資料來源
+
+Progress（`/progress`）與首頁個人化摘要不是 prop-driven 元件：兩者都在 `onMounted` 內開啟 IndexedDB、建立對應 service，並呼叫真實 repository。
+
+- `ProgressQueryService`（`features/progress/services/progress-query-service.ts`）組合 `SkillMasteryRepository.listAll`、`ExerciseReviewRepository.listDue`／`listAll`、`AttemptRepository.listAll` 與已發佈課程目錄（`CourseRepository`），輸出技能熟練（依課程目錄的單元／技能排序，而非依名稱字母排序）、單元完成度（依實際成功過的 Exercise 去重計算，不因同一題重複成功而膨脹）、到期複習題數，以及最近練習紀錄（含已下架題目，改用「已移除的題目」佔位標題，而不是整筆從清單移除）。
+- `HomeLearningSummaryService`（`features/home/services/home-learning-summary-service.ts`）組合 `SessionRepository.getActive`、`ExerciseReviewRepository.listDue`、`SkillMasteryRepository.listAll` 與課程目錄，輸出「繼續上次練習」的 session id、今日待複習題數，以及熟練分數最低的一個技能建議。
+- `ProgressPage.vue`、`HomePage.vue` 都以 `loading`／`loaded`（或有內容／無內容）／`error` 狀態呈現；`HomePage.vue` 的三張學習模式卡片與載入狀態、錯誤狀態無關，一律顯示。
+
+一個功能只有在對應的執行期頁面實際呼叫上述真實 repository／service 時才算完成；只靠 prop-driven 元件測試（例如直接把假資料傳進 `ProgressPage` props）或獨立 domain 測試，不能證明頁面真的整合了本機資料。第 19 節與第 10.1／10.2 節提到的每一項行為，都必須同時有 Vitest（service／repository 層）與 Playwright（頁面實際讀寫 IndexedDB）兩層證據，見 `docs/testing-strategy.md` 與 `docs/acceptance-verification.md`。

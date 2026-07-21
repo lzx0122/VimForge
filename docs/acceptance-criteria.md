@@ -337,3 +337,67 @@ When 系統保存 Attempt 並清空 attemptDraft\
 Then 兩者在同一個 IndexedDB transaction 中提交\
 And 任一步失敗時兩者皆不生效，不留下 Attempt 已存在但 draft 仍可恢復的中間狀態\
 And 本機 transaction 成功後才觸發背景／遠端同步
+
+## AC-044：題組建立先持久化再更新 store
+
+Given 使用者透過課程模式、每日複習、指定主題或弱項練習建立新題組\
+When `PracticeSessionStarter` 執行\
+Then 先呼叫 repository 保存 session\
+And 只有保存成功後才把 session 寫入 Pinia store\
+When 保存失敗\
+Then store 維持原狀，不出現「已建立但未反映在畫面」的中間狀態
+
+## AC-045：本機學習投影原子提交
+
+Given 使用者完成或跳過題目\
+When 系統計算該題所屬技能的熟練變化與下一次複習排程\
+Then Attempt、Session、`skillMastery`、`exerciseReviews`、`learningOutcomes` 五個 store 在同一個 IndexedDB transaction 中提交\
+And 任一 store 寫入失敗時，五個 store 都不生效，不留下部分寫入\
+And 本機 transaction 失敗時不呼叫任何背景或遠端同步 RPC\
+And 同一 `clientAttemptId` 重複提交不重算、不重寫，回傳先前實際持久化的結果
+
+## AC-046：複習與弱項優先使用本機投影，訪客舊資料退回既有演算法
+
+Given 使用者已有本機技能熟練投影紀錄\
+When 系統計算今日複習到期題數與弱項技能\
+Then 到期題數直接來自 `ExerciseReviewRepository.listDue`\
+And 弱項技能依真實 `masteryScore` 由低到高排序\
+And 被動態分類排除、但實際已到期的題目仍會出現在到期題組中\
+Given 使用者只有原始 Attempt、尚未產生任何本機投影紀錄\
+When 系統計算今日複習到期題數與弱項技能\
+Then 退回既有 P0.2 動態 snapshot／pool 演算法，行為與升級前一致
+
+## AC-047：學習進度與今日複習的到期題數一致
+
+Given 同一位使用者同時查看「學習進度」與「今日複習」\
+When 兩頁都完成載入\
+Then 兩頁顯示的到期題數必須相同\
+And 兩者都來自同一份持久化 `exerciseReviews` 資料，而非各自獨立計算
+
+## AC-048：登入同步以伺服器絕對值調和本機預測
+
+Given 訪客完成題目後產生本機熟練預測值\
+When Google OAuth 登入成功並同步該筆 Attempt\
+Then 本機熟練分數與等級被伺服器回傳的絕對值取代\
+And 該筆 Attempt 標記為 `synced`\
+When 稍後重新整理或再次觸發同步\
+Then 已標記 `synced` 的 Attempt 不會重新呼叫記錄函式\
+And 已調和的熟練值不再改變
+
+## AC-049：學習進度頁讀取真實資料
+
+Given 使用者已有本機或雲端學習紀錄\
+When 進入「學習進度」頁\
+Then 技能熟練、單元完成度、到期複習數與最近練習皆來自實際 repository 查詢結果\
+And 不使用寫死或由測試假資料傳入的 props\
+And 找不到對應課程目錄資料的技能或題目改用誠實的預設呈現，不得顯示虛構名稱
+
+## AC-050：首頁個人化摘要
+
+Given 使用者已有學習紀錄\
+When 進入首頁\
+Then 顯示「繼續上次練習」（若有進行中 session）、「今日有 N 題待複習」（N 大於 0 時）與「建議加強：技能名稱」（有可辨識的最弱技能時）\
+And 三張學習模式卡片維持完整顯示\
+Given 使用者沒有任何學習紀錄，或個人化摘要載入失敗\
+Then 不顯示上述任何一張個人化卡片，也不顯示虛構數字\
+And 三張學習模式卡片仍完整顯示且可操作
