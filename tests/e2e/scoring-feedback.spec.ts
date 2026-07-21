@@ -1014,3 +1014,78 @@ test("recovers from a failed next-exercise load without losing feedback or advan
   await page.getByRole("button", { name: "下一題" }).click();
   await expect(page).toHaveURL(/\/practice\/[0-9a-f-]+\/result$/u);
 });
+
+async function readStoreCount(page: Page, storeName: string): Promise<number> {
+  return page.evaluate(async (name) => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("vim-forge");
+      request.addEventListener("success", () => resolve(request.result), { once: true });
+      request.addEventListener(
+        "error",
+        () => reject(request.error ?? new Error("Unable to open IndexedDB")),
+        { once: true },
+      );
+    });
+    const request = database.transaction(name, "readonly").objectStore(name).count();
+    const count = await new Promise<number>((resolve, reject) => {
+      request.addEventListener("success", () => resolve(request.result), { once: true });
+      request.addEventListener(
+        "error",
+        () => reject(request.error ?? new Error("Unable to count store")),
+        { once: true },
+      );
+    });
+    database.close();
+    return count;
+  }, storeName);
+}
+
+test("keeps the local commit atomic: a mid-transaction write failure leaves no partial records and never calls the sync RPC", async ({
+  page,
+}) => {
+  let recordAttemptCalls = 0;
+  await page.route("**/rest/v1/rpc/record_exercise_attempt", async (route) => {
+    recordAttemptCalls += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ attemptId: "unused", mastery: [], dueAt: null }),
+    });
+  });
+
+  // Simulates a mid-transaction IndexedDB failure: commitLearningProjection
+  // writes attempts, sessions, skillMastery, exerciseReviews, and
+  // learningOutcomes in one transaction (Task 18), so an exception thrown
+  // from any single put() call must abort every store's write, not just
+  // skillMastery's.
+  await page.addInitScript(() => {
+    const originalPut = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function put(
+      this: IDBObjectStore,
+      ...args: Parameters<typeof originalPut>
+    ) {
+      if (this.name === "skillMastery") {
+        throw new DOMException("Simulated write failure.", "UnknownError");
+      }
+      return originalPut.apply(this, args);
+    };
+  });
+
+  await startPracticeSession(page);
+  const editor = page.locator(".cm-content");
+  await expect(editor).toBeFocused();
+  await page.keyboard.press("i");
+  await page.keyboard.type("x");
+  await page.keyboard.press("Escape");
+
+  await expect(page.locator("p.error-message")).toHaveText(
+    "無法更新本機練習進度，請稍後再試。",
+  );
+  await expect(page.getByRole("article", { name: "完成！" })).toHaveCount(0);
+
+  expect(await readStoreCount(page, "attempts")).toBe(0);
+  expect(await readStoreCount(page, "skillMastery")).toBe(0);
+  expect(await readStoreCount(page, "exerciseReviews")).toBe(0);
+  expect(await readStoreCount(page, "learningOutcomes")).toBe(0);
+  expect(recordAttemptCalls).toBe(0);
+});
