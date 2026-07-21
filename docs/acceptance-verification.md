@@ -2,7 +2,7 @@
 
 此表將 `docs/acceptance-criteria.md` 的每一項需求對應到可重複的自動化證據。標示「外部環境」的項目仍需在已連結的 Supabase／Vercel 環境完成 smoke test，不能由本機結果取代。
 
-**一個 AC 只有在對應的執行期頁面（Vue 元件）實際呼叫真實 repository／service 時才算完成。** 只有獨立 domain／service 層 Vitest 測試，或以假資料 props 掛載元件的 component 測試，證明的是邏輯本身正確，不能證明頁面真的整合了本機或雲端資料——這類 AC 必須同時列出至少一個實際開啟 IndexedDB、走過真實頁面互動的 Playwright 檔案，才視為完成。
+**凡是宣稱執行期頁面或使用者 journey 已整合真實 repository／service 的 AC，只有在對應 Vue 頁面實際走過該資料路徑時才算完成。** 獨立 domain／service 層 Vitest 測試，或以假資料 props 掛載元件的 component 測試，只能證明該層邏輯正確，不能單獨證明頁面已完成整合；這類頁面整合 AC 必須同時列出至少一個實際開啟 IndexedDB、走過真實頁面互動的 Playwright 檔案。純 domain、repository、transaction 或 service orchestration AC（例如原子提交、版本調和、選題演算法本身），則可由對應的 Vitest／IndexedDB integration test 證明，不強制要求額外的頁面 Playwright 測試。
 
 | AC | 自動化證據 | 外部環境補充 |
 | --- | --- | --- |

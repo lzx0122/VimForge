@@ -492,4 +492,4 @@ Progress（`/progress`）與首頁個人化摘要不是 prop-driven 元件：兩
 - `HomeLearningSummaryService`（`features/home/services/home-learning-summary-service.ts`）組合 `SessionRepository.getActive`、`ExerciseReviewRepository.listDue`、`SkillMasteryRepository.listAll` 與課程目錄，輸出「繼續上次練習」的 session id、今日待複習題數，以及熟練分數最低的一個技能建議。
 - `ProgressPage.vue`、`HomePage.vue` 都以 `loading`／`loaded`（或有內容／無內容）／`error` 狀態呈現；`HomePage.vue` 的三張學習模式卡片與載入狀態、錯誤狀態無關，一律顯示。
 
-一個功能只有在對應的執行期頁面實際呼叫上述真實 repository／service 時才算完成；只靠 prop-driven 元件測試（例如直接把假資料傳進 `ProgressPage` props）或獨立 domain 測試，不能證明頁面真的整合了本機資料。第 19 節與第 10.1／10.2 節提到的每一項行為，都必須同時有 Vitest（service／repository 層）與 Playwright（頁面實際讀寫 IndexedDB）兩層證據，見 `docs/testing-strategy.md` 與 `docs/acceptance-verification.md`。
+本節描述的「頁面整合真實資料」宣稱，只有在對應執行期頁面實際呼叫上述 repository／service 時才算完成；只靠 prop-driven 元件測試（例如直接把假資料傳進 `ProgressPage` props）或獨立 domain 測試，不能證明頁面真的整合了本機資料，因此本節提到的頁面行為都必須同時有 Vitest（service／repository 層）與 Playwright（頁面實際讀寫 IndexedDB）兩層證據。第 10.1／10.2 節描述的是投影提交、版本調和與選題服務本身的 orchestration 行為，不是頁面整合宣稱，由對應的 Vitest／IndexedDB integration test 證明即可，不強制要求額外的 Playwright 證據；見 `docs/testing-strategy.md` 與 `docs/acceptance-verification.md`。

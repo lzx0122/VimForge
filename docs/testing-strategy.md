@@ -46,7 +46,7 @@
 - 題組恢復。
 - 同步失敗後重試。
 
-**Component 與 Integration Tests 只能證明邏輯或元件本身正確，不能證明頁面真的整合了本機或雲端資料。** 任何以 prop-driven 方式掛載頁面元件（例如直接把假的 `ProgressDashboard`／`HomeLearningSummary` 傳進 props）的測試，都必須額外有對應的 End-to-End 測試，確認執行期頁面真的呼叫了 repository／service、讀寫了真實的 IndexedDB，才能視為該功能完成（見 `docs/acceptance-verification.md` 的驗收規則）。
+**凡是宣稱某個頁面或使用者 journey 已整合真實 repository／service 的驗收項目，Component／Integration Tests 本身不足以證明完成。** 任何以 prop-driven 方式掛載頁面元件（例如直接把假的 `ProgressDashboard`／`HomeLearningSummary` 傳進 props）的測試，只能證明元件邏輯正確；必須額外有對應的 End-to-End 測試，確認執行期頁面真的呼叫了 repository／service、讀寫了真實的 IndexedDB，才能視為該頁面整合功能完成。純 domain、repository、transaction 或 service orchestration（例如原子提交、版本調和、選題演算法本身）的驗收項目，由對應的 Vitest／IndexedDB integration test 證明即可，不強制要求額外的頁面 End-to-End 測試（見 `docs/acceptance-verification.md` 的驗收規則）。
 
 ### End-to-End Tests
 
