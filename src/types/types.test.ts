@@ -56,6 +56,9 @@ describe("shared learning types", () => {
       "web" | "neovim" | "ideavim" | "vscode_vim"
     >();
     expectTypeOf<AttemptDraft["source"]>().toEqualTypeOf<"web">();
+    expectTypeOf<AttemptDraft["keystrokeCount"]>().toEqualTypeOf<number>();
+    expectTypeOf<AttemptDraft["lastMistakeFingerprint"]>()
+      .toEqualTypeOf<string | null>();
   });
 
   it("models exact, range, and ignored cursor completion rules", () => {

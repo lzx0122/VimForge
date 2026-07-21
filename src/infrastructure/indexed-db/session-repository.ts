@@ -6,6 +6,90 @@ import {
   transactionToPromise,
 } from "./database";
 
+function normalizeNonNegativeInteger(value: unknown): number {
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 0
+    ? value
+    : 0;
+}
+
+/**
+ * Version-1 IndexedDB records were persisted before keystrokeCount and
+ * lastMistakeFingerprint existed, so a stored Draft may lack them (or hold
+ * corrupted counters) at runtime despite the type requiring them. Normalize
+ * at this repository boundary so every caller receives a genuinely complete
+ * AttemptDraft.
+ */
+export function normalizePersistedAttemptDraft(
+  draft: AttemptDraft,
+): AttemptDraft {
+  const persisted = draft as AttemptDraft & {
+    keystrokeCount?: unknown;
+    mistakeCount?: unknown;
+    lastMistakeFingerprint?: unknown;
+  };
+
+  return {
+    ...draft,
+    initialCursor: { ...draft.initialCursor },
+    currentCursor: { ...draft.currentCursor },
+    actions: draft.actions.map((action) => ({ ...action })),
+    keystrokeCount: normalizeNonNegativeInteger(
+      persisted.keystrokeCount,
+    ),
+    mistakeCount: normalizeNonNegativeInteger(
+      persisted.mistakeCount,
+    ),
+    lastMistakeFingerprint:
+      typeof persisted.lastMistakeFingerprint === "string"
+        ? persisted.lastMistakeFingerprint
+        : null,
+  };
+}
+
+function buildSnapshotFingerprint(
+  content: string,
+  cursor: { line: number; column: number },
+  mode: string,
+): string {
+  return JSON.stringify([content, cursor.line, cursor.column, mode]);
+}
+
+/**
+ * P1 does not restore Insert, Visual, Replace, or Command mode: an
+ * unfinished Draft always resumes in Normal Mode. When the persisted
+ * lastMistakeFingerprint represents the persisted current snapshot (in its
+ * original, persisted mode), re-fingerprint it to Normal Mode too - a
+ * reload must not let VimEditor's Normal-Mode mount silently make an
+ * already-counted failed snapshot look new again.
+ */
+export function normalizeResumedDraftMode(
+  draft: AttemptDraft,
+): AttemptDraft {
+  const currentFingerprint = buildSnapshotFingerprint(
+    draft.currentContent,
+    draft.currentCursor,
+    draft.currentMode,
+  );
+
+  const lastMistakeFingerprint =
+    draft.lastMistakeFingerprint === currentFingerprint
+      ? buildSnapshotFingerprint(
+          draft.currentContent,
+          draft.currentCursor,
+          "normal",
+        )
+      : draft.lastMistakeFingerprint;
+
+  return {
+    ...draft,
+    currentCursor: { ...draft.currentCursor },
+    currentMode: "normal",
+    lastMistakeFingerprint,
+  };
+}
+
 export interface StoredSessionRecord {
   id: string;
   status: PracticeSession["status"];
@@ -119,7 +203,12 @@ export class SessionRepository {
 
     return {
       session: normalizePersistedSession(storedSession.session),
-      attemptDraft: storedSession.attemptDraft,
+      attemptDraft:
+        storedSession.attemptDraft === null
+          ? null
+          : normalizeResumedDraftMode(
+              normalizePersistedAttemptDraft(storedSession.attemptDraft),
+            ),
     };
   }
 

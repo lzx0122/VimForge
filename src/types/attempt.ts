@@ -32,7 +32,9 @@ export interface AttemptDraft {
   currentCursor: CursorPosition;
   currentMode: VimMode;
   actions: NormalizedAction[];
+  keystrokeCount: number;
   mistakeCount: number;
+  lastMistakeFingerprint: string | null;
   undoCount: number;
   resetCount: number;
   highestHintLevel: HintLevel;

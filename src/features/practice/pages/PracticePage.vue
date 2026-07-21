@@ -60,6 +60,8 @@ const unmetMessages = ref<string[]>([]);
 const highestHintLevel = ref<HintLevel>(0);
 const resetCount = ref(0);
 const keystrokeCount = ref(0);
+const mistakeCount = ref(0);
+const lastMistakeFingerprint = ref<string | null>(null);
 const recordedActions = ref<NormalizedAction[]>([]);
 const hasUserInteraction = ref(false);
 const editorInstance = ref(0);
@@ -183,7 +185,9 @@ function buildAttemptDraft(
     currentCursor: { ...editorSnapshot.cursor },
     currentMode: editorSnapshot.mode,
     actions: recordedActions.value.map((action) => ({ ...action })),
-    mistakeCount: 0,
+    keystrokeCount: keystrokeCount.value,
+    mistakeCount: mistakeCount.value,
+    lastMistakeFingerprint: lastMistakeFingerprint.value,
     undoCount: recordedActions.value.filter((action) => action.type === "undo")
       .length,
     resetCount: resetCount.value,
@@ -226,6 +230,8 @@ function applyFreshAttempt(
   highestHintLevel.value = fresh.highestHintLevel;
   resetCount.value = fresh.resetCount;
   keystrokeCount.value = fresh.keystrokeCount;
+  mistakeCount.value = 0;
+  lastMistakeFingerprint.value = null;
   recordedActions.value = fresh.recordedActions;
   hasUserInteraction.value = fresh.hasUserInteraction;
   unmetMessages.value = fresh.unmetMessages;
@@ -256,7 +262,9 @@ function buildFreshAttemptDraft(
     currentCursor: { ...fresh.snapshot.cursor },
     currentMode: fresh.snapshot.mode,
     actions: fresh.recordedActions.map((action) => ({ ...action })),
+    keystrokeCount: fresh.keystrokeCount,
     mistakeCount: 0,
+    lastMistakeFingerprint: null,
     undoCount: 0,
     resetCount: fresh.resetCount,
     highestHintLevel: fresh.highestHintLevel,
@@ -279,8 +287,11 @@ function prepareExercise(activeExercise: PracticeExercise): void {
   exercise.value = activeExercise;
   snapshot.value = {
     content: restoredDraft.currentContent,
+    // P1 does not restore Insert, Visual, Replace, or Command mode: an
+    // unfinished Draft always resumes in Normal Mode (already normalized at
+    // the repository boundary, restated here defensively).
     cursor: { ...restoredDraft.currentCursor },
-    mode: restoredDraft.currentMode,
+    mode: "normal",
   };
   highestHintLevel.value = restoredDraft.highestHintLevel;
   resetCount.value = restoredDraft.resetCount;
@@ -288,7 +299,9 @@ function prepareExercise(activeExercise: PracticeExercise): void {
   hasUserInteraction.value = recordedActions.value.length > 0;
   attemptClientId.value = restoredDraft.clientAttemptId;
   attemptStartedAt.value = restoredDraft.startedAt;
-  keystrokeCount.value = 0;
+  keystrokeCount.value = restoredDraft.keystrokeCount;
+  mistakeCount.value = restoredDraft.mistakeCount;
+  lastMistakeFingerprint.value = restoredDraft.lastMistakeFingerprint;
   unmetMessages.value = [];
   feedback.value = null;
   primarySkillChange.value = null;
