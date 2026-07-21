@@ -222,20 +222,25 @@ test("carries a guest's first completed exercise through feedback, result, progr
 
   // progress shows unit and skill progress
   await page.goto("/progress");
-  await expect(page.getByTestId("due-review-count")).toHaveText("0");
+  const progressDueCount = await page.getByTestId("due-review-count").innerText();
+  // A fresh success always schedules its next review at least 6 hours out
+  // (review-scheduler.ts), so nothing is due yet - the shared value below
+  // should be "0", not merely equal to whatever (possibly wrong) number
+  // Progress happens to show.
+  expect(progressDueCount).toBe("0");
   await expect(page.getByText(skill.name)).toBeVisible();
   await expect(page.getByText(`Level ${masteryLevel} / 5`)).toBeVisible();
   await expect(page.getByText("1 / 1 題")).toBeVisible();
 
-  // review shows the same due count Progress just showed
+  // review shows the exact same due count Progress just showed
   await page.goto("/review");
-  await expect(page.getByTestId("due-count")).toHaveText("0");
+  await expect(page.getByTestId("due-count")).toHaveText(progressDueCount);
 
   // reload -> data remains
   await page.reload();
-  await expect(page.getByTestId("due-count")).toHaveText("0");
+  await expect(page.getByTestId("due-count")).toHaveText(progressDueCount);
   await page.goto("/progress");
-  await expect(page.getByTestId("due-review-count")).toHaveText("0");
+  await expect(page.getByTestId("due-review-count")).toHaveText(progressDueCount);
   await expect(page.getByText(skill.name)).toBeVisible();
   await expect(page.getByText(`Level ${masteryLevel} / 5`)).toBeVisible();
   await expect(page.getByText("1 / 1 題")).toBeVisible();

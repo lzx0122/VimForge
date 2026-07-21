@@ -230,6 +230,39 @@ async function readSkillMastery(
   }, skillId);
 }
 
+/** Every attempt's syncStatus, so a test can confirm the sync scan settled on "synced" rather than merely that time passed. */
+async function readAllAttemptSyncStatuses(page: Page): Promise<string[]> {
+  return page.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("vim-forge");
+      request.addEventListener("success", () => resolve(request.result), { once: true });
+      request.addEventListener(
+        "error",
+        () => reject(request.error ?? new Error("Unable to open IndexedDB")),
+        { once: true },
+      );
+    });
+    const getAllRequest = database
+      .transaction("attempts", "readonly")
+      .objectStore("attempts")
+      .getAll();
+    const records = await new Promise<{ syncStatus: string }[]>((resolve, reject) => {
+      getAllRequest.addEventListener(
+        "success",
+        () => resolve(getAllRequest.result),
+        { once: true },
+      );
+      getAllRequest.addEventListener(
+        "error",
+        () => reject(getAllRequest.error ?? new Error("Read failed")),
+        { once: true },
+      );
+    });
+    database.close();
+    return records.map((record) => record.syncStatus);
+  });
+}
+
 test("reconciles the local mastery prediction to the server's absolute value exactly once", async ({
   page,
 }) => {
@@ -241,6 +274,14 @@ test("reconciles the local mastery prediction to the server's absolute value exa
   let recordAttemptCalls = 0;
   await page.route("**/rest/v1/rpc/record_exercise_attempt", async (route) => {
     recordAttemptCalls += 1;
+    // A second call means an already-synced attempt is being re-sent - fail
+    // immediately rather than relying on the test asserting the call count
+    // at exactly the right moment.
+    if (recordAttemptCalls > 1) {
+      throw new Error(
+        "record_exercise_attempt must not be called for an already-synced attempt.",
+      );
+    }
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -281,22 +322,29 @@ test("reconciles the local mastery prediction to the server's absolute value exa
 
   await expect(page.getByRole("button", { name: "使用 Google 登入" })).toBeVisible();
   await seedGoogleAuthToken(page);
-  await page.reload();
+  // waitUntil: "networkidle" - not just the navigation, but the sync scan's
+  // RPC request itself - has quieted down before any assertion below runs.
+  await page.reload({ waitUntil: "networkidle" });
   await expect(page.getByRole("button", { name: "登出" })).toBeVisible();
 
-  await expect.poll(() => recordAttemptCalls).toBe(1);
   await expect
     .poll(async () => (await readSkillMastery(page, RECONCILE_SKILL_ID))?.masteryScore)
     .toBe(85);
   const reconciled = await readSkillMastery(page, RECONCILE_SKILL_ID);
   expect(reconciled).toMatchObject({ masteryScore: 85, masteryLevel: 4 });
+  expect(recordAttemptCalls).toBe(1);
+  expect(await readAllAttemptSyncStatuses(page)).toEqual(["synced"]);
 
   // Reconciliation happens exactly once: reloading again must not re-sync
-  // an attempt that is already marked "synced", so the RPC call count and
-  // the reconciled value both stay exactly where the first sync left them.
-  await page.reload();
+  // an attempt that is already marked "synced". The RPC route itself throws
+  // on a second call (above), so any regression that re-sends it fails this
+  // test regardless of exactly when that second call lands; waiting for
+  // network idle here still gives the sync scan its full chance to run
+  // before the final assertions read its result.
+  await page.reload({ waitUntil: "networkidle" });
   await expect(page.getByRole("button", { name: "登出" })).toBeVisible();
   expect(recordAttemptCalls).toBe(1);
+  expect(await readAllAttemptSyncStatuses(page)).toEqual(["synced"]);
   expect(await readSkillMastery(page, RECONCILE_SKILL_ID)).toMatchObject({
     masteryScore: 85,
     masteryLevel: 4,
