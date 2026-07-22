@@ -9,6 +9,8 @@ export interface FreshAttemptState {
   highestHintLevel: HintLevel;
   resetCount: number;
   keystrokeCount: number;
+  mistakeCount: number;
+  lastMistakeFingerprint: string | null;
   recordedActions: NormalizedAction[];
   hasUserInteraction: boolean;
   unmetMessages: string[];
@@ -34,8 +36,42 @@ export function createFreshAttemptState(
     highestHintLevel: 0,
     resetCount: 0,
     keystrokeCount: 0,
+    mistakeCount: 0,
+    lastMistakeFingerprint: null,
     recordedActions: [],
     hasUserInteraction: false,
+    unmetMessages: [],
+  };
+}
+
+export interface RestartCurrentAttemptInput {
+  exercise: Pick<PracticeExercise, "initialContent" | "initialCursor">;
+  current: FreshAttemptState;
+}
+
+export function restartCurrentAttempt(
+  input: RestartCurrentAttemptInput,
+): FreshAttemptState {
+  const { exercise, current } = input;
+
+  return {
+    clientAttemptId: current.clientAttemptId,
+    startedAt: current.startedAt,
+    snapshot: {
+      content: exercise.initialContent,
+      cursor: { ...exercise.initialCursor },
+      mode: "normal",
+    },
+    highestHintLevel: current.highestHintLevel,
+    resetCount: current.resetCount + 1,
+    keystrokeCount: current.keystrokeCount,
+    mistakeCount: current.mistakeCount,
+    lastMistakeFingerprint: current.lastMistakeFingerprint,
+    recordedActions: [
+      ...current.recordedActions.map((action) => ({ ...action })),
+      { type: "reset" },
+    ],
+    hasUserInteraction: current.hasUserInteraction,
     unmetMessages: [],
   };
 }
