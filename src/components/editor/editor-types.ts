@@ -25,6 +25,7 @@ export interface VimEditorEmits {
   modeChanged: [mode: VimMode];
   actionRecorded: [action: NormalizedAction];
   editorReady: [];
+  keyPressed: [display: string];
 }
 
 export function orderEditorExtensions(

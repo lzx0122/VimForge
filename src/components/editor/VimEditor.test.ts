@@ -108,6 +108,9 @@ describe("VimEditor contracts", () => {
     expectTypeOf<VimEditorEmits["actionRecorded"]>().toEqualTypeOf<
       [action: NormalizedAction]
     >();
+    expectTypeOf<VimEditorEmits["keyPressed"]>().toEqualTypeOf<
+      [display: string]
+    >();
     expectTypeOf<VimEditorProps["cursorTarget"]>().toEqualTypeOf<
       CursorMatchRule | undefined
     >();
@@ -330,6 +333,48 @@ describe("VimEditor", () => {
       [{ type: "insert_text", text: "x", textLength: 1 }],
       [{ type: "mode_change", mode: "normal" }],
     ]);
+
+    wrapper.unmount();
+  });
+
+  it("emits exactly one keyPressed for one dispatched keydown", async () => {
+    const wrapper = await mountEditor(document.body);
+    const view = getEditorView(wrapper);
+    view.contentDOM.focus();
+
+    view.contentDOM.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        key: "d",
+      }),
+    );
+    await nextTick();
+
+    expect(wrapper.emitted("keyPressed")).toEqual([["d"]]);
+
+    wrapper.unmount();
+  });
+
+  it("does not emit keyPressed for a read-only editor", async () => {
+    const wrapper = mount(VimEditor, {
+      props: { ...defaultProps, readOnly: true },
+      attachTo: document.body,
+    });
+    await flushPromises();
+    const view = getEditorView(wrapper);
+    view.contentDOM.focus();
+
+    view.contentDOM.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        key: "d",
+      }),
+    );
+    await nextTick();
+
+    expect(wrapper.emitted("keyPressed")).toBeUndefined();
 
     wrapper.unmount();
   });

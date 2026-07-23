@@ -22,6 +22,7 @@ import {
   type VimEditorProps,
 } from "./editor-types";
 import { cursorTargetExtension } from "./cursor-target-extension";
+import { formatKeyboardEvent } from "./keyboard-display";
 import { loadLanguageExtension } from "./language-loader";
 import {
   createVimActionRecorder,
@@ -122,6 +123,12 @@ onMounted(async () => {
         keyboardEventToVimKey(event),
         currentMode.value,
       );
+      if (!(props.readOnly ?? false)) {
+        const display = formatKeyboardEvent(event);
+        if (display !== null) {
+          emit("keyPressed", display);
+        }
+      }
     },
   });
   const remainingExtensions: Extension[] = [
