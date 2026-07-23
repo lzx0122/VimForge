@@ -20,25 +20,41 @@ export function createAttemptDraftSaveScheduler(options: {
       return runPromise;
     }
 
-    runPromise = (async () => {
-      try {
-        while (dirty) {
-          dirty = false;
-          try {
-            await options.save();
-          } catch (error) {
-            dirty = true;
-            options.onError(error);
-            return "failed";
-          }
+    const currentRun: Promise<RunResult> = (async () => {
+      while (dirty) {
+        dirty = false;
+        try {
+          await options.save();
+        } catch (error) {
+          dirty = true;
+          options.onError(error);
+          return "failed";
         }
-        return "completed";
-      } finally {
-        runPromise = null;
       }
+      return "completed";
     })();
 
-    return runPromise;
+    runPromise = currentRun;
+    // `currentRun` can already be settled by the time this line runs (a
+    // synchronous throw from options.save() never suspends the async
+    // function), so clearing runPromise here instead of in a `finally`
+    // avoids the outer assignment above overwriting a clear that already
+    // happened. The identity check stops this from clobbering a newer run
+    // that replaced `currentRun` in the meantime.
+    void currentRun.then(
+      () => {
+        if (runPromise === currentRun) {
+          runPromise = null;
+        }
+      },
+      () => {
+        if (runPromise === currentRun) {
+          runPromise = null;
+        }
+      },
+    );
+
+    return currentRun;
   }
 
   function queueMicrotaskRun(): void {

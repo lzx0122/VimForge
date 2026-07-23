@@ -126,6 +126,31 @@ describe("createAttemptDraftSaveScheduler", () => {
     expect(onError).toHaveBeenCalledTimes(1);
   });
 
+  it("retries on a later flush when save throws synchronously", async () => {
+    const error = new Error("synchronous save failure");
+    let attempt = 0;
+    const save = vi.fn(() => {
+      attempt += 1;
+      if (attempt === 1) {
+        throw error;
+      }
+      return Promise.resolve();
+    });
+    const onError = vi.fn();
+    const scheduler = createAttemptDraftSaveScheduler({
+      save,
+      onError,
+    });
+    scheduler.schedule();
+    await scheduler.flush();
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(error);
+    await scheduler.flush();
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
   it("dispose() persists dirty state before resolving", async () => {
     const save = vi.fn().mockResolvedValue(undefined);
     const onError = vi.fn();
