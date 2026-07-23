@@ -4,6 +4,8 @@ export interface AttemptDraftSaveScheduler {
   dispose(): Promise<void>;
 }
 
+type RunResult = "completed" | "failed";
+
 export function createAttemptDraftSaveScheduler(options: {
   save: () => Promise<void>;
   onError: (error: unknown) => void;
@@ -11,9 +13,9 @@ export function createAttemptDraftSaveScheduler(options: {
   let dirty = false;
   let disposed = false;
   let microtaskQueued = false;
-  let runPromise: Promise<void> | null = null;
+  let runPromise: Promise<RunResult> | null = null;
 
-  function runLoop(): Promise<void> {
+  function runLoop(): Promise<RunResult> {
     if (runPromise !== null) {
       return runPromise;
     }
@@ -27,9 +29,10 @@ export function createAttemptDraftSaveScheduler(options: {
           } catch (error) {
             dirty = true;
             options.onError(error);
-            break;
+            return "failed";
           }
         }
+        return "completed";
       } finally {
         runPromise = null;
       }
@@ -58,12 +61,26 @@ export function createAttemptDraftSaveScheduler(options: {
   }
 
   async function flush(): Promise<void> {
-    if (runPromise !== null) {
-      await runPromise;
+    for (;;) {
+      if (runPromise !== null) {
+        const result = await runPromise;
+        if (result === "failed") {
+          return;
+        }
+        continue;
+      }
+      if (dirty) {
+        const result = await runLoop();
+        if (result === "failed") {
+          return;
+        }
+        continue;
+      }
+      if (microtaskQueued) {
+        await Promise.resolve();
+        continue;
+      }
       return;
-    }
-    if (dirty) {
-      await runLoop();
     }
   }
 

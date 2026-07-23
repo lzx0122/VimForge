@@ -149,6 +149,37 @@ describe("createAttemptDraftSaveScheduler", () => {
     expect(save).not.toHaveBeenCalled();
   });
 
+  it("waits for a save scheduled by a late completion reaction", async () => {
+    const first = createDeferred<void>();
+    const second = createDeferred<void>();
+    let callIndex = 0;
+    const save = vi.fn(() =>
+      callIndex++ === 0 ? first.promise : second.promise,
+    );
+    const scheduler = createAttemptDraftSaveScheduler({
+      save,
+      onError: vi.fn(),
+    });
+    scheduler.schedule();
+    await tick();
+    const flushPromise = scheduler.flush();
+    let flushResolved = false;
+    void flushPromise.then(() => {
+      flushResolved = true;
+    });
+    // Register this reaction after runLoop has started awaiting first.promise.
+    void first.promise.then(() => {
+      scheduler.schedule();
+    });
+    first.resolve();
+    await tick(3);
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(flushResolved).toBe(false);
+    second.resolve();
+    await flushPromise;
+    expect(flushResolved).toBe(true);
+  });
+
   it("lets the save callback read state current at execution time, not at schedule time", async () => {
     let latestValue = "initial";
     const observedValues: string[] = [];
