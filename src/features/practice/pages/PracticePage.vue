@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { onBeforeRouteLeave, useRoute, useRouter } from "vue-router";
 
 import VimEditor from "../../../components/editor/VimEditor.vue";
 import ExerciseFeedback from "../../../components/feedback/ExerciseFeedback.vue";
-import type { EditorSnapshot } from "../../../domain/exercise/exercise-evaluator";
+import {
+  evaluateExercise,
+  type EditorSnapshot,
+} from "../../../domain/exercise/exercise-evaluator";
 import {
   openVimForgeDatabase,
 } from "../../../infrastructure/indexed-db/database";
@@ -30,13 +33,16 @@ import ProgressiveHintPanel from "../components/ProgressiveHintPanel.vue";
 import ResumeSessionDialog from "../components/ResumeSessionDialog.vue";
 import { useAttemptElapsedTime } from "../composables/use-attempt-elapsed-time";
 import { AttemptCompletionService } from "../services/attempt-completion-service";
+import { recordFailedCheck } from "../services/attempt-mistake-service";
 import {
   createAttemptOutcome,
   type AttemptFeedback,
 } from "../services/attempt-outcome-service";
 import { evaluateAutoCompletion } from "../services/auto-completion-service";
+import { createAttemptDraftSaveScheduler } from "../services/attempt-draft-save-scheduler";
 import {
   createFreshAttemptState,
+  restartCurrentAttempt,
   type FreshAttemptState,
 } from "../services/fresh-attempt-service";
 import { scrollFeedbackIntoView } from "../services/feedback-scroll-service";
@@ -99,7 +105,6 @@ let database: IDBDatabase | null = null;
 let repository: SessionRepository | null = null;
 let exerciseRepository: ExerciseRepository | null = null;
 let isUnmounted = false;
-let draftSaveQueue: Promise<void> = Promise.resolve();
 let autoEvaluationQueued = false;
 
 const restoredAttemptContent = computed(
@@ -196,19 +201,26 @@ function buildAttemptDraft(
   };
 }
 
-function queueDraftSave(): void {
+const draftSaveScheduler = createAttemptDraftSaveScheduler({
+  save: async () => {
+    if (repository === null || exercise.value === null || snapshot.value === null) {
+      return;
+    }
+
+    await repository.saveAttemptDraft(sessionId.value, buildAttemptDraft());
+  },
+  onError: (error: unknown) => {
+    reportActionError("practice.save-draft", error);
+  },
+});
+
+function scheduleDraftSave(): void {
   if (repository === null || exercise.value === null || snapshot.value === null) {
     return;
   }
 
-  const draft = buildAttemptDraft();
-  practiceStore.saveAttemptDraft(draft);
-  draftSaveQueue = draftSaveQueue
-    .then(() => repository?.saveAttemptDraft(sessionId.value, draft))
-    .then(() => undefined)
-    .catch((error: unknown) => {
-      reportActionError("practice.save-draft", error);
-    });
+  practiceStore.saveAttemptDraft(buildAttemptDraft());
+  draftSaveScheduler.schedule();
 }
 
 function createFreshAttemptForExercise(
@@ -230,8 +242,8 @@ function applyFreshAttempt(
   highestHintLevel.value = fresh.highestHintLevel;
   resetCount.value = fresh.resetCount;
   keystrokeCount.value = fresh.keystrokeCount;
-  mistakeCount.value = 0;
-  lastMistakeFingerprint.value = null;
+  mistakeCount.value = fresh.mistakeCount;
+  lastMistakeFingerprint.value = fresh.lastMistakeFingerprint;
   recordedActions.value = fresh.recordedActions;
   hasUserInteraction.value = fresh.hasUserInteraction;
   unmetMessages.value = fresh.unmetMessages;
@@ -263,12 +275,29 @@ function buildFreshAttemptDraft(
     currentMode: fresh.snapshot.mode,
     actions: fresh.recordedActions.map((action) => ({ ...action })),
     keystrokeCount: fresh.keystrokeCount,
-    mistakeCount: 0,
-    lastMistakeFingerprint: null,
-    undoCount: 0,
+    mistakeCount: fresh.mistakeCount,
+    lastMistakeFingerprint: fresh.lastMistakeFingerprint,
+    undoCount: fresh.recordedActions.filter((action) => action.type === "undo")
+      .length,
     resetCount: fresh.resetCount,
     highestHintLevel: fresh.highestHintLevel,
     completed: false,
+  };
+}
+
+function currentFreshAttemptState(): FreshAttemptState {
+  return {
+    clientAttemptId: attemptClientId.value,
+    startedAt: attemptStartedAt.value,
+    snapshot: currentSnapshot(),
+    highestHintLevel: highestHintLevel.value,
+    resetCount: resetCount.value,
+    keystrokeCount: keystrokeCount.value,
+    mistakeCount: mistakeCount.value,
+    lastMistakeFingerprint: lastMistakeFingerprint.value,
+    recordedActions: recordedActions.value.map((action) => ({ ...action })),
+    hasUserInteraction: hasUserInteraction.value,
+    unmetMessages: unmetMessages.value,
   };
 }
 
@@ -386,7 +415,7 @@ function updateContent(content: string): void {
 
   if (snapshot.value !== null) {
     snapshot.value = { ...snapshot.value, content };
-    queueDraftSave();
+    scheduleDraftSave();
     scheduleAutoEvaluation();
   }
 }
@@ -398,7 +427,7 @@ function updateCursor(cursor: EditorSnapshot["cursor"]): void {
 
   if (snapshot.value !== null) {
     snapshot.value = { ...snapshot.value, cursor: { ...cursor } };
-    queueDraftSave();
+    scheduleDraftSave();
     scheduleAutoEvaluation();
   }
 }
@@ -414,7 +443,7 @@ function updateMode(mode: VimMode): void {
   // has actually touched the exercise.
   if (snapshot.value !== null && snapshot.value.mode !== mode) {
     snapshot.value = { ...snapshot.value, mode };
-    queueDraftSave();
+    scheduleDraftSave();
     scheduleAutoEvaluation();
   }
 }
@@ -426,7 +455,7 @@ function recordAction(action: NormalizedAction): void {
 
   recordedActions.value.push({ ...action });
   hasUserInteraction.value = true;
-  queueDraftSave();
+  scheduleDraftSave();
   scheduleAutoEvaluation();
 }
 
@@ -436,17 +465,45 @@ function updateHighestHint(level: HintLevel): void {
   }
 
   highestHintLevel.value = level;
-  queueDraftSave();
+  scheduleDraftSave();
 }
 
-function recordKeydown(event: KeyboardEvent): void {
+function recordKeypress(): void {
   if (isEditorLocked.value) {
     return;
   }
 
-  if (!event.metaKey && !event.ctrlKey && !event.altKey && event.key !== "Shift") {
-    keystrokeCount.value += 1;
+  keystrokeCount.value += 1;
+  scheduleDraftSave();
+}
+
+async function checkCurrentResult(): Promise<void> {
+  if (
+    isEditorLocked.value ||
+    exercise.value === null ||
+    snapshot.value === null
+  ) {
+    return;
   }
+
+  const evaluation = evaluateExercise(exercise.value, snapshot.value);
+  unmetMessages.value = evaluation.unmetConditions.map(
+    (condition) => condition.message,
+  );
+
+  if (evaluation.completed) {
+    await recordOutcome(true);
+    return;
+  }
+
+  const failedCheck = recordFailedCheck({
+    snapshot: currentSnapshot(),
+    mistakeCount: mistakeCount.value,
+    lastMistakeFingerprint: lastMistakeFingerprint.value,
+  });
+  mistakeCount.value = failedCheck.mistakeCount;
+  lastMistakeFingerprint.value = failedCheck.lastMistakeFingerprint;
+  scheduleDraftSave();
 }
 
 async function startFreshAttempt(message: string): Promise<void> {
@@ -460,9 +517,8 @@ async function startFreshAttempt(message: string): Promise<void> {
 
   isSavingOutcome.value = true;
   try {
-    await draftSaveQueue;
+    await draftSaveScheduler.flush();
     await requireRepository().saveAttemptDraft(sessionId.value, freshDraft);
-    draftSaveQueue = Promise.resolve();
 
     applyFreshAttempt(activeExercise, fresh);
     practiceStore.saveAttemptDraft(freshDraft);
@@ -475,12 +531,38 @@ async function startFreshAttempt(message: string): Promise<void> {
   }
 }
 
-async function resetExercise(): Promise<void> {
-  await startFreshAttempt("已重新開始本題。");
-}
-
 async function retryExercise(): Promise<void> {
   await startFreshAttempt("已開始新的作答。");
+}
+
+async function restartExercise(): Promise<void> {
+  if (isSavingOutcome.value) {
+    return;
+  }
+
+  const activeExercise = currentExercise();
+
+  isSavingOutcome.value = true;
+  try {
+    await draftSaveScheduler.flush();
+
+    const restarted = restartCurrentAttempt({
+      exercise: activeExercise,
+      current: currentFreshAttemptState(),
+    });
+    const restartedDraft = buildFreshAttemptDraft(activeExercise, restarted);
+
+    await requireRepository().saveAttemptDraft(sessionId.value, restartedDraft);
+    practiceStore.saveAttemptDraft(restartedDraft);
+
+    applyFreshAttempt(activeExercise, restarted);
+    statusMessage.value = "已重新開始本題。";
+    loadError.value = null;
+  } catch (error: unknown) {
+    reportActionError("practice.restart-exercise", error);
+  } finally {
+    isSavingOutcome.value = false;
+  }
 }
 
 function scheduleAutoEvaluation(): void {
@@ -532,7 +614,7 @@ async function recordOutcome(completed: boolean): Promise<void> {
 
   isSavingOutcome.value = true;
   try {
-    await draftSaveQueue;
+    await draftSaveScheduler.flush();
     const completedAt = new Date().toISOString();
     const draft = buildAttemptDraft(completed, completedAt);
     const outcome = createAttemptOutcome({
@@ -614,6 +696,7 @@ async function goToNext(): Promise<void> {
   isSavingOutcome.value = true;
   loadError.value = null;
   try {
+    await draftSaveScheduler.flush();
     const previewSession = advancePracticeSession(
       currentSession,
       outcome.completedAt,
@@ -676,6 +759,7 @@ async function goToNext(): Promise<void> {
 
 async function abandonSession(): Promise<void> {
   try {
+    await draftSaveScheduler.flush();
     const state = requireResumeState();
     practiceStore.restoreSession(state.session, state.attemptDraft);
     const abandonedSession = practiceStore.abandonSession(
@@ -693,7 +777,18 @@ async function abandonSession(): Promise<void> {
   }
 }
 
+function handleVisibilityChange(): void {
+  if (document.visibilityState === "hidden") {
+    void draftSaveScheduler.flush();
+  }
+}
+
+onBeforeRouteLeave(async () => {
+  await draftSaveScheduler.flush();
+});
+
 onMounted(async () => {
+  document.addEventListener("visibilitychange", handleVisibilityChange);
   try {
     const openedDatabase = await openVimForgeDatabase();
 
@@ -730,7 +825,10 @@ onMounted(async () => {
 
 onUnmounted(() => {
   isUnmounted = true;
-  database?.close();
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
+  void draftSaveScheduler.dispose().finally(() => {
+    database?.close();
+  });
 });
 </script>
 
@@ -785,7 +883,6 @@ onUnmounted(() => {
       v-if="exercise && snapshot"
       class="practice-workspace"
       :class="{ 'is-completed': feedback !== null }"
-      @keydown.capture="recordKeydown"
     >
       <header class="exercise-heading">
         <p v-if="practiceStore.session">
@@ -810,6 +907,7 @@ onUnmounted(() => {
           @cursor-changed="updateCursor"
           @mode-changed="updateMode"
           @action-recorded="recordAction"
+          @key-pressed="recordKeypress"
         />
         <p
           v-if="exercise.completionRule.cursorMatch.type !== 'ignore'"
@@ -822,11 +920,20 @@ onUnmounted(() => {
           :mode="snapshot.mode"
           :elapsed-seconds="elapsedSeconds"
           :restart-disabled="isSavingOutcome || feedback !== null"
-          @request-restart="resetExercise"
+          @request-restart="restartExercise"
         />
       </div>
 
       <div class="exercise-actions">
+        <button
+          v-if="feedback === null"
+          data-testid="check-result"
+          type="button"
+          :disabled="isSavingOutcome"
+          @click="checkCurrentResult"
+        >
+          檢查目前結果
+        </button>
         <button
           v-if="feedback === null"
           type="button"
