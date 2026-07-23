@@ -519,15 +519,9 @@ describe("PracticePage scoring telemetry integration", () => {
     expect(afterDraft.resetCount).toBe(0);
   });
 
-  it("finishes persisting the draft before advancing to the next exercise", async () => {
-    getPublishedExercise
-      .mockResolvedValueOnce(exercise())
-      .mockResolvedValueOnce(
-        exercise({ id: "exercise-2", initialContent: "second" }),
-      );
-    const { wrapper } = await mountPracticePage({
-      exerciseIds: ["exercise-1", "exercise-2"],
-    });
+  it("recordOutcome waits for pending Draft persistence before completing the Attempt", async () => {
+    getPublishedExercise.mockResolvedValue(exercise());
+    const { wrapper } = await mountPracticePage();
     await flushPromises();
 
     getVimEditor(wrapper).vm.$emit("keyPressed", "d");
@@ -538,52 +532,131 @@ describe("PracticePage scoring telemetry integration", () => {
     await findButtonByText(wrapper, "跳過這題").trigger("click");
     await flushPromises();
 
-    // recordOutcome's flush is still awaiting the deferred save: no outcome
-    // has been recorded and no session advance has happened yet.
+    // recordOutcome's own flush is still awaiting the deferred save: the
+    // Attempt has not been completed yet.
     expect(completeAttempt).not.toHaveBeenCalled();
-    expect(saveSession).not.toHaveBeenCalled();
 
     deferred.resolve();
     await flushPromises();
 
     expect(completeAttempt).toHaveBeenCalledTimes(1);
-
-    await wrapper.get(".next-exercise-button").trigger("click");
-    await flushPromises();
-
-    expect(saveSession).toHaveBeenCalledTimes(1);
   });
 
-  it("flushes the pending draft when leaving the route via onBeforeRouteLeave", async () => {
-    getPublishedExercise.mockResolvedValue(exercise());
-    const { wrapper, router } = await mountPracticePage();
+  it("goToNext flushes any still-pending Draft persistence before advancing the session", async () => {
+    getPublishedExercise
+      .mockResolvedValueOnce(exercise())
+      .mockResolvedValueOnce(
+        exercise({
+          id: "exercise-2",
+          title: "第二題",
+          initialContent: "second",
+        }),
+      );
+    const { wrapper } = await mountPracticePage({
+      exerciseIds: ["exercise-1", "exercise-2"],
+    });
     await flushPromises();
 
     getVimEditor(wrapper).vm.$emit("keyPressed", "d");
 
-    await router.push("/elsewhere");
+    // The Draft save recordOutcome() flushes before completing the Attempt
+    // fails. flush() reports the failure but does not throw, so recordOutcome
+    // still proceeds and shows feedback - leaving the scheduler genuinely
+    // dirty by the time the learner reaches the "next exercise" step. This
+    // is the only realistic public path that leaves pending Draft
+    // persistence behind feedback, since every editor event that could
+    // otherwise re-dirty the scheduler is blocked by isEditorLocked for the
+    // whole outcome-recording-through-feedback window.
+    saveAttemptDraft.mockRejectedValueOnce(new Error("network blip"));
+
+    await findButtonByText(wrapper, "跳過這題").trigger("click");
     await flushPromises();
 
-    const draft = saveAttemptDraft.mock.calls.at(-1)?.[1] as AttemptDraft;
-    expect(draft).toMatchObject({ keystrokeCount: 1 });
+    expect(completeAttempt).toHaveBeenCalledTimes(1);
+    expect(saveAttemptDraft).toHaveBeenCalledTimes(1);
+
+    const deferred = createDeferred<void>();
+    saveAttemptDraft.mockImplementationOnce(() => deferred.promise);
+
+    await wrapper.get(".next-exercise-button").trigger("click");
+    await flushPromises();
+
+    // goToNext()'s own flush() retried the still-dirty Draft: that retry is
+    // in flight, so the session must not have advanced yet.
+    expect(saveAttemptDraft).toHaveBeenCalledTimes(2);
+    expect(saveSession).not.toHaveBeenCalled();
+    expect(wrapper.text()).not.toContain("第二題");
+
+    deferred.resolve();
+    await flushPromises();
+
+    expect(saveSession).toHaveBeenCalledTimes(1);
+    expect(wrapper.text()).toContain("第二題");
   });
 
-  it("flushes the pending draft when the document becomes hidden", async () => {
+  it("waits for the pending draft before leaving the route", async () => {
+    getPublishedExercise.mockResolvedValue(exercise());
+    const { wrapper, router } = await mountPracticePage();
+    await flushPromises();
+
+    const deferred = createDeferred<void>();
+    saveAttemptDraft.mockImplementationOnce(() => deferred.promise);
+    getVimEditor(wrapper).vm.$emit("keyPressed", "d");
+
+    const navigationPromise = router.push("/elsewhere");
+    let navigationResolved = false;
+    void navigationPromise.then(() => {
+      navigationResolved = true;
+    });
+
+    // Give the route guard and Draft save every chance to run. This is safe
+    // to wait out fully (not just a couple of microtask ticks): while the
+    // guard is genuinely blocked on `deferred`, nothing here can make
+    // navigationResolved become true early, since `deferred` only settles
+    // when this test calls deferred.resolve() below.
+    await flushPromises();
+
+    expect(saveAttemptDraft).toHaveBeenCalledTimes(1);
+    expect(navigationResolved).toBe(false);
+    expect(router.currentRoute.value.name).toBe("practice");
+
+    deferred.resolve();
+    await navigationPromise;
+    await flushPromises();
+
+    expect(navigationResolved).toBe(true);
+    expect(router.currentRoute.value.name).toBe("elsewhere");
+    const savedDraft = saveAttemptDraft.mock.calls.at(-1)?.[1] as AttemptDraft;
+    expect(savedDraft).toMatchObject({ keystrokeCount: 1 });
+  });
+
+  it("flushes the pending draft immediately when the document becomes hidden", async () => {
     getPublishedExercise.mockResolvedValue(exercise());
     const { wrapper } = await mountPracticePage();
     await flushPromises();
 
+    const deferred = createDeferred<void>();
+    saveAttemptDraft.mockImplementationOnce(() => deferred.promise);
     getVimEditor(wrapper).vm.$emit("keyPressed", "d");
 
     const visibilityStateSpy = vi
       .spyOn(document, "visibilityState", "get")
       .mockReturnValue("hidden");
     try {
-      document.dispatchEvent(new Event("visibilitychange"));
-      await flushPromises();
+      expect(saveAttemptDraft).not.toHaveBeenCalled();
 
-      const draft = saveAttemptDraft.mock.calls.at(-1)?.[1] as AttemptDraft;
-      expect(draft).toMatchObject({ keystrokeCount: 1 });
+      document.dispatchEvent(new Event("visibilitychange"));
+
+      // No await here: handleVisibilityChange() calls flush() synchronously,
+      // and flush() enters runLoop() far enough to invoke saveAttemptDraft()
+      // before yielding, without waiting for the scheduler's own queued
+      // microtask.
+      expect(saveAttemptDraft).toHaveBeenCalledTimes(1);
+      const savedDraft = saveAttemptDraft.mock.calls[0]?.[1] as AttemptDraft;
+      expect(savedDraft).toMatchObject({ keystrokeCount: 1 });
+
+      deferred.resolve();
+      await flushPromises();
     } finally {
       visibilityStateSpy.mockRestore();
     }
