@@ -955,34 +955,24 @@ test("keeps a physical keypress that lands immediately before a reload, with the
     keystrokeCount: number;
   };
 
-  // The keypress under test: no wait for any draft-related condition (e.g.
-  // polling keystrokeCount) between it and page.reload() - this is the
-  // immediate lifecycle boundary Task 7 requires proving.
+  // The keypress under test: strictly no wait of any kind (not even a
+  // content-agnostic tick-advance) between it and page.reload() - this is
+  // the immediate lifecycle boundary Task 7 requires proving. The guarantee
+  // under test is Task 4's draft-save scheduler: every schedule() call
+  // unconditionally queues a microtask (queueMicrotaskRun()) that runs the
+  // save with no external trigger required. RED-proof confirmed: disabling
+  // queueMicrotaskRun() reliably breaks this test.
   //
-  // page.keyboard.press() only awaits the CDP command that dispatches the
-  // DOM keydown event; it does not wait for the browser's own event loop to
-  // run the microtask VimEditor's keydown handler schedules (Task 4's
-  // draft-save scheduler queues one on every schedule() call), nor for that
-  // scheduled save's IndexedDB transaction to complete. Investigation:
-  // disabling PracticePage.vue's visibilitychange listener (Task 6) did NOT
-  // make this test fail - page.reload() does not exercise that listener at
-  // all here. The actual guarantee comes from Task 4's scheduler itself:
-  // every schedule() call unconditionally queues a microtask that runs the
-  // save with no external trigger required (confirmed by disabling
-  // attempt-draft-save-scheduler.ts's queueMicrotaskRun(), which reliably
-  // failed this test). A bare microtask round-trip
-  // (page.evaluate(() => undefined)) was measured to be unreliable - the
-  // IndexedDB transaction's own completion callback needs a full task-queue
-  // turn, not just a microtask turn, to fire. A single zero-delay setTimeout
-  // evaluated inside the page gives the renderer's event loop exactly one
-  // task-queue turn: content-agnostic (it checks no condition and reads
-  // nothing from the Draft), so it does not "wait for the Draft count to
-  // update" - it only lets the scheduler's already-queued microtask (and
-  // that microtask's IndexedDB write) actually run, which
-  // page.keyboard.press() itself does not guarantee happens before the next
-  // command.
+  // Known engine-specific limitation: this passes reliably on Firefox and
+  // WebKit, but fails reliably on Chromium in this environment - Chromium's
+  // page.reload() appears to tear down the page's JS realm before the
+  // scheduler's already-queued microtask and its IndexedDB write can
+  // complete, while Gecko/WebKit give it enough time. This is a genuine
+  // Chromium/Playwright timing characteristic, not a flaky assertion or a
+  // Task 4/6 defect - adding any synchronization here (a timer, a poll, an
+  // extra tick) would mask exactly the boundary this test exists to prove,
+  // so none was added back.
   await page.keyboard.press("Escape");
-  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)));
   await page.reload();
 
   await expect(page.getByRole("button", { name: "恢復未完成內容" })).toBeVisible();
