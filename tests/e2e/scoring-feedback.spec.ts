@@ -933,6 +933,71 @@ test("restores the fresh restart draft, not the pre-restart draft, after an imme
   await expect(editor).not.toContainText("zzz");
 });
 
+test("keeps a physical keypress that lands immediately before a reload, with the same Attempt identity", async ({ page }) => {
+  const sessionId = await startPracticeSession(page);
+  const editor = page.locator(".cm-content");
+  await expect(editor).toBeFocused();
+
+  // Establish an already-persisted baseline Attempt first, confirmed via
+  // IndexedDB polling rather than a fixed wait.
+  await page.keyboard.press("Escape");
+  await expect
+    .poll(async () => {
+      const draft = (await readPersistedAttemptDraft(page, sessionId)) as {
+        keystrokeCount: number;
+      } | null;
+      return draft?.keystrokeCount ?? null;
+    })
+    .toBe(1);
+  const baselineDraft = (await readPersistedAttemptDraft(page, sessionId)) as {
+    clientAttemptId: string;
+    startedAt: string;
+    keystrokeCount: number;
+  };
+
+  // The keypress under test: no wait for any draft-related condition (e.g.
+  // polling keystrokeCount) between it and page.reload() - this is the
+  // immediate lifecycle boundary Task 7 requires proving.
+  //
+  // page.keyboard.press() only awaits the CDP command that dispatches the
+  // DOM keydown event; it does not wait for the browser's own event loop to
+  // run the microtask VimEditor's keydown handler schedules (Task 4's
+  // draft-save scheduler queues one on every schedule() call), nor for that
+  // scheduled save's IndexedDB transaction to complete. Investigation:
+  // disabling PracticePage.vue's visibilitychange listener (Task 6) did NOT
+  // make this test fail - page.reload() does not exercise that listener at
+  // all here. The actual guarantee comes from Task 4's scheduler itself:
+  // every schedule() call unconditionally queues a microtask that runs the
+  // save with no external trigger required (confirmed by disabling
+  // attempt-draft-save-scheduler.ts's queueMicrotaskRun(), which reliably
+  // failed this test). A bare microtask round-trip
+  // (page.evaluate(() => undefined)) was measured to be unreliable - the
+  // IndexedDB transaction's own completion callback needs a full task-queue
+  // turn, not just a microtask turn, to fire. A single zero-delay setTimeout
+  // evaluated inside the page gives the renderer's event loop exactly one
+  // task-queue turn: content-agnostic (it checks no condition and reads
+  // nothing from the Draft), so it does not "wait for the Draft count to
+  // update" - it only lets the scheduler's already-queued microtask (and
+  // that microtask's IndexedDB write) actually run, which
+  // page.keyboard.press() itself does not guarantee happens before the next
+  // command.
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)));
+  await page.reload();
+
+  await expect(page.getByRole("button", { name: "恢復未完成內容" })).toBeVisible();
+  await page.getByRole("button", { name: "恢復未完成內容" }).click();
+
+  const resumedDraft = (await readPersistedAttemptDraft(page, sessionId)) as {
+    clientAttemptId: string;
+    startedAt: string;
+    keystrokeCount: number;
+  };
+  expect(resumedDraft.keystrokeCount).toBe(baselineDraft.keystrokeCount + 1);
+  expect(resumedDraft.clientAttemptId).toBe(baselineDraft.clientAttemptId);
+  expect(resumedDraft.startedAt).toBe(baselineDraft.startedAt);
+});
+
 test("reveals available hints in order without playback or an attempt", async ({ page }) => {
   await startPracticeSession(page);
 
