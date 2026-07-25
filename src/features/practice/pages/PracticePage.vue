@@ -52,7 +52,10 @@ import {
   type FreshAttemptState,
 } from "../services/fresh-attempt-service";
 import { scrollFeedbackIntoView } from "../services/feedback-scroll-service";
-import { advancePracticeSession } from "../services/practice-session-service";
+import {
+  abandonPracticeSession,
+  advancePracticeSession,
+} from "../services/practice-session-service";
 
 const route = useRoute();
 const router = useRouter();
@@ -811,8 +814,8 @@ async function abandonSession(): Promise<void> {
       );
     }
     const state = requireResumeState();
-    practiceStore.restoreSession(state.session, state.attemptDraft);
-    const abandonedSession = practiceStore.abandonSession(
+    const abandonedSession = abandonPracticeSession(
+      state.session,
       new Date().toISOString(),
     );
 
@@ -820,7 +823,10 @@ async function abandonSession(): Promise<void> {
     // PracticeSession transition (status -> "abandoned"), which a
     // Draft-only tombstone cannot represent. If save() fails below, the
     // session stays active and its pre-existing Draft - untouched by the
-    // failed write - remains recoverable through the normal path.
+    // failed write - remains recoverable through the normal path. The Pinia
+    // store is likewise left untouched until the save succeeds: mutating it
+    // first would make the UI believe the session was abandoned even when
+    // it durably was not.
     await requireRepository().save(abandonedSession, null);
     practiceStore.resetSession();
     persistedState.value = null;

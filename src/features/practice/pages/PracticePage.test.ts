@@ -52,6 +52,7 @@ vi.mock("../services/attempt-completion-service", () => ({
 }));
 
 import { usePracticeStore } from "../../../stores/practice-store";
+import ResumeSessionDialog from "../components/ResumeSessionDialog.vue";
 import PracticePage from "./PracticePage.vue";
 
 function createDeferred<T>(): {
@@ -832,6 +833,10 @@ describe("PracticePage scoring telemetry integration", () => {
     const { wrapper } = await mountPracticePage({ seedSession: false });
     await flushPromises();
 
+    const store = usePracticeStore();
+    const sessionBefore = structuredClone(store.session);
+    const draftBefore = structuredClone(store.attemptDraft);
+
     saveSession.mockRejectedValueOnce(new Error("indexeddb write failed"));
 
     await findButtonByText(wrapper, "放棄題組").trigger("click");
@@ -844,6 +849,7 @@ describe("PracticePage scoring telemetry integration", () => {
     ];
     expect(persistedSessionArg.status).toBe("abandoned");
     expect(wrapper.text()).toContain("無法更新本機練習進度，請稍後再試。");
+    expect(wrapper.text()).not.toContain("已放棄這個題組");
     // No Draft-only tombstone is ever written for abandon: a failed save()
     // must leave nothing behind that a later reload could misapply against
     // the pre-existing Draft still durable in IndexedDB.
@@ -851,6 +857,56 @@ describe("PracticePage scoring telemetry integration", () => {
     expect(
       localStorage.getItem("vimforge:draft-recovery:session-1"),
     ).toBeNull();
+    // The in-memory application state must be just as untouched as the
+    // durable state: abandonSession() must not mutate the Pinia store
+    // before the IndexedDB save has actually succeeded, or a failed save
+    // leaves the UI believing the session was abandoned even though it
+    // durably was not.
+    expect(store.session).toEqual(sessionBefore);
+    expect(store.attemptDraft).toEqual(draftBefore);
+    expect(wrapper.findComponent(ResumeSessionDialog).exists()).toBe(
+      true,
+    );
+  });
+
+  it("clears the local session and Draft only after the abandoned session's save() resolves", async () => {
+    const persistedDraft = attemptDraft({ keystrokeCount: 3 });
+    getResumeState.mockResolvedValue({
+      session: session(),
+      attemptDraft: persistedDraft,
+    });
+    getPublishedExercise.mockResolvedValue(exercise());
+
+    const { wrapper } = await mountPracticePage({ seedSession: false });
+    await flushPromises();
+
+    const store = usePracticeStore();
+    const sessionBefore = structuredClone(store.session);
+    const draftBefore = structuredClone(store.attemptDraft);
+
+    const deferred = createDeferred<void>();
+    saveSession.mockImplementationOnce(() => deferred.promise);
+
+    await findButtonByText(wrapper, "放棄題組").trigger("click");
+    await flushPromises();
+
+    // The save is still pending: local state must not have moved yet.
+    expect(store.session).toEqual(sessionBefore);
+    expect(store.attemptDraft).toEqual(draftBefore);
+    expect(wrapper.findComponent(ResumeSessionDialog).exists()).toBe(
+      true,
+    );
+    expect(wrapper.text()).not.toContain("已放棄這個題組");
+
+    deferred.resolve();
+    await flushPromises();
+
+    expect(store.session).toBeNull();
+    expect(store.attemptDraft).toBeNull();
+    expect(wrapper.findComponent(ResumeSessionDialog).exists()).toBe(
+      false,
+    );
+    expect(wrapper.text()).toContain("已放棄這個題組");
   });
 
   it("persists the abandoned session on success with no stale Draft journal entry left behind", async () => {
