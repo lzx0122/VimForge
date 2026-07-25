@@ -361,6 +361,17 @@ describe("PracticePage scoring telemetry integration", () => {
     ).toBe("normal");
   });
 
+  function seedJournalEntry(
+    sessionIdValue: string,
+    operationId: string,
+    value: AttemptDraft | null,
+  ): void {
+    localStorage.setItem(
+      `vimforge:draft-recovery:${sessionIdValue}`,
+      JSON.stringify({ sessionId: sessionIdValue, operationId, value }),
+    );
+  }
+
   it("recovers a Draft from the recovery journal that IndexedDB missed, persists it durably, and clears the journal", async () => {
     const staleDraft = attemptDraft({ keystrokeCount: 1 });
     const recoveredDraft = attemptDraft({ keystrokeCount: 5 });
@@ -369,10 +380,7 @@ describe("PracticePage scoring telemetry integration", () => {
       attemptDraft: staleDraft,
     });
     getPublishedExercise.mockResolvedValue(exercise());
-    localStorage.setItem(
-      "vimforge:draft-recovery:session-1",
-      JSON.stringify({ sessionId: "session-1", draft: recoveredDraft }),
-    );
+    seedJournalEntry("session-1", "op-1", recoveredDraft);
 
     await mountPracticePage({ seedSession: false });
     await flushPromises();
@@ -394,10 +402,7 @@ describe("PracticePage scoring telemetry integration", () => {
       attemptDraft: staleDraft,
     });
     getPublishedExercise.mockResolvedValue(exercise());
-    localStorage.setItem(
-      "vimforge:draft-recovery:session-1",
-      JSON.stringify({ sessionId: "session-1", draft: recoveredDraft }),
-    );
+    seedJournalEntry("session-1", "op-1", recoveredDraft);
     saveAttemptDraft.mockRejectedValueOnce(new Error("disk full"));
 
     await mountPracticePage({ seedSession: false });
@@ -408,29 +413,103 @@ describe("PracticePage scoring telemetry integration", () => {
     ).not.toBeNull();
   });
 
-  it("does not touch the recovery journal when it belongs to a different Attempt than IndexedDB's Draft", async () => {
+  it("recovers a pending Retry (a different clientAttemptId) even though IndexedDB still holds the previous Attempt", async () => {
     const persistedDraft = attemptDraft({
-      clientAttemptId: "attempt-current",
-      keystrokeCount: 1,
+      clientAttemptId: "attempt-original",
+      keystrokeCount: 40,
     });
-    const staleJournalDraft = attemptDraft({
-      clientAttemptId: "attempt-superseded",
-      keystrokeCount: 99,
+    const pendingRetryDraft = attemptDraft({
+      clientAttemptId: "attempt-retry",
+      keystrokeCount: 0,
+      mistakeCount: 0,
+      resetCount: 0,
     });
     getResumeState.mockResolvedValue({
       session: session(),
       attemptDraft: persistedDraft,
     });
     getPublishedExercise.mockResolvedValue(exercise());
-    localStorage.setItem(
-      "vimforge:draft-recovery:session-1",
-      JSON.stringify({ sessionId: "session-1", draft: staleJournalDraft }),
-    );
+    seedJournalEntry("session-1", "op-retry", pendingRetryDraft);
 
     await mountPracticePage({ seedSession: false });
     await flushPromises();
 
-    expect(saveAttemptDraft).not.toHaveBeenCalled();
+    expect(saveAttemptDraft).toHaveBeenCalledWith(
+      "session-1",
+      expect.objectContaining({ clientAttemptId: "attempt-retry" }),
+    );
+    expect(
+      localStorage.getItem("vimforge:draft-recovery:session-1"),
+    ).toBeNull();
+  });
+
+  it("recovers a pending Reset/Abandon tombstone (a null value) even though IndexedDB still holds the previous Draft", async () => {
+    const persistedDraft = attemptDraft({ keystrokeCount: 7 });
+    getResumeState.mockResolvedValue({
+      session: session(),
+      attemptDraft: persistedDraft,
+    });
+    getPublishedExercise.mockResolvedValue(exercise());
+    seedJournalEntry("session-1", "op-tombstone", null);
+
+    await mountPracticePage({ seedSession: false });
+    await flushPromises();
+
+    expect(saveAttemptDraft).toHaveBeenCalledWith("session-1", null);
+    expect(
+      localStorage.getItem("vimforge:draft-recovery:session-1"),
+    ).toBeNull();
+  });
+
+  it("restart writes its recovery journal entry before persisting to IndexedDB, not after", async () => {
+    getPublishedExercise.mockResolvedValue(exercise());
+    const { wrapper } = await mountPracticePage();
+    await flushPromises();
+
+    const deferred = createDeferred<void>();
+    saveAttemptDraft.mockImplementationOnce(() => deferred.promise);
+
+    await wrapper.get(".practice-editor-restart").trigger("click");
+    await flushPromises();
+
+    // The IndexedDB write is still pending, but the journal must already
+    // reflect the restarted Draft: it was written strictly before the
+    // persist call, not after.
+    const journalRaw = localStorage.getItem("vimforge:draft-recovery:session-1");
+    expect(journalRaw).not.toBeNull();
+    const journalEntry = JSON.parse(journalRaw ?? "null") as {
+      value: { resetCount: number } | null;
+    };
+    expect(journalEntry.value?.resetCount).toBe(1);
+
+    deferred.resolve();
+    await flushPromises();
+  });
+
+  it("resetAttempt writes a tombstone to the recovery journal before persisting, and clears it only after success", async () => {
+    getPublishedExercise.mockResolvedValue(exercise());
+    getResumeState.mockResolvedValue({
+      session: session(),
+      attemptDraft: attemptDraft({ keystrokeCount: 2 }),
+    });
+
+    const { wrapper } = await mountPracticePage({ seedSession: false });
+    await flushPromises();
+
+    const deferred = createDeferred<void>();
+    saveAttemptDraft.mockImplementationOnce(() => deferred.promise);
+
+    await wrapper.get('[data-action="reset-attempt"]').trigger("click");
+    await flushPromises();
+
+    const journalRaw = localStorage.getItem("vimforge:draft-recovery:session-1");
+    expect(journalRaw).not.toBeNull();
+    const journalEntry = JSON.parse(journalRaw ?? "null") as { value: unknown };
+    expect(journalEntry.value).toBeNull();
+
+    deferred.resolve();
+    await flushPromises();
+
     expect(
       localStorage.getItem("vimforge:draft-recovery:session-1"),
     ).toBeNull();

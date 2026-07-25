@@ -35,9 +35,9 @@ import { useAttemptElapsedTime } from "../composables/use-attempt-elapsed-time";
 import { AttemptCompletionService } from "../services/attempt-completion-service";
 import { recordFailedCheck } from "../services/attempt-mistake-service";
 import {
-  clearDraftRecoveryJournal,
-  readDraftRecoveryJournal,
-  selectRecoveryDraft,
+  clearDraftRecoveryJournalIfCurrent,
+  persistDraftWithRecoveryJournal,
+  reconcileDraftRecoveryJournal,
   writeDraftRecoveryJournal,
 } from "../services/draft-recovery-journal";
 import {
@@ -112,6 +112,7 @@ let repository: SessionRepository | null = null;
 let exerciseRepository: ExerciseRepository | null = null;
 let isUnmounted = false;
 let autoEvaluationQueued = false;
+let pendingDraftJournalOperationId: string | null = null;
 
 const restoredAttemptContent = computed(
   () => practiceStore.attemptDraft?.currentContent ?? null,
@@ -213,7 +214,18 @@ const draftSaveScheduler = createAttemptDraftSaveScheduler({
       return;
     }
 
+    // Captured before the await: scheduleDraftSave() always writes the
+    // journal (with a fresh operationId) strictly before scheduling this
+    // save, so this is the operation whose value buildAttemptDraft() is
+    // about to persist. If a newer schedule() call lands the journal again
+    // while this write is in flight (the scheduler coalesces concurrent
+    // schedule() calls), clearDraftRecoveryJournalIfCurrent() below is a
+    // no-op for it - only that newer save's own completion may clear it.
+    const operationId = pendingDraftJournalOperationId;
     await repository.saveAttemptDraft(sessionId.value, buildAttemptDraft());
+    if (operationId !== null) {
+      clearDraftRecoveryJournalIfCurrent(sessionId.value, operationId);
+    }
   },
   onError: (error: unknown) => {
     reportActionError("practice.save-draft", error);
@@ -227,9 +239,13 @@ function scheduleDraftSave(): void {
 
   const draft = buildAttemptDraft();
   practiceStore.saveAttemptDraft(draft);
-  // Synchronous, same-task write: see draft-recovery-journal.ts for why
-  // this is required in addition to draftSaveScheduler.schedule() below.
-  writeDraftRecoveryJournal(sessionId.value, draft);
+  // Synchronous, same-task write, strictly before scheduling the async
+  // IndexedDB save: see draft-recovery-journal.ts for why this ordering is
+  // required.
+  pendingDraftJournalOperationId = writeDraftRecoveryJournal(
+    sessionId.value,
+    draft,
+  ).operationId;
   draftSaveScheduler.schedule();
 }
 
@@ -404,9 +420,10 @@ async function resumeSession(): Promise<void> {
 async function resetAttempt(): Promise<void> {
   try {
     const state = requireResumeState();
-    await requireRepository().saveAttemptDraft(state.session.id, null);
+    await persistDraftWithRecoveryJournal(state.session.id, null, () =>
+      requireRepository().saveAttemptDraft(state.session.id, null),
+    );
     practiceStore.restoreSession(state.session, null);
-    clearDraftRecoveryJournal(state.session.id);
     persistedState.value = {
       session: state.session,
       attemptDraft: null,
@@ -529,11 +546,12 @@ async function startFreshAttempt(message: string): Promise<void> {
   isSavingOutcome.value = true;
   try {
     await draftSaveScheduler.flush();
-    await requireRepository().saveAttemptDraft(sessionId.value, freshDraft);
+    await persistDraftWithRecoveryJournal(sessionId.value, freshDraft, () =>
+      requireRepository().saveAttemptDraft(sessionId.value, freshDraft),
+    );
 
     applyFreshAttempt(activeExercise, fresh);
     practiceStore.saveAttemptDraft(freshDraft);
-    writeDraftRecoveryJournal(sessionId.value, freshDraft);
     statusMessage.value = message;
     loadError.value = null;
   } catch (error: unknown) {
@@ -564,11 +582,12 @@ async function restartExercise(): Promise<void> {
     });
     const restartedDraft = buildFreshAttemptDraft(activeExercise, restarted);
 
-    await requireRepository().saveAttemptDraft(sessionId.value, restartedDraft);
+    await persistDraftWithRecoveryJournal(sessionId.value, restartedDraft, () =>
+      requireRepository().saveAttemptDraft(sessionId.value, restartedDraft),
+    );
     practiceStore.saveAttemptDraft(restartedDraft);
 
     applyFreshAttempt(activeExercise, restarted);
-    writeDraftRecoveryJournal(sessionId.value, restartedDraft);
     statusMessage.value = "已重新開始本題。";
     loadError.value = null;
   } catch (error: unknown) {
@@ -651,14 +670,18 @@ async function recordOutcome(completed: boolean): Promise<void> {
       exerciseIds: [...activeSession.exerciseIds],
       selectedSkillIds: [...activeSession.selectedSkillIds],
     } satisfies PracticeSession;
+    const { operationId: draftJournalOperationId } = writeDraftRecoveryJournal(
+      activeSession.id,
+      null,
+    );
     const completionService = new AttemptCompletionService(requireDatabase());
     const completionResult = await completionService.complete({
       attempt: outcome.attempt,
       exercise: activeExercise,
       session: sessionSnapshot,
     });
+    clearDraftRecoveryJournalIfCurrent(activeSession.id, draftJournalOperationId);
     practiceStore.discardAttemptDraft();
-    clearDraftRecoveryJournal(activeSession.id);
 
     const primarySkillId =
       activeExercise.skills.find((skill) => skill.primary)?.skillId ??
@@ -780,9 +803,10 @@ async function abandonSession(): Promise<void> {
       new Date().toISOString(),
     );
 
-    await requireRepository().save(abandonedSession, null);
+    await persistDraftWithRecoveryJournal(abandonedSession.id, null, () =>
+      requireRepository().save(abandonedSession, null),
+    );
     practiceStore.resetSession();
-    clearDraftRecoveryJournal(abandonedSession.id);
     persistedState.value = null;
     isDialogOpen.value = false;
     statusMessage.value =
@@ -817,20 +841,13 @@ onMounted(async () => {
     let state = await repository.getResumeState(sessionId.value);
 
     if (state !== null) {
-      const journalDraft = readDraftRecoveryJournal(sessionId.value);
-      if (journalDraft !== null) {
-        const recoveredDraft = selectRecoveryDraft(
-          state.attemptDraft,
-          journalDraft,
-        );
-        if (recoveredDraft !== state.attemptDraft) {
-          await repository.saveAttemptDraft(sessionId.value, recoveredDraft);
-          state = { ...state, attemptDraft: recoveredDraft };
-        }
-        // Either the journal just landed durably in IndexedDB above, or
-        // IndexedDB already held an equal-or-newer Draft: either way it is
-        // now safe to supersede.
-        clearDraftRecoveryJournal(sessionId.value);
+      const openedRepository = repository;
+      const reconciliation = await reconcileDraftRecoveryJournal(
+        sessionId.value,
+        (value) => openedRepository.saveAttemptDraft(sessionId.value, value),
+      );
+      if (reconciliation.recovered) {
+        state = { ...state, attemptDraft: reconciliation.value };
       }
     }
 
