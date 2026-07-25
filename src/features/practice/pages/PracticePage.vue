@@ -18,6 +18,7 @@ import {
 import { reportError } from "../../../infrastructure/monitoring/error-reporter";
 import { SupabaseExerciseRepository } from "../../../infrastructure/supabase/supabase-exercise-repository";
 import { usePracticeStore } from "../../../stores/practice-store";
+import { useSettingsStore } from "../../../stores/settings-store";
 import { useSyncStore } from "../../../stores/sync-store";
 import type {
   AttemptDraft,
@@ -60,6 +61,7 @@ import {
 const route = useRoute();
 const router = useRouter();
 const practiceStore = usePracticeStore();
+const settingsStore = useSettingsStore();
 const syncStore = useSyncStore();
 const sessionId = computed(() => String(route.params.sessionId));
 const isLoading = ref(true);
@@ -972,8 +974,8 @@ onUnmounted(() => {
           :language="exercise.language"
           :cursor-target="exercise.completionRule.cursorMatch"
           :read-only="isEditorLocked"
-          show-line-numbers
-          show-keypresses
+          :editor-font-size="settingsStore.editorFontSize"
+          :show-line-numbers="settingsStore.showLineNumbers"
           auto-focus
           @content-changed="updateContent"
           @cursor-changed="updateCursor"

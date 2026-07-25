@@ -13,7 +13,7 @@ export interface VimEditorProps {
   initialCursor: CursorPosition;
   language: SupportedLanguage;
   showLineNumbers: boolean;
-  showKeypresses: boolean;
+  editorFontSize: number;
   autoFocus?: boolean;
   readOnly?: boolean;
   cursorTarget?: CursorMatchRule;

@@ -83,7 +83,7 @@ describe("VimForge CodeMirror theme", () => {
         initialCursor: { line: 1, column: 9 },
         language: "typescript",
         showLineNumbers: true,
-        showKeypresses: true,
+        editorFontSize: 16,
         autoFocus: true,
       },
       attachTo: document.body,
