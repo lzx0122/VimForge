@@ -205,6 +205,37 @@ describe("createAttemptDraftSaveScheduler", () => {
     expect(flushResolved).toBe(true);
   });
 
+  it("flush() resolves to \"completed\" when the save succeeds", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    const onError = vi.fn();
+    const scheduler = createAttemptDraftSaveScheduler({ save, onError });
+
+    scheduler.schedule();
+
+    await expect(scheduler.flush()).resolves.toBe("completed");
+  });
+
+  it("flush() resolves to \"failed\" when the save fails, so callers that require a successful flush can detect it", async () => {
+    const error = new Error("save failed");
+    const save = vi.fn().mockRejectedValueOnce(error);
+    const onError = vi.fn();
+    const scheduler = createAttemptDraftSaveScheduler({ save, onError });
+
+    scheduler.schedule();
+
+    await expect(scheduler.flush()).resolves.toBe("failed");
+    expect(onError).toHaveBeenCalledWith(error);
+  });
+
+  it("flush() resolves to \"completed\" when there is nothing pending", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    const onError = vi.fn();
+    const scheduler = createAttemptDraftSaveScheduler({ save, onError });
+
+    await expect(scheduler.flush()).resolves.toBe("completed");
+    expect(save).not.toHaveBeenCalled();
+  });
+
   it("lets the save callback read state current at execution time, not at schedule time", async () => {
     let latestValue = "initial";
     const observedValues: string[] = [];

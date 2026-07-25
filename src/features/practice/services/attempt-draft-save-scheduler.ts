@@ -1,6 +1,8 @@
+export type FlushResult = "completed" | "failed";
+
 export interface AttemptDraftSaveScheduler {
   schedule(): void;
-  flush(): Promise<void>;
+  flush(): Promise<FlushResult>;
   dispose(): Promise<void>;
 }
 
@@ -76,19 +78,19 @@ export function createAttemptDraftSaveScheduler(options: {
     queueMicrotaskRun();
   }
 
-  async function flush(): Promise<void> {
+  async function flush(): Promise<FlushResult> {
     for (;;) {
       if (runPromise !== null) {
         const result = await runPromise;
         if (result === "failed") {
-          return;
+          return "failed";
         }
         continue;
       }
       if (dirty) {
         const result = await runLoop();
         if (result === "failed") {
-          return;
+          return "failed";
         }
         continue;
       }
@@ -96,7 +98,7 @@ export function createAttemptDraftSaveScheduler(options: {
         await Promise.resolve();
         continue;
       }
-      return;
+      return "completed";
     }
   }
 

@@ -703,7 +703,37 @@ describe("PracticePage scoring telemetry integration", () => {
     expect(completeAttempt).toHaveBeenCalledTimes(1);
   });
 
-  it("goToNext flushes any still-pending Draft persistence before advancing the session", async () => {
+  it("recordOutcome aborts before completing the Attempt when its own Draft flush fails, leaving the Draft recoverable", async () => {
+    getPublishedExercise.mockResolvedValueOnce(exercise());
+    const { wrapper } = await mountPracticePage({
+      exerciseIds: ["exercise-1"],
+    });
+    await flushPromises();
+
+    getVimEditor(wrapper).vm.$emit("keyPressed", "d");
+
+    // recordOutcome() must flush the pending Draft save first and require
+    // it to succeed: proceeding to complete() while a Draft write is
+    // unconfirmed is exactly the data-loss shape the recovery-journal
+    // tombstone fix closed off (a completed/discarded Draft can no longer be
+    // reconstructed from a failed save). So a failed flush must abort
+    // outcome recording entirely, not merely be reported.
+    saveAttemptDraft.mockRejectedValueOnce(new Error("network blip"));
+
+    await findButtonByText(wrapper, "跳過這題").trigger("click");
+    await flushPromises();
+
+    expect(saveAttemptDraft).toHaveBeenCalledTimes(1);
+    expect(completeAttempt).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain("無法更新本機練習進度，請稍後再試。");
+
+    // The failed save left the scheduler's own retry state dirty. Unmount
+    // so this instance's visibilitychange listener and pending dirty state
+    // cannot leak into a later test that dispatches that event globally.
+    wrapper.unmount();
+  });
+
+  it("goToNext still flushes the Draft scheduler defensively and advances normally once outcome recording succeeds", async () => {
     getPublishedExercise
       .mockResolvedValueOnce(exercise())
       .mockResolvedValueOnce(
@@ -720,39 +750,134 @@ describe("PracticePage scoring telemetry integration", () => {
 
     getVimEditor(wrapper).vm.$emit("keyPressed", "d");
 
-    // The Draft save recordOutcome() flushes before completing the Attempt
-    // fails. flush() reports the failure but does not throw, so recordOutcome
-    // still proceeds and shows feedback - leaving the scheduler genuinely
-    // dirty by the time the learner reaches the "next exercise" step. This
-    // is the only realistic public path that leaves pending Draft
-    // persistence behind feedback, since every editor event that could
-    // otherwise re-dirty the scheduler is blocked by isEditorLocked for the
-    // whole outcome-recording-through-feedback window.
-    saveAttemptDraft.mockRejectedValueOnce(new Error("network blip"));
-
     await findButtonByText(wrapper, "跳過這題").trigger("click");
     await flushPromises();
 
     expect(completeAttempt).toHaveBeenCalledTimes(1);
     expect(saveAttemptDraft).toHaveBeenCalledTimes(1);
 
-    const deferred = createDeferred<void>();
-    saveAttemptDraft.mockImplementationOnce(() => deferred.promise);
-
+    // recordOutcome()'s own flush already required success before
+    // completing, and feedback showing locks the editor, so no further
+    // Draft mutation is possible before "next" is clicked: the scheduler is
+    // already clean here. goToNext()'s own flush() call is still made
+    // defensively; this proves that call is harmless and advancing still
+    // proceeds normally.
     await wrapper.get(".next-exercise-button").trigger("click");
     await flushPromises();
 
-    // goToNext()'s own flush() retried the still-dirty Draft: that retry is
-    // in flight, so the session must not have advanced yet.
-    expect(saveAttemptDraft).toHaveBeenCalledTimes(2);
-    expect(saveSession).not.toHaveBeenCalled();
-    expect(wrapper.text()).not.toContain("第二題");
+    expect(saveAttemptDraft).toHaveBeenCalledTimes(1);
+    expect(saveSession).toHaveBeenCalledTimes(1);
+    expect(wrapper.text()).toContain("第二題");
+  });
 
-    deferred.resolve();
+  it("does not write a Draft-only tombstone for completion: a failed complete() leaves the pre-existing Draft recoverable", async () => {
+    getPublishedExercise.mockResolvedValueOnce(exercise());
+    const { wrapper } = await mountPracticePage();
+    await flushPromises();
+
+    getVimEditor(wrapper).vm.$emit("keyPressed", "d");
+    await flushPromises();
+
+    // The scheduled Draft save already succeeded and cleared its own
+    // journal entry above. Completion touches far more than the Draft (the
+    // Attempt, mastery, review, and learning-outcome projections, committed
+    // atomically by complete()), so recordOutcome must never write a
+    // Draft-only tombstone around it: if it did, a failed complete() below
+    // would leave that tombstone in place, and the next reload would delete
+    // this still-valid Draft even though nothing was actually completed.
+    expect(
+      localStorage.getItem("vimforge:draft-recovery:session-1"),
+    ).toBeNull();
+
+    completeAttempt.mockRejectedValueOnce(new Error("indexeddb transaction aborted"));
+
+    await findButtonByText(wrapper, "跳過這題").trigger("click");
+    await flushPromises();
+
+    expect(completeAttempt).toHaveBeenCalledTimes(1);
+    expect(wrapper.text()).toContain("無法更新本機練習進度，請稍後再試。");
+    expect(usePracticeStore().attemptDraft).not.toBeNull();
+    expect(saveAttemptDraft).not.toHaveBeenCalledWith("session-1", null);
+    expect(
+      localStorage.getItem("vimforge:draft-recovery:session-1"),
+    ).toBeNull();
+  });
+
+  it("completes and discards the Draft atomically on success, leaving no stale journal entry behind", async () => {
+    getPublishedExercise.mockResolvedValueOnce(exercise());
+    const { wrapper } = await mountPracticePage();
+    await flushPromises();
+
+    getVimEditor(wrapper).vm.$emit("keyPressed", "d");
+
+    await findButtonByText(wrapper, "跳過這題").trigger("click");
+    await flushPromises();
+
+    expect(completeAttempt).toHaveBeenCalledTimes(1);
+    expect(usePracticeStore().attemptDraft).toBeNull();
+    expect(saveAttemptDraft).not.toHaveBeenCalledWith("session-1", null);
+    expect(
+      localStorage.getItem("vimforge:draft-recovery:session-1"),
+    ).toBeNull();
+  });
+
+  it("does not write a Draft-only tombstone for abandon: a failed save() leaves the session active and the Draft recoverable", async () => {
+    const persistedDraft = attemptDraft({ keystrokeCount: 3 });
+    getResumeState.mockResolvedValue({
+      session: session(),
+      attemptDraft: persistedDraft,
+    });
+    getPublishedExercise.mockResolvedValue(exercise());
+
+    const { wrapper } = await mountPracticePage({ seedSession: false });
+    await flushPromises();
+
+    saveSession.mockRejectedValueOnce(new Error("indexeddb write failed"));
+
+    await findButtonByText(wrapper, "放棄題組").trigger("click");
     await flushPromises();
 
     expect(saveSession).toHaveBeenCalledTimes(1);
-    expect(wrapper.text()).toContain("第二題");
+    const [persistedSessionArg] = saveSession.mock.calls[0] as [
+      PracticeSession,
+      unknown,
+    ];
+    expect(persistedSessionArg.status).toBe("abandoned");
+    expect(wrapper.text()).toContain("無法更新本機練習進度，請稍後再試。");
+    // No Draft-only tombstone is ever written for abandon: a failed save()
+    // must leave nothing behind that a later reload could misapply against
+    // the pre-existing Draft still durable in IndexedDB.
+    expect(saveAttemptDraft).not.toHaveBeenCalledWith("session-1", null);
+    expect(
+      localStorage.getItem("vimforge:draft-recovery:session-1"),
+    ).toBeNull();
+  });
+
+  it("persists the abandoned session on success with no stale Draft journal entry left behind", async () => {
+    const persistedDraft = attemptDraft({ keystrokeCount: 3 });
+    getResumeState.mockResolvedValue({
+      session: session(),
+      attemptDraft: persistedDraft,
+    });
+    getPublishedExercise.mockResolvedValue(exercise());
+
+    const { wrapper } = await mountPracticePage({ seedSession: false });
+    await flushPromises();
+
+    await findButtonByText(wrapper, "放棄題組").trigger("click");
+    await flushPromises();
+
+    expect(saveSession).toHaveBeenCalledTimes(1);
+    const [persistedSessionArg] = saveSession.mock.calls[0] as [
+      PracticeSession,
+      unknown,
+    ];
+    expect(persistedSessionArg.status).toBe("abandoned");
+    expect(wrapper.text()).toContain("已放棄這個題組");
+    expect(saveAttemptDraft).not.toHaveBeenCalledWith("session-1", null);
+    expect(
+      localStorage.getItem("vimforge:draft-recovery:session-1"),
+    ).toBeNull();
   });
 
   it("waits for the pending draft before leaving the route", async () => {

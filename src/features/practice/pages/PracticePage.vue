@@ -646,7 +646,12 @@ async function recordOutcome(completed: boolean): Promise<void> {
 
   isSavingOutcome.value = true;
   try {
-    await draftSaveScheduler.flush();
+    const flushResult = await draftSaveScheduler.flush();
+    if (flushResult === "failed") {
+      throw new Error(
+        "Unable to persist the latest practice progress before completing this Attempt.",
+      );
+    }
     const completedAt = new Date().toISOString();
     const draft = buildAttemptDraft(completed, completedAt);
     const outcome = createAttemptOutcome({
@@ -670,17 +675,20 @@ async function recordOutcome(completed: boolean): Promise<void> {
       exerciseIds: [...activeSession.exerciseIds],
       selectedSkillIds: [...activeSession.selectedSkillIds],
     } satisfies PracticeSession;
-    const { operationId: draftJournalOperationId } = writeDraftRecoveryJournal(
-      activeSession.id,
-      null,
-    );
+    // No recovery-journal tombstone here: completion touches far more than
+    // the Draft (the Attempt, mastery, review, and learning-outcome
+    // projections, all committed atomically by complete() below). A
+    // Draft-only tombstone cannot represent that whole transaction, so if
+    // complete() fails, the pre-existing Draft - already durable in
+    // IndexedDB and untouched by the aborted transaction - remains
+    // recoverable through the normal (non-journal) path with no action
+    // needed here.
     const completionService = new AttemptCompletionService(requireDatabase());
     const completionResult = await completionService.complete({
       attempt: outcome.attempt,
       exercise: activeExercise,
       session: sessionSnapshot,
     });
-    clearDraftRecoveryJournalIfCurrent(activeSession.id, draftJournalOperationId);
     practiceStore.discardAttemptDraft();
 
     const primarySkillId =
@@ -796,16 +804,24 @@ async function goToNext(): Promise<void> {
 
 async function abandonSession(): Promise<void> {
   try {
-    await draftSaveScheduler.flush();
+    const flushResult = await draftSaveScheduler.flush();
+    if (flushResult === "failed") {
+      throw new Error(
+        "Unable to persist the latest practice progress before abandoning this session.",
+      );
+    }
     const state = requireResumeState();
     practiceStore.restoreSession(state.session, state.attemptDraft);
     const abandonedSession = practiceStore.abandonSession(
       new Date().toISOString(),
     );
 
-    await persistDraftWithRecoveryJournal(abandonedSession.id, null, () =>
-      requireRepository().save(abandonedSession, null),
-    );
+    // No recovery-journal tombstone here: abandoning persists a whole
+    // PracticeSession transition (status -> "abandoned"), which a
+    // Draft-only tombstone cannot represent. If save() fails below, the
+    // session stays active and its pre-existing Draft - untouched by the
+    // failed write - remains recoverable through the normal path.
+    await requireRepository().save(abandonedSession, null);
     practiceStore.resetSession();
     persistedState.value = null;
     isDialogOpen.value = false;
