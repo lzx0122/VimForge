@@ -1,17 +1,9 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
-
 import QuestionCountSelector from "../../practice/components/QuestionCountSelector.vue";
 import { useSettingsStore } from "../../../stores/settings-store";
 import type { QuestionCount } from "../../../types/learning";
 
 const settingsStore = useSettingsStore();
-
-onMounted(async () => {
-  if (!settingsStore.initialized) {
-    await settingsStore.initialize();
-  }
-});
 
 function inputElement(event: Event): HTMLInputElement | null {
   return event.currentTarget instanceof HTMLInputElement
@@ -29,7 +21,7 @@ function updateFontSize(event: Event): void {
 }
 
 function updateBoolean(
-  key: "showLineNumbers" | "showKeypresses" | "soundEnabled",
+  key: "showLineNumbers" | "showKeypresses",
   event: Event,
 ): void {
   const input = inputElement(event);
@@ -86,16 +78,6 @@ function updateQuestionCount(questionCount: QuestionCount): void {
         @change="updateBoolean('showKeypresses', $event)"
       >
       <span>顯示最近按鍵</span>
-    </label>
-
-    <label class="toggle-setting">
-      <input
-        data-testid="sound-enabled"
-        type="checkbox"
-        :checked="settingsStore.soundEnabled"
-        @change="updateBoolean('soundEnabled', $event)"
-      >
-      <span>開啟音效</span>
     </label>
 
     <QuestionCountSelector

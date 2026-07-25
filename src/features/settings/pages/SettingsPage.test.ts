@@ -1,8 +1,11 @@
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import AppBootstrap from "../../../app/providers/AppBootstrap.vue";
+import { useAuthStore } from "../../../stores/auth-store";
 import { DEFAULT_SETTINGS, useSettingsStore } from "../../../stores/settings-store";
+import { useSyncStore } from "../../../stores/sync-store";
 import SettingsPage from "./SettingsPage.vue";
 
 describe("SettingsPage", () => {
@@ -45,16 +48,23 @@ describe("SettingsPage", () => {
     expect(store.editorFontSize).toBe(28);
   });
 
-  it("updates line numbers, recent keypresses, and sound", async () => {
+  it("updates line numbers and recent keypresses", async () => {
     const { updateSettings, wrapper } = mountSettingsPage();
 
     await wrapper.get('[data-testid="show-line-numbers"]').setValue(false);
     await wrapper.get('[data-testid="show-keypresses"]').setValue(false);
-    await wrapper.get('[data-testid="sound-enabled"]').setValue(true);
 
     expect(updateSettings).toHaveBeenCalledWith({ showLineNumbers: false });
     expect(updateSettings).toHaveBeenCalledWith({ showKeypresses: false });
-    expect(updateSettings).toHaveBeenCalledWith({ soundEnabled: true });
+  });
+
+  it("has no sound preference control", () => {
+    const { wrapper } = mountSettingsPage();
+
+    expect(wrapper.find('[data-testid="sound-enabled"]').exists()).toBe(
+      false,
+    );
+    expect(wrapper.text()).not.toContain("開啟音效");
   });
 
   it("offers 5, 10, and 20 as the default question count", async () => {
@@ -76,6 +86,45 @@ describe("SettingsPage", () => {
       preferredQuestionCount: 20,
     });
     expect(store.preferredQuestionCount).toBe(20);
+  });
+
+  it("does not initialize Settings locally because AppBootstrap owns initialization", async () => {
+    // A truly fresh, uninitialized store (not mountSettingsPage()'s
+    // pre-seeded initialized:true) so this actually exercises whatever
+    // onMounted guard the page has, instead of vacuously skipping it.
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useSettingsStore();
+    const initialize = vi
+      .spyOn(store, "initialize")
+      .mockResolvedValue(undefined);
+
+    mount(SettingsPage, { global: { plugins: [pinia] } });
+    await flushPromises();
+
+    expect(initialize).not.toHaveBeenCalled();
+  });
+
+  it("initializes Settings exactly once when SettingsPage mounts under the real AppBootstrap", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const settingsStore = useSettingsStore();
+    const syncStore = useSyncStore();
+    const authStore = useAuthStore();
+    const initialize = vi
+      .spyOn(settingsStore, "initialize")
+      .mockResolvedValue(undefined);
+    vi.spyOn(syncStore, "initialize").mockResolvedValue(undefined);
+    vi.spyOn(authStore, "initialize").mockResolvedValue(undefined);
+    vi.spyOn(syncStore, "setAuthenticated").mockResolvedValue(undefined);
+
+    mount(AppBootstrap, {
+      global: { plugins: [pinia] },
+      slots: { default: SettingsPage },
+    });
+    await flushPromises();
+
+    expect(initialize).toHaveBeenCalledTimes(1);
   });
 
   it("shows whether settings are local, synced, or waiting after an error", async () => {

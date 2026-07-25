@@ -39,6 +39,8 @@ const isFocused = ref(false);
 let editorView: EditorView | null = null;
 let vimBridge: CodeMirror | null = null;
 const readOnlyCompartment = new Compartment();
+const lineNumbersCompartment = new Compartment();
+const fontSizeCompartment = new Compartment();
 
 function readOnlyExtensions(readOnly: boolean): Extension[] {
   return [
@@ -46,9 +48,33 @@ function readOnlyExtensions(readOnly: boolean): Extension[] {
     EditorView.editable.of(!readOnly),
   ];
 }
+
+function lineNumberExtensions(showLineNumbers: boolean): Extension[] {
+  return showLineNumbers ? [lineNumbers()] : [];
+}
+
+// Matches the 12-28 bound normalizeFontSize() enforces in settings-store.ts.
+function normalizeEditorFontSize(fontSize: number): number {
+  if (!Number.isFinite(fontSize)) {
+    return 16;
+  }
+
+  return Math.min(28, Math.max(12, Math.round(fontSize)));
+}
+
+function fontSizeExtension(fontSize: number): Extension {
+  const normalized = normalizeEditorFontSize(fontSize);
+
+  return EditorView.theme({
+    "&": { fontSize: `${normalized}px` },
+    ".cm-gutters": { fontSize: "inherit" },
+  });
+}
 let vimModeHandler: ((event: unknown) => void) | null = null;
 let vimCommandDoneHandler: (() => void) | null = null;
 let stopReadOnlyWatch: (() => void) | null = null;
+let stopLineNumbersWatch: (() => void) | null = null;
+let stopFontSizeWatch: (() => void) | null = null;
 let disposed = false;
 const actionRecorder = createVimActionRecorder((action) => {
   emit("actionRecorded", action);
@@ -133,9 +159,10 @@ onMounted(async () => {
   });
   const remainingExtensions: Extension[] = [
     minimalSetup,
-    ...(props.showLineNumbers ? [lineNumbers()] : []),
+    lineNumbersCompartment.of(lineNumberExtensions(props.showLineNumbers)),
     languageExtension,
     ...vimEditorTheme,
+    fontSizeCompartment.of(fontSizeExtension(props.editorFontSize)),
     ...(props.cursorTarget && props.cursorTarget.type !== "ignore"
       ? [cursorTargetExtension(props.cursorTarget)]
       : []),
@@ -183,6 +210,26 @@ onMounted(async () => {
       });
     },
   );
+  stopLineNumbersWatch = watch(
+    () => props.showLineNumbers,
+    (showLineNumbers) => {
+      editorView?.dispatch({
+        effects: lineNumbersCompartment.reconfigure(
+          lineNumberExtensions(showLineNumbers),
+        ),
+      });
+    },
+  );
+  stopFontSizeWatch = watch(
+    () => props.editorFontSize,
+    (editorFontSize) => {
+      editorView?.dispatch({
+        effects: fontSizeCompartment.reconfigure(
+          fontSizeExtension(editorFontSize),
+        ),
+      });
+    },
+  );
   emit("modeChanged", currentMode.value);
   emit("editorReady");
 });
@@ -191,6 +238,10 @@ onBeforeUnmount(() => {
   disposed = true;
   stopReadOnlyWatch?.();
   stopReadOnlyWatch = null;
+  stopLineNumbersWatch?.();
+  stopLineNumbersWatch = null;
+  stopFontSizeWatch?.();
+  stopFontSizeWatch = null;
   if (vimBridge && vimModeHandler) {
     vimBridge.off("vim-mode-change", vimModeHandler);
   }
@@ -215,7 +266,6 @@ onBeforeUnmount(() => {
     <div
       ref="editorHost"
       class="vim-editor"
-      :data-show-keypresses="showKeypresses"
     />
   </section>
 </template>

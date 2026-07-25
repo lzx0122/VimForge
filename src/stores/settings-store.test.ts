@@ -13,7 +13,6 @@ const savedSettings: LocalSettings = {
   editorFontSize: 20,
   showLineNumbers: false,
   showKeypresses: true,
-  soundEnabled: true,
   preferredQuestionCount: 20,
   lastLearningMode: "efficiency",
   updatedAt: "2026-07-16T08:00:00.000Z",
@@ -105,7 +104,6 @@ describe("settings store", () => {
     await store.updateSettings(
       {
         showKeypresses: false,
-        soundEnabled: true,
         preferredQuestionCount: 5,
       },
       {
@@ -121,10 +119,12 @@ describe("settings store", () => {
       "user-1",
       expect.objectContaining({
         showKeypresses: false,
-        soundEnabled: true,
         preferredQuestionCount: 5,
       }),
     );
+    const [, cloudPayload] = (cloud.save as ReturnType<typeof vi.fn>).mock
+      .calls[0] as [string, Record<string, unknown>];
+    expect(cloudPayload).not.toHaveProperty("soundEnabled");
     expect(store.persistenceStatus).toBe("synced");
   });
 
@@ -138,7 +138,7 @@ describe("settings store", () => {
     const store = useSettingsStore();
 
     await store.updateSettings(
-      { soundEnabled: true },
+      { showKeypresses: false },
       {
         local,
         cloud,
@@ -148,7 +148,7 @@ describe("settings store", () => {
     );
 
     expect(local.save).toHaveBeenCalledOnce();
-    expect(store.soundEnabled).toBe(true);
+    expect(store.showKeypresses).toBe(false);
     expect(store.persistenceStatus).toBe("error");
     expect(store.errorMessage).toBe("設定已保存在這台裝置，但暫時無法同步。");
   });
@@ -171,5 +171,18 @@ describe("settings store", () => {
     expect(store.editorFontSize).toBe(DEFAULT_SETTINGS.editorFontSize);
     expect(store.persistenceStatus).toBe("error");
     expect(store.errorMessage).toBe("無法將設定保存在這台裝置。");
+  });
+
+  it("never resurrects soundEnabled from a legacy stored settings object", async () => {
+    const legacyStoredSettings = {
+      ...savedSettings,
+      soundEnabled: true,
+    } as LocalSettings;
+    const local = createLocalRepository(legacyStoredSettings);
+    const store = useSettingsStore();
+
+    await store.initialize(local);
+
+    expect(Object.hasOwn(store.$state, "soundEnabled")).toBe(false);
   });
 });

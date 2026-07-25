@@ -45,7 +45,7 @@ const defaultProps: VimEditorProps = {
   initialCursor: { line: 1, column: 3 },
   language: "plaintext",
   showLineNumbers: true,
-  showKeypresses: true,
+  editorFontSize: 16,
 };
 
 const originalGetClientRects = Range.prototype.getClientRects;
@@ -90,6 +90,13 @@ function getEditorView(wrapper: VueWrapper) {
   }
 
   return view;
+}
+
+function styleRulesContaining(text: string): string[] {
+  return Array.from(document.styleSheets)
+    .flatMap((sheet) => Array.from(sheet.cssRules))
+    .map((rule) => rule.cssText)
+    .filter((rule) => rule.includes(text));
 }
 
 beforeEach(() => {
@@ -208,15 +215,16 @@ describe("VimEditor", () => {
     wrapper.unmount();
   });
 
-  it("stops the readOnly watcher on unmount instead of leaking it", async () => {
+  it("stops every CodeMirror prop watcher (readOnly, line numbers, font size) on unmount", async () => {
     const wrapper = await mountEditor();
 
-    expect(watchStopSpies).toHaveLength(1);
-    const [stopSpy] = watchStopSpies;
+    expect(watchStopSpies).toHaveLength(3);
 
     wrapper.unmount();
 
-    expect(stopSpy).toHaveBeenCalledTimes(1);
+    for (const stopSpy of watchStopSpies) {
+      expect(stopSpy).toHaveBeenCalledTimes(1);
+    }
   });
 
   it("emits content and cursor changes from real editor transactions", async () => {
@@ -421,6 +429,71 @@ describe("VimEditor", () => {
 
     expect(wrapper.find(".vim-mode-badge").exists()).toBe(false);
     expect(wrapper.find(".vim-editor-status").exists()).toBe(false);
+
+    wrapper.unmount();
+  });
+
+  it("renders the line-number gutter when showLineNumbers is true", async () => {
+    const wrapper = await mountEditor();
+
+    expect(wrapper.find(".cm-lineNumbers").exists()).toBe(true);
+
+    wrapper.unmount();
+  });
+
+  it("hides then restores the line-number gutter reactively when the prop changes", async () => {
+    const wrapper = await mountEditor();
+
+    expect(wrapper.find(".cm-lineNumbers").exists()).toBe(true);
+
+    await wrapper.setProps({ showLineNumbers: false });
+    expect(wrapper.find(".cm-lineNumbers").exists()).toBe(false);
+
+    await wrapper.setProps({ showLineNumbers: true });
+    expect(wrapper.find(".cm-lineNumbers").exists()).toBe(true);
+
+    wrapper.unmount();
+  });
+
+  it("keeps the same EditorView instance when showLineNumbers or editorFontSize change", async () => {
+    const destroySpy = vi.spyOn(EditorView.prototype, "destroy");
+    const wrapper = await mountEditor();
+    const view = getEditorView(wrapper);
+
+    await wrapper.setProps({ showLineNumbers: false });
+    await wrapper.setProps({ editorFontSize: 22 });
+
+    expect(getEditorView(wrapper)).toBe(view);
+    expect(destroySpy).not.toHaveBeenCalled();
+
+    wrapper.unmount();
+  });
+
+  it("applies the editor font size reactively", async () => {
+    const wrapper = await mountEditor();
+
+    expect(styleRulesContaining("font-size: 16px")).not.toHaveLength(0);
+
+    await wrapper.setProps({ editorFontSize: 22 });
+
+    expect(styleRulesContaining("font-size: 22px")).not.toHaveLength(0);
+
+    wrapper.unmount();
+  });
+
+  it("normalizes invalid font sizes to the same 12-28 bounds used by the Settings Store", async () => {
+    const wrapper = mount(VimEditor, {
+      props: { ...defaultProps, editorFontSize: 5 },
+    });
+    await flushPromises();
+
+    expect(styleRulesContaining("font-size: 12px")).not.toHaveLength(0);
+
+    await wrapper.setProps({ editorFontSize: 40 });
+    expect(styleRulesContaining("font-size: 28px")).not.toHaveLength(0);
+
+    await wrapper.setProps({ editorFontSize: Number.NaN });
+    expect(styleRulesContaining("font-size: 16px")).not.toHaveLength(0);
 
     wrapper.unmount();
   });

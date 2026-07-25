@@ -362,7 +362,6 @@ textarea {
   color: #e5e7eb;
   background: #111827;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 1rem;
 }
 
 .vim-editor .cm-gutters {

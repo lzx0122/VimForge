@@ -18,6 +18,7 @@ import {
 import { reportError } from "../../../infrastructure/monitoring/error-reporter";
 import { SupabaseExerciseRepository } from "../../../infrastructure/supabase/supabase-exercise-repository";
 import { usePracticeStore } from "../../../stores/practice-store";
+import { useSettingsStore } from "../../../stores/settings-store";
 import { useSyncStore } from "../../../stores/sync-store";
 import type {
   AttemptDraft,
@@ -30,6 +31,7 @@ import type { PracticeSession } from "../../../types/session";
 import type { ExerciseRepository, PracticeExercise } from "../repositories/exercise-repository";
 import PracticeEditorStatusBar from "../components/PracticeEditorStatusBar.vue";
 import ProgressiveHintPanel from "../components/ProgressiveHintPanel.vue";
+import RecentKeypresses from "../components/RecentKeypresses.vue";
 import ResumeSessionDialog from "../components/ResumeSessionDialog.vue";
 import { useAttemptElapsedTime } from "../composables/use-attempt-elapsed-time";
 import { AttemptCompletionService } from "../services/attempt-completion-service";
@@ -60,6 +62,7 @@ import {
 const route = useRoute();
 const router = useRouter();
 const practiceStore = usePracticeStore();
+const settingsStore = useSettingsStore();
 const syncStore = useSyncStore();
 const sessionId = computed(() => String(route.params.sessionId));
 const isLoading = ref(true);
@@ -75,6 +78,7 @@ const unmetMessages = ref<string[]>([]);
 const highestHintLevel = ref<HintLevel>(0);
 const resetCount = ref(0);
 const keystrokeCount = ref(0);
+const recentKeypresses = ref<string[]>([]);
 const mistakeCount = ref(0);
 const lastMistakeFingerprint = ref<string | null>(null);
 const recordedActions = ref<NormalizedAction[]>([]);
@@ -271,6 +275,7 @@ function applyFreshAttempt(
   highestHintLevel.value = fresh.highestHintLevel;
   resetCount.value = fresh.resetCount;
   keystrokeCount.value = fresh.keystrokeCount;
+  recentKeypresses.value = [];
   mistakeCount.value = fresh.mistakeCount;
   lastMistakeFingerprint.value = fresh.lastMistakeFingerprint;
   recordedActions.value = fresh.recordedActions;
@@ -358,6 +363,10 @@ function prepareExercise(activeExercise: PracticeExercise): void {
   attemptClientId.value = restoredDraft.clientAttemptId;
   attemptStartedAt.value = restoredDraft.startedAt;
   keystrokeCount.value = restoredDraft.keystrokeCount;
+  // Recent keys are ephemeral UI state, not part of the Draft: resuming
+  // preserves the restored total keystroke count but always starts with no
+  // recent keys shown.
+  recentKeypresses.value = [];
   mistakeCount.value = restoredDraft.mistakeCount;
   lastMistakeFingerprint.value = restoredDraft.lastMistakeFingerprint;
   unmetMessages.value = [];
@@ -499,12 +508,13 @@ function updateHighestHint(level: HintLevel): void {
   scheduleDraftSave();
 }
 
-function recordKeypress(): void {
+function recordKeypress(display: string): void {
   if (isEditorLocked.value) {
     return;
   }
 
   keystrokeCount.value += 1;
+  recentKeypresses.value = [...recentKeypresses.value, display].slice(-8);
   scheduleDraftSave();
 }
 
@@ -972,14 +982,18 @@ onUnmounted(() => {
           :language="exercise.language"
           :cursor-target="exercise.completionRule.cursorMatch"
           :read-only="isEditorLocked"
-          show-line-numbers
-          show-keypresses
+          :editor-font-size="settingsStore.editorFontSize"
+          :show-line-numbers="settingsStore.showLineNumbers"
           auto-focus
           @content-changed="updateContent"
           @cursor-changed="updateCursor"
           @mode-changed="updateMode"
           @action-recorded="recordAction"
           @key-pressed="recordKeypress"
+        />
+        <RecentKeypresses
+          v-if="settingsStore.showKeypresses"
+          :keys="recentKeypresses"
         />
         <p
           v-if="exercise.completionRule.cursorMatch.type !== 'ignore'"

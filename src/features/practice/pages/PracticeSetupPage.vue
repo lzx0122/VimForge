@@ -1,3 +1,27 @@
+<script lang="ts">
+import type { QuestionCount } from "../../../types";
+
+export function parseQuestionCount(value: unknown): QuestionCount | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const numeric = Number(value);
+  if (numeric === 5 || numeric === 10 || numeric === 20) {
+    return numeric;
+  }
+
+  return null;
+}
+
+export function resolveInitialQuestionCount(
+  routeValue: unknown,
+  preferred: QuestionCount,
+): QuestionCount {
+  return parseQuestionCount(routeValue) ?? preferred;
+}
+</script>
+
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
@@ -10,10 +34,8 @@ import { SkillMasteryRepository } from "../../../infrastructure/indexed-db/skill
 import { reportError } from "../../../infrastructure/monitoring/error-reporter";
 import { SupabasePracticeCandidateRepository } from "../../../infrastructure/supabase/supabase-practice-candidate-repository";
 import { usePracticeStore } from "../../../stores/practice-store";
-import type {
-  LearningMode,
-  QuestionCount,
-} from "../../../types";
+import { useSettingsStore } from "../../../stores/settings-store";
+import type { LearningMode } from "../../../types";
 import type { PracticeSelectionType } from "../../../types/session";
 import PracticeSourceSelector, {
   type PracticeSource,
@@ -34,9 +56,29 @@ interface PendingPracticeSelection {
 const route = useRoute();
 const router = useRouter();
 const practiceStore = usePracticeStore();
+const settingsStore = useSettingsStore();
+const routeQuestionCount = parseQuestionCount(route.query.count);
+const userChangedQuestionCount = ref(false);
 const questionCount = ref<QuestionCount>(
-  route.query.count === "5" ? 5 : route.query.count === "20" ? 20 : 10,
+  resolveInitialQuestionCount(
+    route.query.count,
+    settingsStore.preferredQuestionCount,
+  ),
 );
+
+watch(
+  () => settingsStore.preferredQuestionCount,
+  (preferred) => {
+    if (routeQuestionCount === null && !userChangedQuestionCount.value) {
+      questionCount.value = preferred;
+    }
+  },
+);
+
+function handleQuestionCountChange(count: QuestionCount): void {
+  questionCount.value = count;
+  userChangedQuestionCount.value = true;
+}
 const practiceSource = ref<PracticeSource>(
   route.query.source === "topic_practice"
     ? "topic_practice"
@@ -253,7 +295,10 @@ async function startPractice(): Promise<void> {
     v-else-if="mode === 'memory_review'"
     class="setup-panel"
   >
-    <QuestionCountSelector v-model="questionCount" />
+    <QuestionCountSelector
+      :model-value="questionCount"
+      @update:model-value="handleQuestionCountChange"
+    />
     <PracticeSourceSelector v-model="practiceSource" />
     <div v-if="practiceSource === 'topic_practice'">
       <h2>指定主題</h2>
@@ -268,7 +313,10 @@ async function startPractice(): Promise<void> {
     v-else
     class="setup-panel"
   >
-    <QuestionCountSelector v-model="questionCount" />
+    <QuestionCountSelector
+      :model-value="questionCount"
+      @update:model-value="handleQuestionCountChange"
+    />
     <h2>可選主題</h2>
     <p>未選主題時，系統會從效率進階內容安排題目。</p>
     <TopicSelector v-model="selectedTopics" />

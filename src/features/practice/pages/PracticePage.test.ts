@@ -52,6 +52,7 @@ vi.mock("../services/attempt-completion-service", () => ({
 }));
 
 import { usePracticeStore } from "../../../stores/practice-store";
+import { useSettingsStore } from "../../../stores/settings-store";
 import ResumeSessionDialog from "../components/ResumeSessionDialog.vue";
 import PracticePage from "./PracticePage.vue";
 
@@ -76,7 +77,7 @@ const VimEditorStub = {
     "initialCursor",
     "language",
     "showLineNumbers",
-    "showKeypresses",
+    "editorFontSize",
     "autoFocus",
     "readOnly",
     "cursorTarget",
@@ -541,6 +542,141 @@ describe("PracticePage scoring telemetry integration", () => {
     expect(saveAttemptDraft.mock.calls.at(-1)?.[1]).toMatchObject({
       keystrokeCount: 0,
     });
+  });
+
+  it("shows the last eight of ten emitted keypresses, in order", async () => {
+    getPublishedExercise.mockResolvedValue(exercise());
+    const { wrapper } = await mountPracticePage();
+    await flushPromises();
+
+    for (let i = 0; i < 10; i += 1) {
+      getVimEditor(wrapper).vm.$emit("keyPressed", `k${i}`);
+    }
+    await flushPromises();
+
+    const tokens = wrapper.findAll('[data-testid="recent-key"]');
+    expect(tokens.map((token) => token.text())).toEqual([
+      "k2",
+      "k3",
+      "k4",
+      "k5",
+      "k6",
+      "k7",
+      "k8",
+      "k9",
+    ]);
+    expect(saveAttemptDraft.mock.calls.at(-1)?.[1]).toMatchObject({
+      keystrokeCount: 10,
+    });
+  });
+
+  it("hides recent keypresses when the Settings Store disables them, but keeps counting total keystrokes", async () => {
+    getPublishedExercise.mockResolvedValue(exercise());
+    const { wrapper } = await mountPracticePage();
+    await flushPromises();
+    useSettingsStore().showKeypresses = false;
+    await flushPromises();
+
+    getVimEditor(wrapper).vm.$emit("keyPressed", "d");
+    await flushPromises();
+
+    expect(wrapper.find('[aria-label="最近按鍵"]').exists()).toBe(false);
+    expect(saveAttemptDraft.mock.calls.at(-1)?.[1]).toMatchObject({
+      keystrokeCount: 1,
+    });
+  });
+
+  it("clears recent keys on restart", async () => {
+    getPublishedExercise.mockResolvedValue(exercise());
+    const { wrapper } = await mountPracticePage();
+    await flushPromises();
+
+    getVimEditor(wrapper).vm.$emit("keyPressed", "d");
+    await flushPromises();
+    expect(wrapper.findAll('[data-testid="recent-key"]')).toHaveLength(1);
+
+    await wrapper.get(".practice-editor-restart").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[aria-label="最近按鍵"]').exists()).toBe(false);
+  });
+
+  it("clears recent keys on retry", async () => {
+    getPublishedExercise.mockResolvedValue(exercise());
+    const { wrapper } = await mountPracticePage();
+    await flushPromises();
+
+    getVimEditor(wrapper).vm.$emit("keyPressed", "d");
+    await flushPromises();
+
+    await findButtonByText(wrapper, "跳過這題").trigger("click");
+    await flushPromises();
+
+    await wrapper.get(".retry-exercise-button").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[aria-label="最近按鍵"]').exists()).toBe(false);
+  });
+
+  it("clears recent keys when advancing to the next exercise", async () => {
+    getPublishedExercise
+      .mockResolvedValueOnce(exercise())
+      .mockResolvedValueOnce(
+        exercise({
+          id: "exercise-2",
+          title: "第二題",
+          initialContent: "second",
+        }),
+      );
+    const { wrapper } = await mountPracticePage({
+      exerciseIds: ["exercise-1", "exercise-2"],
+    });
+    await flushPromises();
+
+    getVimEditor(wrapper).vm.$emit("keyPressed", "d");
+    await findButtonByText(wrapper, "跳過這題").trigger("click");
+    await flushPromises();
+
+    await wrapper.get(".next-exercise-button").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[aria-label="最近按鍵"]').exists()).toBe(false);
+  });
+
+  it("resumes with no recent keys while preserving the restored keystroke count", async () => {
+    const draft = attemptDraft({ keystrokeCount: 5 });
+    getResumeState.mockResolvedValue({
+      session: session(),
+      attemptDraft: draft,
+    });
+    getPublishedExercise.mockResolvedValue(exercise());
+
+    const { wrapper } = await mountPracticePage({ seedSession: false });
+    await wrapper.get('[data-action="resume"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[aria-label="最近按鍵"]').exists()).toBe(false);
+
+    getVimEditor(wrapper).vm.$emit("keyPressed", "d");
+    await flushPromises();
+    expect(saveAttemptDraft.mock.calls.at(-1)?.[1]).toMatchObject({
+      keystrokeCount: 6,
+    });
+  });
+
+  it("never includes recent keys in the persisted Draft object", async () => {
+    getPublishedExercise.mockResolvedValue(exercise());
+    const { wrapper } = await mountPracticePage();
+    await flushPromises();
+
+    getVimEditor(wrapper).vm.$emit("keyPressed", "d");
+    await flushPromises();
+
+    const savedDraft = saveAttemptDraft.mock.calls.at(-1)?.[1] as Record<
+      string,
+      unknown
+    >;
+    expect(savedDraft).not.toHaveProperty("recentKeypresses");
   });
 
   it("increments mistakeCount on the first failed check", async () => {
