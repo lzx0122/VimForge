@@ -1,17 +1,9 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
-
 import QuestionCountSelector from "../../practice/components/QuestionCountSelector.vue";
 import { useSettingsStore } from "../../../stores/settings-store";
 import type { QuestionCount } from "../../../types/learning";
 
 const settingsStore = useSettingsStore();
-
-onMounted(async () => {
-  if (!settingsStore.initialized) {
-    await settingsStore.initialize();
-  }
-});
 
 function inputElement(event: Event): HTMLInputElement | null {
   return event.currentTarget instanceof HTMLInputElement

@@ -1,8 +1,11 @@
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import AppBootstrap from "../../../app/providers/AppBootstrap.vue";
+import { useAuthStore } from "../../../stores/auth-store";
 import { DEFAULT_SETTINGS, useSettingsStore } from "../../../stores/settings-store";
+import { useSyncStore } from "../../../stores/sync-store";
 import SettingsPage from "./SettingsPage.vue";
 
 describe("SettingsPage", () => {
@@ -83,6 +86,45 @@ describe("SettingsPage", () => {
       preferredQuestionCount: 20,
     });
     expect(store.preferredQuestionCount).toBe(20);
+  });
+
+  it("does not initialize Settings locally because AppBootstrap owns initialization", async () => {
+    // A truly fresh, uninitialized store (not mountSettingsPage()'s
+    // pre-seeded initialized:true) so this actually exercises whatever
+    // onMounted guard the page has, instead of vacuously skipping it.
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useSettingsStore();
+    const initialize = vi
+      .spyOn(store, "initialize")
+      .mockResolvedValue(undefined);
+
+    mount(SettingsPage, { global: { plugins: [pinia] } });
+    await flushPromises();
+
+    expect(initialize).not.toHaveBeenCalled();
+  });
+
+  it("initializes Settings exactly once when SettingsPage mounts under the real AppBootstrap", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const settingsStore = useSettingsStore();
+    const syncStore = useSyncStore();
+    const authStore = useAuthStore();
+    const initialize = vi
+      .spyOn(settingsStore, "initialize")
+      .mockResolvedValue(undefined);
+    vi.spyOn(syncStore, "initialize").mockResolvedValue(undefined);
+    vi.spyOn(authStore, "initialize").mockResolvedValue(undefined);
+    vi.spyOn(syncStore, "setAuthenticated").mockResolvedValue(undefined);
+
+    mount(AppBootstrap, {
+      global: { plugins: [pinia] },
+      slots: { default: SettingsPage },
+    });
+    await flushPromises();
+
+    expect(initialize).toHaveBeenCalledTimes(1);
   });
 
   it("shows whether settings are local, synced, or waiting after an error", async () => {
