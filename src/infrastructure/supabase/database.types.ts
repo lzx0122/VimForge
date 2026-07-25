@@ -94,7 +94,7 @@ type ExerciseHintRow = {
   created_at: string;
 };
 
-type ExerciseAttemptRow = {
+export type ExerciseAttemptRow = {
   id: string;
   client_attempt_id: string;
   user_id: string;
@@ -123,7 +123,7 @@ type ExerciseAttemptRow = {
   created_at: string;
 };
 
-type UserSkillMasteryRow = {
+export type UserSkillMasteryRow = {
   user_id: string;
   skill_id: string;
   mastery_level: number;
@@ -143,7 +143,7 @@ type UserSkillMasteryRow = {
   updated_at: string;
 };
 
-type UserReviewItemRow = {
+export type UserReviewItemRow = {
   user_id: string;
   exercise_id: string;
   skill_id: string;
@@ -159,7 +159,7 @@ type UserReviewItemRow = {
   updated_at: string;
 };
 
-type UserSettingsRow = {
+export type UserSettingsRow = {
   user_id: string;
   editor_font_size: number;
   show_line_numbers: boolean;
