@@ -10,7 +10,12 @@ const authStore = useAuthStore();
 const settingsStore = useSettingsStore();
 const syncStore = useSyncStore();
 
+let disposed = false;
 let stopAuthUserIdWatch: (() => void) | null = null;
+
+function currentAuthUserId(): string | null {
+  return authStore.currentUser?.id ?? null;
+}
 
 async function safely(
   context: string,
@@ -34,22 +39,35 @@ async function coordinateAuthenticated(userId: string | null): Promise<void> {
 
 onMounted(async () => {
   await safely("app.bootstrap-settings", () => settingsStore.initialize());
+  if (disposed) {
+    return;
+  }
+
   await safely("app.bootstrap-sync", () => syncStore.initialize());
+  if (disposed) {
+    return;
+  }
+
   if (!authStore.initialized) {
     await safely("app.bootstrap-auth", () => authStore.initialize());
   }
+  if (disposed) {
+    return;
+  }
 
-  await coordinateAuthenticated(authStore.currentUser?.id ?? null);
+  // The watcher must exist before the initial coordination call is even
+  // awaited: a user-id change that lands while that call is still pending
+  // would otherwise have nothing observing it, and (since watch() isn't
+  // immediate) would never be replayed once the watcher is created later.
+  stopAuthUserIdWatch = watch(currentAuthUserId, (userId) => {
+    void coordinateAuthenticated(userId);
+  });
 
-  stopAuthUserIdWatch = watch(
-    () => authStore.currentUser?.id ?? null,
-    (userId) => {
-      void coordinateAuthenticated(userId);
-    },
-  );
+  await coordinateAuthenticated(currentAuthUserId());
 });
 
 onUnmounted(() => {
+  disposed = true;
   stopAuthUserIdWatch?.();
   stopAuthUserIdWatch = null;
 });

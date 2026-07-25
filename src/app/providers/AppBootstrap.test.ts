@@ -150,6 +150,99 @@ describe("AppBootstrap", () => {
     expect(setAuthenticated).toHaveBeenCalledTimes(1);
   });
 
+  it("does not run later initialization stages when unmounted while an earlier stage is still pending", async () => {
+    const settingsStore = useSettingsStore();
+    const syncStore = useSyncStore();
+    const authStore = useAuthStore();
+
+    const deferredSettings = createDeferred<void>();
+    vi.spyOn(settingsStore, "initialize").mockImplementation(
+      () => deferredSettings.promise,
+    );
+    const syncInitialize = vi
+      .spyOn(syncStore, "initialize")
+      .mockResolvedValue(undefined);
+    const authInitialize = vi
+      .spyOn(authStore, "initialize")
+      .mockResolvedValue(undefined);
+    vi.spyOn(syncStore, "setAuthenticated").mockResolvedValue(undefined);
+
+    const wrapper = mountBootstrap();
+    await flushPromises();
+
+    wrapper.unmount();
+    deferredSettings.resolve();
+    await flushPromises();
+
+    expect(syncInitialize).not.toHaveBeenCalled();
+    expect(authInitialize).not.toHaveBeenCalled();
+  });
+
+  it("does not coordinate or create a watcher when unmounted before Auth initialization resolves", async () => {
+    const settingsStore = useSettingsStore();
+    const syncStore = useSyncStore();
+    const authStore = useAuthStore();
+
+    vi.spyOn(settingsStore, "initialize").mockResolvedValue(undefined);
+    vi.spyOn(syncStore, "initialize").mockResolvedValue(undefined);
+
+    const deferredAuth = createDeferred<void>();
+    vi.spyOn(authStore, "initialize").mockImplementation(
+      () => deferredAuth.promise,
+    );
+
+    const setAuthenticated = vi
+      .spyOn(syncStore, "setAuthenticated")
+      .mockResolvedValue(undefined);
+
+    const wrapper = mountBootstrap();
+    await flushPromises();
+
+    wrapper.unmount();
+
+    deferredAuth.resolve();
+    await flushPromises();
+
+    expect(setAuthenticated).not.toHaveBeenCalled();
+
+    authStore.session = fakeSession("user-after-unmount");
+    await flushPromises();
+
+    expect(setAuthenticated).not.toHaveBeenCalled();
+  });
+
+  it("does not miss a user-id change while initial coordination is pending", async () => {
+    const settingsStore = useSettingsStore();
+    const syncStore = useSyncStore();
+    const authStore = useAuthStore();
+
+    vi.spyOn(settingsStore, "initialize").mockResolvedValue(undefined);
+    vi.spyOn(syncStore, "initialize").mockResolvedValue(undefined);
+    vi.spyOn(authStore, "initialize").mockResolvedValue(undefined);
+
+    const initialCoordination = createDeferred<void>();
+
+    const setAuthenticated = vi
+      .spyOn(syncStore, "setAuthenticated")
+      .mockImplementationOnce(() => initialCoordination.promise)
+      .mockResolvedValue(undefined);
+
+    mountBootstrap();
+    await flushPromises();
+
+    expect(setAuthenticated).toHaveBeenCalledTimes(1);
+    expect(setAuthenticated).toHaveBeenNthCalledWith(1, false);
+
+    authStore.session = fakeSession("user-1");
+    await flushPromises();
+
+    initialCoordination.resolve();
+    await flushPromises();
+
+    expect(setAuthenticated).toHaveBeenCalledTimes(2);
+    expect(setAuthenticated).toHaveBeenNthCalledWith(2, true);
+  });
+
   it("renders the default slot even when initialization reports an error", async () => {
     const settingsStore = useSettingsStore();
     const syncStore = useSyncStore();
