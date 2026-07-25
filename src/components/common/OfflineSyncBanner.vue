@@ -1,34 +1,9 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch } from "vue";
-
 import { useAuthStore } from "../../stores/auth-store";
 import { useSyncStore } from "../../stores/sync-store";
 
 const authStore = useAuthStore();
 const syncStore = useSyncStore();
-let ready = false;
-
-const stopAuthWatch = watch(
-  () => authStore.isAuthenticated,
-  (authenticated) => {
-    if (ready) {
-      void syncStore.setAuthenticated(authenticated);
-    }
-  },
-);
-
-onMounted(async () => {
-  await syncStore.initialize();
-  if (!authStore.initialized) {
-    await authStore.initialize();
-  }
-  ready = true;
-  await syncStore.setAuthenticated(authStore.isAuthenticated);
-});
-
-onUnmounted(() => {
-  stopAuthWatch();
-});
 </script>
 
 <template>
