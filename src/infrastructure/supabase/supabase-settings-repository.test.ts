@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 
+import createUserLearningSql from "../../../supabase/migrations/20260716000200_create_user_learning.sql?raw";
 import type { LocalSettings } from "../indexed-db/settings-repository";
 import { SupabaseSettingsRepository } from "./supabase-settings-repository";
 import type { Database } from "./database.types";
@@ -73,5 +74,28 @@ describe("SupabaseSettingsRepository", () => {
     });
     expect(body).not.toHaveProperty("sound_enabled");
     expect(JSON.stringify(body)).not.toContain("sound_enabled");
+  });
+});
+
+describe("public.user_settings.sound_enabled schema contract", () => {
+  // No local Supabase/Postgres instance is available in this environment
+  // (the Docker daemon backing `supabase start` is not running here), so
+  // this cannot be a live insert/upsert integration test. Instead it reads
+  // the actual authoritative migration SQL - the same source a real
+  // `supabase db push` would apply - and asserts the column definition
+  // text directly, so it fails if that file ever stops matching the
+  // omit-is-safe claim the repository payload relies on.
+  it("is defined NOT NULL DEFAULT false, so omitting it from an insert/upsert payload is safe", () => {
+    const normalizedSql = createUserLearningSql.toLowerCase();
+    const tableStart = normalizedSql.indexOf(
+      "create table public.user_settings",
+    );
+    expect(tableStart).toBeGreaterThan(-1);
+    const tableEnd = normalizedSql.indexOf(");", tableStart);
+    const tableDefinition = normalizedSql.slice(tableStart, tableEnd);
+
+    expect(tableDefinition).toMatch(
+      /sound_enabled\s+boolean\s+not\s+null\s+default\s+false/,
+    );
   });
 });
