@@ -14,6 +14,12 @@ const rlsSql = readProjectFile(
   "supabase/migrations/20260716000300_add_user_learning_rls.sql",
 );
 const rlsTestSql = readProjectFile("supabase/tests/rls_user_learning.sql");
+const hydrationSql = readProjectFile(
+  "supabase/migrations/20260721000100_add_p1_hydration_contract.sql",
+);
+const hydrationTestSql = readProjectFile(
+  "supabase/tests/p1_learning_hydration.sql",
+);
 
 const userTables = [
   "profiles",
@@ -110,5 +116,125 @@ describe("user learning RLS", () => {
     for (const assertion of throwAssertions) {
       expect(assertion[1]?.trimEnd()).toMatch(/\$\$$/);
     }
+  });
+});
+
+describe("P1 cloud hydration migration", () => {
+  it("adds the attempt performance quality and practice context columns with backfill and constraints", () => {
+    expect(hydrationSql).toContain(
+      "alter table public.exercise_attempts",
+    );
+    expect(hydrationSql).toContain("add column performance_quality smallint");
+    expect(hydrationSql).toContain("add column practice_context text");
+    expect(hydrationSql).toContain(
+      "alter column performance_quality set not null",
+    );
+    expect(hydrationSql).toContain(
+      "alter column practice_context set not null",
+    );
+    expect(hydrationSql).toContain(
+      "check (performance_quality between 0 and 5)",
+    );
+    expect(hydrationSql).toContain(
+      "practice_context in (\n        'same_exercise_immediate',\n        'different_exercise',\n        'next_day',\n        'seven_days'\n      )",
+    );
+    expect(hydrationSql).toContain("practice_context = 'different_exercise'");
+    expect(hydrationSql).toContain(">= 90 then 5");
+    expect(hydrationSql).toContain(">= 75 then 4");
+    expect(hydrationSql).toContain(">= 50 then 3");
+    expect(hydrationSql).toContain(">= 25 then 2");
+    expect(hydrationSql).toContain(">= 1 then 1");
+    expect(hydrationSql).toContain("coalesce(speed_score, 0) * 0.5");
+  });
+
+  it("adds and backfills the mastery hydration columns as a sorted distinct array with unhinted-success cursors", () => {
+    expect(hydrationSql).toContain("alter table public.user_skill_mastery");
+    expect(hydrationSql).toContain(
+      "add column unique_exercise_ids uuid[] not null default '{}'",
+    );
+    expect(hydrationSql).toContain(
+      "add column first_unhinted_success_at timestamptz",
+    );
+    expect(hydrationSql).toContain(
+      "add column latest_unhinted_success_at timestamptz",
+    );
+    expect(hydrationSql).toContain(
+      "distinct exercise_attempts.exercise_id\n        order by exercise_attempts.exercise_id",
+    );
+    expect(hydrationSql).toContain("filter (where exercise_attempts.completed)");
+    expect(hydrationSql).toContain(
+      "and exercise_attempts.hint_level_used = 0",
+    );
+  });
+
+  it("adds and backfills the review hydration columns with NOT NULL and range constraints", () => {
+    expect(hydrationSql).toContain("alter table public.user_review_items");
+    expect(hydrationSql).toContain("add column mastery_level smallint");
+    expect(hydrationSql).toContain(
+      "add column last_performance_quality smallint",
+    );
+    expect(hydrationSql).toContain("add column last_attempt_at timestamptz");
+    expect(hydrationSql).toContain("alter column mastery_level set not null");
+    expect(hydrationSql).toContain(
+      "alter column last_performance_quality set not null",
+    );
+    expect(hydrationSql).toContain("alter column last_attempt_at set not null");
+    expect(hydrationSql).toContain("check (mastery_level between 0 and 5)");
+    expect(hydrationSql).toContain(
+      "check (last_performance_quality between 0 and 5)",
+    );
+    expect(hydrationSql).toContain("coalesce(mastery.mastery_level, 0)");
+    expect(hydrationSql).toContain(
+      "coalesce(\n      latest_attempt.completed_at,\n      latest_attempt.started_at,\n      review.updated_at\n    )",
+    );
+  });
+
+  it("creates the three stable pagination cursor indexes with explicit names", () => {
+    expect(hydrationSql).toContain(
+      "create index if not exists attempts_user_hydration_cursor_idx",
+    );
+    expect(hydrationSql).toContain(
+      "on public.exercise_attempts (\n    user_id,\n    created_at,\n    client_attempt_id\n  )",
+    );
+    expect(hydrationSql).toContain(
+      "create index if not exists mastery_user_hydration_cursor_idx",
+    );
+    expect(hydrationSql).toContain(
+      "on public.user_skill_mastery (\n    user_id,\n    updated_at,\n    skill_id\n  )",
+    );
+    expect(hydrationSql).toContain(
+      "create index if not exists reviews_user_hydration_cursor_idx",
+    );
+    expect(hydrationSql).toContain(
+      "on public.user_review_items (\n    user_id,\n    updated_at,\n    exercise_id\n  )",
+    );
+  });
+
+  it("replaces record_exercise_attempt with the same signature and security mode", () => {
+    expect(hydrationSql).toContain(
+      "create or replace function public.record_exercise_attempt(payload jsonb)",
+    );
+    expect(hydrationSql).toContain("security invoker");
+    expect(hydrationSql).toContain("set search_path = ''");
+    expect(hydrationSql).toContain(
+      "on conflict (user_id, client_attempt_id) do nothing",
+    );
+  });
+
+  it("has a pgTAP hydration test that plans, isolates users by RLS, and rolls back", () => {
+    expect(hydrationTestSql).toContain("begin;");
+    expect(hydrationTestSql).toContain("select plan(");
+    expect(hydrationTestSql).toContain("record_exercise_attempt");
+    expect(hydrationTestSql).toContain("performance_quality");
+    expect(hydrationTestSql).toContain("unique_exercise_ids");
+    expect(hydrationTestSql).toContain("first_unhinted_success_at");
+    expect(hydrationTestSql).toContain("mastery_level");
+    expect(hydrationTestSql).toContain("last_performance_quality");
+    expect(hydrationTestSql).toContain("attempts_user_hydration_cursor_idx");
+    expect(hydrationTestSql).toContain("mastery_user_hydration_cursor_idx");
+    expect(hydrationTestSql).toContain("reviews_user_hydration_cursor_idx");
+    expect(hydrationTestSql).toContain("set local role authenticated");
+    expect(hydrationTestSql).toContain("select * from finish()");
+    expect(hydrationTestSql).toContain("rollback");
   });
 });

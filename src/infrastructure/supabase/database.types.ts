@@ -94,6 +94,71 @@ type ExerciseHintRow = {
   created_at: string;
 };
 
+type ExerciseAttemptRow = {
+  id: string;
+  client_attempt_id: string;
+  user_id: string;
+  session_id: string | null;
+  exercise_id: string;
+  exercise_version: number;
+  learning_mode: string;
+  source: string;
+  completed: boolean;
+  started_at: string;
+  completed_at: string | null;
+  duration_ms: number | null;
+  keystroke_count: number;
+  recommended_keystroke_count: number | null;
+  mistake_count: number;
+  undo_count: number;
+  reset_count: number;
+  hint_level_used: number;
+  used_recommended_solution: boolean;
+  normalized_actions: Json;
+  speed_score: number | null;
+  accuracy_score: number;
+  scoring_version: string;
+  performance_quality: number;
+  practice_context: string;
+  created_at: string;
+};
+
+type UserSkillMasteryRow = {
+  user_id: string;
+  skill_id: string;
+  mastery_level: number;
+  mastery_score: number;
+  successful_attempts: number;
+  failed_attempts: number;
+  unique_exercises_completed: number;
+  unique_exercise_ids: string[];
+  consecutive_successes: number;
+  average_speed_score: number | null;
+  average_accuracy_score: number | null;
+  average_hint_level: number | null;
+  first_unhinted_success_at: string | null;
+  latest_unhinted_success_at: string | null;
+  last_practiced_at: string | null;
+  last_success_at: string | null;
+  updated_at: string;
+};
+
+type UserReviewItemRow = {
+  user_id: string;
+  exercise_id: string;
+  skill_id: string;
+  review_status: string;
+  priority: number;
+  current_interval_days: number;
+  due_at: string;
+  last_reviewed_at: string | null;
+  last_result: string | null;
+  mastery_level: number;
+  last_performance_quality: number;
+  last_attempt_at: string;
+  updated_at: string;
+};
+
 type UserSettingsRow = {
   user_id: string;
   editor_font_size: number;
@@ -132,6 +197,9 @@ export interface Database {
       exercise_skills: CatalogTable<ExerciseSkillRow>;
       exercise_solutions: CatalogTable<ExerciseSolutionRow>;
       exercise_hints: CatalogTable<ExerciseHintRow>;
+      exercise_attempts: CatalogTable<ExerciseAttemptRow>;
+      user_skill_mastery: CatalogTable<UserSkillMasteryRow>;
+      user_review_items: CatalogTable<UserReviewItemRow>;
       user_settings: UserSettingsTable;
     };
     Views: Record<string, never>;

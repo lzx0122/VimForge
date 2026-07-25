@@ -106,7 +106,9 @@ begin
     learning_mode,
     completed,
     started_at,
-    accuracy_score
+    accuracy_score,
+    performance_quality,
+    practice_context
   )
   values
     (
@@ -117,7 +119,9 @@ begin
       'memory_review',
       false,
       now(),
-      0
+      0,
+      0,
+      'different_exercise'
     ),
     (
       '10000000-0000-4000-8000-00000000000b',
@@ -127,7 +131,9 @@ begin
       'memory_review',
       false,
       now(),
-      0
+      0,
+      0,
+      'different_exercise'
     );
 end;
 $$;
@@ -169,7 +175,9 @@ select throws_ok(
       learning_mode,
       completed,
       started_at,
-      accuracy_score
+      accuracy_score,
+      performance_quality,
+      practice_context
     )
     select
       '20000000-0000-4000-8000-00000000000b',
@@ -179,7 +187,9 @@ select throws_ok(
       'memory_review',
       false,
       now(),
-      0
+      0,
+      0,
+      'different_exercise'
     from public.exercises
     where is_published = true
     limit 1

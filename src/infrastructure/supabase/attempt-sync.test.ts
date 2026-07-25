@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import migrationSql from "../../../supabase/migrations/20260716000400_add_record_attempt_function.sql?raw";
 import missingSessionMigrationSql from "../../../supabase/migrations/20260716125332_allow_missing_attempt_session.sql?raw";
+import hydrationMigrationSql from "../../../supabase/migrations/20260721000100_add_p1_hydration_contract.sql?raw";
 import type { AttemptSyncInput } from "../../features/practice/repositories/attempt-sync-repository";
 import { SupabaseAttemptSyncRepository } from "./supabase-attempt-sync-repository";
 import type { Database } from "./database.types";
@@ -164,6 +165,129 @@ describe("record_exercise_attempt missing-session regression", () => {
     expect(sessionParse).toBeGreaterThan(-1);
     expect(ownedSessionLookup).toBeGreaterThan(sessionParse);
     expect(attemptInsert).toBeGreaterThan(ownedSessionLookup);
+  });
+});
+
+describe("record_exercise_attempt cloud hydration replacement", () => {
+  const normalizedSql = hydrationMigrationSql.toLowerCase();
+
+  function sliceStatement(start: string, end: string): string {
+    const startIndex = normalizedSql.indexOf(start);
+    if (startIndex === -1) {
+      throw new Error(`Could not find statement start: ${start}`);
+    }
+    const endIndex = normalizedSql.indexOf(end, startIndex);
+    if (endIndex === -1) {
+      throw new Error(`Could not find statement end: ${end}`);
+    }
+    return normalizedSql.slice(startIndex, endIndex + end.length);
+  }
+
+  it("retains the invoker security mode, auth.uid ownership, and public signature", () => {
+    expect(normalizedSql).toContain(
+      "create or replace function public.record_exercise_attempt(payload jsonb)",
+    );
+    expect(normalizedSql).toContain("security invoker");
+    expect(normalizedSql).not.toContain("security definer");
+    expect(normalizedSql).toContain("(select auth.uid())");
+    expect(normalizedSql).not.toMatch(/payload\s*->>?\s*'user_id'/);
+    expect(normalizedSql).not.toMatch(
+      /record_exercise_attempt\([^)]*user_id/,
+    );
+  });
+
+  it("retains authenticated-only execution", () => {
+    const signature = "function public.record_exercise_attempt(jsonb)";
+
+    expect(normalizedSql).toContain(
+      `revoke execute on ${signature} from public, anon`,
+    );
+    expect(normalizedSql).toContain(
+      `grant execute on ${signature} to authenticated`,
+    );
+    expect(normalizedSql).not.toContain(
+      `grant execute on ${signature} to anon`,
+    );
+  });
+
+  it("keeps the idempotency guard before mutating any projection", () => {
+    const attemptInsert = normalizedSql.indexOf(
+      "insert into public.exercise_attempts",
+    );
+    const earlyReturnCheck = normalizedSql.indexOf(
+      "if v_attempt_id is null then",
+    );
+    const progressUpsert = normalizedSql.indexOf(
+      "insert into public.user_exercise_progress",
+    );
+    const masteryUpsert = normalizedSql.indexOf(
+      "insert into public.user_skill_mastery",
+    );
+    const reviewUpsert = normalizedSql.indexOf(
+      "insert into public.user_review_items",
+    );
+
+    expect(normalizedSql).toContain(
+      "on conflict (user_id, client_attempt_id) do nothing",
+    );
+    expect(attemptInsert).toBeGreaterThan(-1);
+    expect(earlyReturnCheck).toBeGreaterThan(attemptInsert);
+    expect(progressUpsert).toBeGreaterThan(earlyReturnCheck);
+    expect(masteryUpsert).toBeGreaterThan(progressUpsert);
+    expect(reviewUpsert).toBeGreaterThan(masteryUpsert);
+  });
+
+  it("persists performance_quality and practice_context on the attempt insert", () => {
+    const attemptInsertStatement = sliceStatement(
+      "insert into public.exercise_attempts (",
+      "on conflict (user_id, client_attempt_id) do nothing",
+    );
+
+    expect(attemptInsertStatement).toContain("performance_quality");
+    expect(attemptInsertStatement).toContain("practice_context");
+    expect(attemptInsertStatement).toContain("v_performance_quality");
+    expect(attemptInsertStatement).toContain("v_practice_context");
+  });
+
+  it("persists unique_exercise_ids and unhinted-success timestamps on the mastery update", () => {
+    const masteryUpdateStatement = sliceStatement(
+      "update public.user_skill_mastery",
+      "v_mastery := v_mastery || jsonb_build_array(",
+    );
+
+    expect(masteryUpdateStatement).toContain(
+      "unique_exercise_ids = v_unique_exercise_ids",
+    );
+    expect(masteryUpdateStatement).toContain(
+      "first_unhinted_success_at = v_first_unhinted_success_at",
+    );
+    expect(masteryUpdateStatement).toContain(
+      "latest_unhinted_success_at = v_latest_unhinted_success_at",
+    );
+  });
+
+  it("persists review mastery level, last performance quality, and last attempt time on both the insert and the conflict-update path", () => {
+    const reviewInsertStatement = sliceStatement(
+      "insert into public.user_review_items (",
+      "on conflict (user_id, exercise_id) do update set",
+    );
+    const reviewConflictUpdateStatement = sliceStatement(
+      "on conflict (user_id, exercise_id) do update set",
+      "if v_session_id is not null then",
+    );
+
+    expect(reviewInsertStatement).toContain("mastery_level");
+    expect(reviewInsertStatement).toContain("last_performance_quality");
+    expect(reviewInsertStatement).toContain("last_attempt_at");
+    expect(reviewConflictUpdateStatement).toContain(
+      "mastery_level = excluded.mastery_level",
+    );
+    expect(reviewConflictUpdateStatement).toContain(
+      "last_performance_quality = excluded.last_performance_quality",
+    );
+    expect(reviewConflictUpdateStatement).toContain(
+      "last_attempt_at = excluded.last_attempt_at",
+    );
   });
 });
 
