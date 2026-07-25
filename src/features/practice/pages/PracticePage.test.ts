@@ -282,6 +282,13 @@ async function mountPracticePage(
 
 describe("PracticePage scoring telemetry integration", () => {
   beforeEach(() => {
+    // PracticePage.vue's draft-recovery journal (draft-recovery-journal.ts)
+    // persists to real jsdom localStorage, which Vitest does not reset
+    // between tests in the same file: without this, a leftover journal
+    // entry from an earlier test (several of which reuse the same seeded
+    // clientAttemptId) could be read back and silently override a later
+    // test's deliberately-seeded Draft.
+    localStorage.clear();
     openDatabase.mockReset().mockResolvedValue({ close: vi.fn() });
     getResumeState.mockReset().mockResolvedValue(null);
     saveAttemptDraft.mockReset().mockResolvedValue(undefined);
@@ -352,6 +359,81 @@ describe("PracticePage scoring telemetry integration", () => {
     expect(
       wrapper.get(".practice-editor-status-bar").attributes("data-mode"),
     ).toBe("normal");
+  });
+
+  it("recovers a Draft from the recovery journal that IndexedDB missed, persists it durably, and clears the journal", async () => {
+    const staleDraft = attemptDraft({ keystrokeCount: 1 });
+    const recoveredDraft = attemptDraft({ keystrokeCount: 5 });
+    getResumeState.mockResolvedValue({
+      session: session(),
+      attemptDraft: staleDraft,
+    });
+    getPublishedExercise.mockResolvedValue(exercise());
+    localStorage.setItem(
+      "vimforge:draft-recovery:session-1",
+      JSON.stringify({ sessionId: "session-1", draft: recoveredDraft }),
+    );
+
+    await mountPracticePage({ seedSession: false });
+    await flushPromises();
+
+    expect(saveAttemptDraft).toHaveBeenCalledWith(
+      "session-1",
+      expect.objectContaining({ keystrokeCount: 5 }),
+    );
+    expect(
+      localStorage.getItem("vimforge:draft-recovery:session-1"),
+    ).toBeNull();
+  });
+
+  it("does not clear the recovery journal when persisting the recovered Draft fails", async () => {
+    const staleDraft = attemptDraft({ keystrokeCount: 1 });
+    const recoveredDraft = attemptDraft({ keystrokeCount: 5 });
+    getResumeState.mockResolvedValue({
+      session: session(),
+      attemptDraft: staleDraft,
+    });
+    getPublishedExercise.mockResolvedValue(exercise());
+    localStorage.setItem(
+      "vimforge:draft-recovery:session-1",
+      JSON.stringify({ sessionId: "session-1", draft: recoveredDraft }),
+    );
+    saveAttemptDraft.mockRejectedValueOnce(new Error("disk full"));
+
+    await mountPracticePage({ seedSession: false });
+    await flushPromises();
+
+    expect(
+      localStorage.getItem("vimforge:draft-recovery:session-1"),
+    ).not.toBeNull();
+  });
+
+  it("does not touch the recovery journal when it belongs to a different Attempt than IndexedDB's Draft", async () => {
+    const persistedDraft = attemptDraft({
+      clientAttemptId: "attempt-current",
+      keystrokeCount: 1,
+    });
+    const staleJournalDraft = attemptDraft({
+      clientAttemptId: "attempt-superseded",
+      keystrokeCount: 99,
+    });
+    getResumeState.mockResolvedValue({
+      session: session(),
+      attemptDraft: persistedDraft,
+    });
+    getPublishedExercise.mockResolvedValue(exercise());
+    localStorage.setItem(
+      "vimforge:draft-recovery:session-1",
+      JSON.stringify({ sessionId: "session-1", draft: staleJournalDraft }),
+    );
+
+    await mountPracticePage({ seedSession: false });
+    await flushPromises();
+
+    expect(saveAttemptDraft).not.toHaveBeenCalled();
+    expect(
+      localStorage.getItem("vimforge:draft-recovery:session-1"),
+    ).toBeNull();
   });
 
   it("increments keystrokeCount exactly once per keyPressed emission", async () => {
