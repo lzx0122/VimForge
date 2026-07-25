@@ -41,7 +41,6 @@ export const DEFAULT_SETTINGS: LocalSettings = {
   editorFontSize: 16,
   showLineNumbers: true,
   showKeypresses: true,
-  soundEnabled: false,
   preferredQuestionCount: 10,
   lastLearningMode: null,
   updatedAt: "",
@@ -79,13 +78,22 @@ function isQuestionCount(value: number): value is QuestionCount {
   return value === 5 || value === 10 || value === 20;
 }
 
+// Constructed explicitly (not spread from `settings`) so a legacy stored
+// object carrying a removed field (e.g. soundEnabled) can never resurface
+// on the normalized result or the store's own state.
 function normalizeSettings(settings: LocalSettings): LocalSettings {
+  const normalizedFont = normalizeFontSize(settings.editorFontSize);
+  const normalizedCount = isQuestionCount(settings.preferredQuestionCount)
+    ? settings.preferredQuestionCount
+    : DEFAULT_SETTINGS.preferredQuestionCount;
+
   return {
-    ...settings,
-    editorFontSize: normalizeFontSize(settings.editorFontSize),
-    preferredQuestionCount: isQuestionCount(settings.preferredQuestionCount)
-      ? settings.preferredQuestionCount
-      : DEFAULT_SETTINGS.preferredQuestionCount,
+    editorFontSize: normalizedFont,
+    showLineNumbers: Boolean(settings.showLineNumbers),
+    showKeypresses: Boolean(settings.showKeypresses),
+    preferredQuestionCount: normalizedCount,
+    lastLearningMode: settings.lastLearningMode,
+    updatedAt: settings.updatedAt,
   };
 }
 
@@ -145,7 +153,6 @@ export const useSettingsStore = defineStore("settings", {
             patch.showLineNumbers ?? this.showLineNumbers,
           showKeypresses:
             patch.showKeypresses ?? this.showKeypresses,
-          soundEnabled: patch.soundEnabled ?? this.soundEnabled,
           preferredQuestionCount:
             patch.preferredQuestionCount ?? this.preferredQuestionCount,
           lastLearningMode:

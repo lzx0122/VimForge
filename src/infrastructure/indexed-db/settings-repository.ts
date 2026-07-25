@@ -14,7 +14,6 @@ export interface LocalSettings {
   editorFontSize: number;
   showLineNumbers: boolean;
   showKeypresses: boolean;
-  soundEnabled: boolean;
   preferredQuestionCount: QuestionCount;
   lastLearningMode: LearningMode | null;
   updatedAt: string;

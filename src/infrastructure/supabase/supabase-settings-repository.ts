@@ -17,7 +17,6 @@ export class SupabaseSettingsRepository {
         editor_font_size: settings.editorFontSize,
         show_line_numbers: settings.showLineNumbers,
         show_keypresses: settings.showKeypresses,
-        sound_enabled: settings.soundEnabled,
         preferred_question_count: settings.preferredQuestionCount,
         last_learning_mode: settings.lastLearningMode,
         updated_at: settings.updatedAt,

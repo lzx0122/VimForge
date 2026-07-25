@@ -45,16 +45,23 @@ describe("SettingsPage", () => {
     expect(store.editorFontSize).toBe(28);
   });
 
-  it("updates line numbers, recent keypresses, and sound", async () => {
+  it("updates line numbers and recent keypresses", async () => {
     const { updateSettings, wrapper } = mountSettingsPage();
 
     await wrapper.get('[data-testid="show-line-numbers"]').setValue(false);
     await wrapper.get('[data-testid="show-keypresses"]').setValue(false);
-    await wrapper.get('[data-testid="sound-enabled"]').setValue(true);
 
     expect(updateSettings).toHaveBeenCalledWith({ showLineNumbers: false });
     expect(updateSettings).toHaveBeenCalledWith({ showKeypresses: false });
-    expect(updateSettings).toHaveBeenCalledWith({ soundEnabled: true });
+  });
+
+  it("has no sound preference control", () => {
+    const { wrapper } = mountSettingsPage();
+
+    expect(wrapper.find('[data-testid="sound-enabled"]').exists()).toBe(
+      false,
+    );
+    expect(wrapper.text()).not.toContain("開啟音效");
   });
 
   it("offers 5, 10, and 20 as the default question count", async () => {
