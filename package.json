@@ -8,8 +8,8 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc -b && vite build",
-    "type-check": "vue-tsc --noEmit",
+    "build": "npm run type-check && vite build",
+    "type-check": "vue-tsc -b",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
