@@ -1,5 +1,5 @@
 import { flushPromises, mount } from "@vue/test-utils";
-import { createPinia } from "pinia";
+import { createPinia, setActivePinia, type Pinia } from "pinia";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,6 +9,7 @@ import type {
   PracticeCandidateRecord,
 } from "../repositories/practice-candidate-repository";
 import type { PracticeSession } from "../../../types/session";
+import { useSettingsStore } from "../../../stores/settings-store";
 import { topicSkillSlugs } from "../data/topic-definitions";
 
 const { listPublishedCandidates, listAll, save, openDatabase } = vi.hoisted(
@@ -111,7 +112,11 @@ function attemptRecord(
   };
 }
 
-async function mountSetupPage(mode: string) {
+async function mountSetupPage(
+  mode: string,
+  options: { pinia?: Pinia; count?: string } = {},
+) {
+  const pinia = options.pinia ?? createPinia();
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -130,14 +135,22 @@ async function mountSetupPage(mode: string) {
   });
   await router.push({
     name: "practice-setup",
-    query: { mode },
+    query: options.count === undefined ? { mode } : { mode, count: options.count },
   });
   await router.isReady();
 
   const wrapper = mount(PracticeSetupPage, {
-    global: { plugins: [createPinia(), router] },
+    global: { plugins: [pinia, router] },
   });
-  return { wrapper, router };
+  return { wrapper, router, pinia };
+}
+
+function selectedQuestionCount(wrapper: ReturnType<typeof mount>): string | undefined {
+  return wrapper
+    .get('[data-testid="question-count-selector"]')
+    .findAll('input[type="radio"]')
+    .find((input) => (input.element as HTMLInputElement).checked)
+    ?.attributes("value");
 }
 
 describe("PracticeSetupPage", () => {
@@ -161,6 +174,84 @@ describe("PracticeSetupPage", () => {
     expect(selector.get('input[value="10"]').element).toMatchObject({
       checked: true,
     });
+  });
+
+  it("selects the preferred question count when no URL count is present", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    useSettingsStore().preferredQuestionCount = 20;
+
+    const { wrapper } = await mountSetupPage("efficiency", { pinia });
+
+    expect(selectedQuestionCount(wrapper)).toBe("20");
+  });
+
+  it("prefers a valid URL count over the preferred question count", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    useSettingsStore().preferredQuestionCount = 20;
+
+    const { wrapper } = await mountSetupPage("efficiency", {
+      pinia,
+      count: "5",
+    });
+
+    expect(selectedQuestionCount(wrapper)).toBe("5");
+  });
+
+  it("falls back to the preferred question count when the URL count is invalid", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    useSettingsStore().preferredQuestionCount = 20;
+
+    const { wrapper } = await mountSetupPage("efficiency", {
+      pinia,
+      count: "abc",
+    });
+
+    expect(selectedQuestionCount(wrapper)).toBe("20");
+  });
+
+  it("keeps a manual selection after Settings initializes late with a different preference", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+
+    const { wrapper } = await mountSetupPage("efficiency", { pinia });
+    await wrapper.get('input[value="5"]').setValue();
+
+    // Simulates Settings finishing its async initialize() after this page
+    // already mounted and the learner already made a manual choice.
+    useSettingsStore().preferredQuestionCount = 20;
+    await flushPromises();
+
+    expect(selectedQuestionCount(wrapper)).toBe("5");
+  });
+
+  it("keeps a valid URL count authoritative after Settings changes", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+
+    const { wrapper } = await mountSetupPage("efficiency", {
+      pinia,
+      count: "5",
+    });
+
+    useSettingsStore().preferredQuestionCount = 20;
+    await flushPromises();
+
+    expect(selectedQuestionCount(wrapper)).toBe("5");
+  });
+
+  it("still hides the question count selector for beginner mode regardless of the preferred count", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    useSettingsStore().preferredQuestionCount = 20;
+
+    const { wrapper } = await mountSetupPage("beginner", { pinia });
+
+    expect(
+      wrapper.find('[data-testid="question-count-selector"]').exists(),
+    ).toBe(false);
   });
 
   it("offers daily review and topic practice for memory review", async () => {
