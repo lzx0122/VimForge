@@ -162,18 +162,16 @@ describe("SupabaseCloudLearningStateRepository.getSettings", () => {
     await repository.getSettings();
 
     expect(query.table).toBe("user_settings");
-    expect(query.select).not.toBeNull();
-    expect(query.select).not.toContain("sound_enabled");
-    for (const column of [
-      "editor_font_size",
-      "show_line_numbers",
-      "show_keypresses",
-      "preferred_question_count",
-      "last_learning_mode",
-      "updated_at",
-    ]) {
-      expect(query.select).toContain(column);
-    }
+    expect(query.select).toBe(
+      [
+        "editor_font_size",
+        "show_line_numbers",
+        "show_keypresses",
+        "preferred_question_count",
+        "last_learning_mode",
+        "updated_at",
+      ].join(","),
+    );
     expect(query.maybeSingle).toBe(true);
   });
 
@@ -236,33 +234,33 @@ describe("SupabaseCloudLearningStateRepository.listAttemptsPage", () => {
     await repository.listAttemptsPage(null);
 
     expect(query.table).toBe("exercise_attempts");
-    for (const column of [
-      "client_attempt_id",
-      "session_id",
-      "exercise_id",
-      "exercise_version",
-      "learning_mode",
-      "source",
-      "completed",
-      "started_at",
-      "completed_at",
-      "duration_ms",
-      "keystroke_count",
-      "recommended_keystroke_count",
-      "mistake_count",
-      "undo_count",
-      "reset_count",
-      "hint_level_used",
-      "used_recommended_solution",
-      "normalized_actions",
-      "speed_score",
-      "accuracy_score",
-      "performance_quality",
-      "practice_context",
-      "created_at",
-    ]) {
-      expect(query.select).toContain(column);
-    }
+    expect(query.select).toBe(
+      [
+        "client_attempt_id",
+        "session_id",
+        "exercise_id",
+        "exercise_version",
+        "learning_mode",
+        "source",
+        "completed",
+        "started_at",
+        "completed_at",
+        "duration_ms",
+        "keystroke_count",
+        "recommended_keystroke_count",
+        "mistake_count",
+        "undo_count",
+        "reset_count",
+        "hint_level_used",
+        "used_recommended_solution",
+        "normalized_actions",
+        "speed_score",
+        "accuracy_score",
+        "performance_quality",
+        "practice_context",
+        "created_at",
+      ].join(","),
+    );
   });
 
   it("orders by created_at then client_attempt_id, both ascending", async () => {
@@ -341,6 +339,19 @@ describe("SupabaseCloudLearningStateRepository.listAttemptsPage", () => {
     });
   });
 
+  it("preserves the existing attempt cursor when no newer rows exist", async () => {
+    const { client } = createFakeSupabaseClient({ data: [], error: null });
+    const repository = new SupabaseCloudLearningStateRepository(client);
+
+    await expect(
+      repository.listAttemptsPage(attemptCursor),
+    ).resolves.toEqual({
+      items: [],
+      hasMore: false,
+      nextCursor: attemptCursor,
+    });
+  });
+
   it("returns exactly `limit` items with hasMore and a cursor from the last returned item when an extra row exists", async () => {
     const rows = [
       attemptRow({ client_attempt_id: "00000000-0000-4000-8000-000000000001" }),
@@ -387,6 +398,17 @@ describe("SupabaseCloudLearningStateRepository.listAttemptsPage", () => {
     await expect(repository.listAttemptsPage(null)).rejects.toThrow();
   });
 
+  it("rejects a malformed extra row before returning the page", async () => {
+    const rows = [
+      attemptRow({ client_attempt_id: "00000000-0000-4000-8000-000000000001" }),
+      attemptRow({ client_attempt_id: "not-a-uuid" }),
+    ];
+    const { client } = createFakeSupabaseClient({ data: rows, error: null });
+    const repository = new SupabaseCloudLearningStateRepository(client);
+
+    await expect(repository.listAttemptsPage(null, 1)).rejects.toThrow();
+  });
+
   it("wraps a Supabase error as a cause-preserving Error", async () => {
     const supabaseError = { message: "connection reset" };
     const { client } = createFakeSupabaseClient({
@@ -412,20 +434,20 @@ describe("SupabaseCloudLearningStateRepository.listMasteryPage", () => {
     await repository.listMasteryPage(null);
 
     expect(query.table).toBe("user_skill_mastery");
-    for (const column of [
-      "skill_id",
-      "mastery_score",
-      "mastery_level",
-      "successful_attempts",
-      "unique_exercise_ids",
-      "consecutive_successes",
-      "first_unhinted_success_at",
-      "latest_unhinted_success_at",
-      "last_practiced_at",
-      "updated_at",
-    ]) {
-      expect(query.select).toContain(column);
-    }
+    expect(query.select).toBe(
+      [
+        "skill_id",
+        "mastery_score",
+        "mastery_level",
+        "successful_attempts",
+        "unique_exercise_ids",
+        "consecutive_successes",
+        "first_unhinted_success_at",
+        "latest_unhinted_success_at",
+        "last_practiced_at",
+        "updated_at",
+      ].join(","),
+    );
   });
 
   it("orders by updated_at then skill_id, both ascending", async () => {
@@ -477,6 +499,19 @@ describe("SupabaseCloudLearningStateRepository.listMasteryPage", () => {
       items: [],
       nextCursor: null,
       hasMore: false,
+    });
+  });
+
+  it("preserves the existing mastery cursor when no newer rows exist", async () => {
+    const { client } = createFakeSupabaseClient({ data: [], error: null });
+    const repository = new SupabaseCloudLearningStateRepository(client);
+
+    await expect(
+      repository.listMasteryPage(masteryCursor),
+    ).resolves.toEqual({
+      items: [],
+      hasMore: false,
+      nextCursor: masteryCursor,
     });
   });
 
@@ -537,17 +572,17 @@ describe("SupabaseCloudLearningStateRepository.listReviewsPage", () => {
     await repository.listReviewsPage(null);
 
     expect(query.table).toBe("user_review_items");
-    for (const column of [
-      "exercise_id",
-      "mastery_level",
-      "current_interval_days",
-      "due_at",
-      "last_performance_quality",
-      "last_attempt_at",
-      "updated_at",
-    ]) {
-      expect(query.select).toContain(column);
-    }
+    expect(query.select).toBe(
+      [
+        "exercise_id",
+        "mastery_level",
+        "current_interval_days",
+        "due_at",
+        "last_performance_quality",
+        "last_attempt_at",
+        "updated_at",
+      ].join(","),
+    );
   });
 
   it("orders by updated_at then exercise_id, both ascending", async () => {
@@ -599,6 +634,19 @@ describe("SupabaseCloudLearningStateRepository.listReviewsPage", () => {
       items: [],
       nextCursor: null,
       hasMore: false,
+    });
+  });
+
+  it("preserves the existing review cursor when no newer rows exist", async () => {
+    const { client } = createFakeSupabaseClient({ data: [], error: null });
+    const repository = new SupabaseCloudLearningStateRepository(client);
+
+    await expect(
+      repository.listReviewsPage(reviewCursor),
+    ).resolves.toEqual({
+      items: [],
+      hasMore: false,
+      nextCursor: reviewCursor,
     });
   });
 

@@ -110,21 +110,37 @@ function resolveLimit(limit: number | undefined): number {
  * back, there is a next page (hasMore) and the cursor is derived from the
  * last row actually returned (not the extra one) - the standard keyset
  * "fetch limit+1" pagination technique.
+ *
+ * All limit+1 rows are mapped (and therefore validated) before slicing, so
+ * a malformed row hiding in the extra, soon-to-be-discarded slot still
+ * throws instead of silently escaping this request's validation.
+ *
+ * When the page has no rows at all, nextCursor falls back to the *input*
+ * cursor rather than null - an empty page resuming from an existing
+ * cursor means "nothing new since that cursor", not "start over". Only a
+ * genuinely first page (input cursor null, no rows) produces a null
+ * nextCursor. Losing this distinction would let a caller that persists
+ * nextCursor after every page reset a resumed hydration back to the start
+ * of the dataset whenever it catches up to the latest data.
  */
 function buildPage<TRow, TItem, TCursor>(
   rows: readonly TRow[],
   limit: number,
+  currentCursor: TCursor | null,
   mapRow: (row: TRow) => TItem,
   cursorOf: (row: TRow) => TCursor,
 ): CloudPage<TItem, TCursor> {
-  const hasMore = rows.length > limit;
-  const pageRows = hasMore ? rows.slice(0, limit) : rows;
-  const items = pageRows.map(mapRow);
+  const mappedRows = rows.map((row) => ({
+    item: mapRow(row),
+    cursor: cursorOf(row),
+  }));
+  const hasMore = mappedRows.length > limit;
+  const pageRows = hasMore ? mappedRows.slice(0, limit) : mappedRows;
   const lastRow = pageRows.at(-1);
 
   return {
-    items,
-    nextCursor: lastRow === undefined ? null : cursorOf(lastRow),
+    items: pageRows.map((row) => row.item),
+    nextCursor: lastRow === undefined ? currentCursor : lastRow.cursor,
     hasMore,
   };
 }
@@ -178,6 +194,7 @@ export class SupabaseCloudLearningStateRepository
     return buildPage(
       asRow<ExerciseAttemptRow[]>(data ?? []),
       resolvedLimit,
+      cursor,
       mapCloudAttempt,
       (row) => ({
         createdAt: row.created_at,
@@ -211,6 +228,7 @@ export class SupabaseCloudLearningStateRepository
     return buildPage(
       asRow<UserSkillMasteryRow[]>(data ?? []),
       resolvedLimit,
+      cursor,
       mapCloudSkillMastery,
       (row) => ({
         updatedAt: row.updated_at,
@@ -244,6 +262,7 @@ export class SupabaseCloudLearningStateRepository
     return buildPage(
       asRow<UserReviewItemRow[]>(data ?? []),
       resolvedLimit,
+      cursor,
       mapCloudExerciseReview,
       (row) => ({
         updatedAt: row.updated_at,
