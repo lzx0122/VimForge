@@ -152,6 +152,36 @@ describe("mapCloudSettings", () => {
     expect(() => mapCloudSettings(row)).toThrow();
   });
 
+  it("throws on a locale-formatted updated_at", () => {
+    const row = settingsRow({ updated_at: "07/21/2026" });
+
+    expect(() => mapCloudSettings(row)).toThrow();
+  });
+
+  it("throws on a date-only updated_at with no time component", () => {
+    const row = settingsRow({ updated_at: "2026-07-21" });
+
+    expect(() => mapCloudSettings(row)).toThrow();
+  });
+
+  it("throws on a font size below the 12-28 domain", () => {
+    const row = settingsRow({ editor_font_size: 11 });
+
+    expect(() => mapCloudSettings(row)).toThrow();
+  });
+
+  it("throws on a font size above the 12-28 domain", () => {
+    const row = settingsRow({ editor_font_size: 29 });
+
+    expect(() => mapCloudSettings(row)).toThrow();
+  });
+
+  it("throws on a fractional font size", () => {
+    const row = settingsRow({ editor_font_size: 16.5 });
+
+    expect(() => mapCloudSettings(row)).toThrow();
+  });
+
   it("does not mutate the input row", () => {
     const row = Object.freeze(settingsRow());
 
@@ -277,6 +307,68 @@ describe("mapCloudAttempt", () => {
     expect(() => mapCloudAttempt(row)).toThrow();
   });
 
+  it("throws on an impossible calendar date in started_at", () => {
+    const row = attemptRow({ started_at: "2026-02-30T00:00:00Z" });
+
+    expect(() => mapCloudAttempt(row)).toThrow();
+  });
+
+  it("throws on a fractional speed_score", () => {
+    const row = attemptRow({ speed_score: 82.5 });
+
+    expect(() => mapCloudAttempt(row)).toThrow();
+  });
+
+  it("throws on a fractional accuracy_score", () => {
+    const row = attemptRow({ accuracy_score: 92.5 });
+
+    expect(() => mapCloudAttempt(row)).toThrow();
+  });
+
+  it("throws on an insert_text action with a negative textLength", () => {
+    const row = attemptRow({
+      normalized_actions: [
+        { type: "insert_text", text: "value", textLength: -1 },
+      ] as never,
+    });
+
+    expect(() => mapCloudAttempt(row)).toThrow();
+  });
+
+  it("throws on an insert_text action with a fractional textLength", () => {
+    const row = attemptRow({
+      normalized_actions: [
+        { type: "insert_text", text: "value", textLength: 2.5 },
+      ] as never,
+    });
+
+    expect(() => mapCloudAttempt(row)).toThrow();
+  });
+
+  it("throws on an insert_text action whose textLength does not match text.length", () => {
+    const row = attemptRow({
+      normalized_actions: [
+        { type: "insert_text", text: "value", textLength: 3 },
+      ] as never,
+    });
+
+    expect(() => mapCloudAttempt(row)).toThrow();
+  });
+
+  it("never aliases the input row's normalized_actions array or its action objects", () => {
+    const row = attemptRow();
+    const originalActions = structuredClone(row.normalized_actions);
+    const mapped = mapCloudAttempt(row);
+
+    mapped.normalizedActions.push({ type: "undo" });
+    if (mapped.normalizedActions[0]?.type === "vim_command") {
+      mapped.normalizedActions[0].command = "mutated";
+    }
+
+    expect(row.normalized_actions).toEqual(originalActions);
+    expect(mapped.normalizedActions).not.toBe(row.normalized_actions);
+  });
+
   it("does not mutate the input row", () => {
     const row = Object.freeze(attemptRow());
 
@@ -351,6 +443,18 @@ describe("mapCloudSkillMastery", () => {
     expect(() => mapCloudSkillMastery(row)).toThrow();
   });
 
+  it("never aliases the input row's unique_exercise_ids array", () => {
+    const row = masteryRow();
+    const mapped = mapCloudSkillMastery(row);
+
+    mapped.uniqueExerciseIds.push("00000000-0000-4000-8000-000000000999");
+
+    expect(row.unique_exercise_ids).not.toContain(
+      "00000000-0000-4000-8000-000000000999",
+    );
+    expect(mapped.uniqueExerciseIds).not.toBe(row.unique_exercise_ids);
+  });
+
   it("does not mutate the input row", () => {
     const row = Object.freeze(masteryRow());
 
@@ -405,6 +509,12 @@ describe("mapCloudExerciseReview", () => {
 
   it("throws on an invalid due_at timestamp", () => {
     const row = reviewRow({ due_at: "not-a-timestamp" });
+
+    expect(() => mapCloudExerciseReview(row)).toThrow();
+  });
+
+  it("throws on a date-only due_at with no time component", () => {
+    const row = reviewRow({ due_at: "2026-07-21" });
 
     expect(() => mapCloudExerciseReview(row)).toThrow();
   });

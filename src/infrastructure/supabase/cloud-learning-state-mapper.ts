@@ -46,10 +46,65 @@ function assertNullableUuid(value: unknown, field: string): string | null {
   return value === null ? null : assertUuid(value, field);
 }
 
+// Requires a full timestamp (date, time, seconds, optional fractional
+// seconds, explicit Z or numeric UTC offset) and rejects impossible
+// calendar dates. Date.parse()/`new Date(...)` alone are not strict
+// enough: they accept locale-formatted and date-only strings, and they
+// silently normalize invalid dates (e.g. Feb 30 rolls over to March)
+// instead of rejecting them - both of those must throw here.
+const TIMESTAMP_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|([+-])(\d{2}):(\d{2}))$/;
+
 function assertTimestamp(value: unknown, field: string): string {
-  if (typeof value !== "string" || Number.isNaN(Date.parse(value))) {
-    invalid(field, "an ISO timestamp string");
+  if (typeof value !== "string") {
+    invalid(field, "a full ISO timestamp string");
   }
+
+  const match = TIMESTAMP_PATTERN.exec(value);
+  if (!match) {
+    invalid(
+      field,
+      "a full ISO timestamp with date, time, seconds, and an explicit Z or numeric UTC offset",
+    );
+  }
+
+  const [
+    ,
+    yearText,
+    monthText,
+    dayText,
+    hourText,
+    minuteText,
+    secondText,
+    offsetSign,
+    offsetHourText,
+    offsetMinuteText,
+  ] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+
+  if (month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) {
+    invalid(field, "valid calendar and time components");
+  }
+  if (offsetSign !== undefined) {
+    if (Number(offsetHourText) > 23 || Number(offsetMinuteText) > 59) {
+      invalid(field, "a valid UTC offset");
+    }
+  }
+
+  const roundTrip = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  if (
+    roundTrip.getUTCFullYear() !== year ||
+    roundTrip.getUTCMonth() !== month - 1 ||
+    roundTrip.getUTCDate() !== day
+  ) {
+    invalid(field, "a real calendar date");
+  }
+
   return value;
 }
 
@@ -92,6 +147,7 @@ function assertNullableNonNegativeInteger(
   return value === null ? null : assertNonNegativeInteger(value, field);
 }
 
+// For mastery_score: a PostgreSQL numeric(6,2), so decimals are valid.
 function assertScoreRange(value: unknown, field: string): number {
   if (
     typeof value !== "number" ||
@@ -104,8 +160,22 @@ function assertScoreRange(value: unknown, field: string): number {
   return value;
 }
 
-function assertNullableScoreRange(value: unknown, field: string): number {
-  return value === null ? 0 : assertScoreRange(value, field);
+// For speed_score/accuracy_score: PostgreSQL smallint columns, so only
+// whole numbers are valid.
+function assertIntegerScoreRange(value: unknown, field: string): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < 0 ||
+    value > 100
+  ) {
+    invalid(field, "an integer score between 0 and 100");
+  }
+  return value;
+}
+
+function assertNullableIntegerScoreRange(value: unknown, field: string): number {
+  return value === null ? 0 : assertIntegerScoreRange(value, field);
 }
 
 function assertNumberRange(
@@ -176,7 +246,10 @@ function isNormalizedAction(value: unknown): value is NormalizedAction {
   if (candidate.type === "insert_text") {
     return (
       typeof candidate.text === "string" &&
-      typeof candidate.textLength === "number"
+      typeof candidate.textLength === "number" &&
+      Number.isInteger(candidate.textLength) &&
+      candidate.textLength >= 0 &&
+      candidate.textLength === candidate.text.length
     );
   }
   if (candidate.type === "mode_change") {
@@ -226,11 +299,11 @@ function assertUuidArray(value: unknown, field: string): string[] {
 
 export function mapCloudSettings(row: UserSettingsRow): CloudSettingsSnapshot {
   return {
-    editorFontSize: assertNumberRange(
+    editorFontSize: assertIntegerRange(
       row.editor_font_size,
       "editor_font_size",
-      1,
-      1000,
+      12,
+      28,
     ),
     showLineNumbers: assertBoolean(row.show_line_numbers, "show_line_numbers"),
     showKeypresses: assertBoolean(row.show_keypresses, "show_keypresses"),
@@ -310,8 +383,14 @@ export function mapCloudAttempt(row: ExerciseAttemptRow): CloudAttemptSnapshot {
     row.normalized_actions,
     "normalized_actions",
   );
-  const speedScore = assertNullableScoreRange(row.speed_score, "speed_score");
-  const accuracyScore = assertScoreRange(row.accuracy_score, "accuracy_score");
+  const speedScore = assertNullableIntegerScoreRange(
+    row.speed_score,
+    "speed_score",
+  );
+  const accuracyScore = assertIntegerScoreRange(
+    row.accuracy_score,
+    "accuracy_score",
+  );
   const performanceQuality = assertIntegerRange(
     row.performance_quality,
     "performance_quality",
