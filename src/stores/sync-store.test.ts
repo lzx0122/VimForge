@@ -215,6 +215,42 @@ describe("sync store", () => {
       expect(downloadState.mock.calls).toEqual([["user-a"], ["user-b"]]);
     });
 
+    it("starts a fresh operation for the same user after the authentication generation changes", async () => {
+      let resolveFirstDownload!: (result: CloudHydrationResult) => void;
+      const downloadState = vi
+        .fn<(userId: string) => Promise<CloudHydrationResult>>()
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveFirstDownload = resolve;
+            }),
+        )
+        .mockResolvedValueOnce(emptyHydrationResult());
+      const dependencies: SyncCoordinationDependencies = {
+        ownerRepository: resolvingOwnerRepository(),
+        guestSyncService: asGuestSyncService({
+          syncPending: vi.fn(async () => emptyGuestSyncResult()),
+          onNetworkChange: vi.fn(() => () => undefined),
+        }),
+        cloudHydrationService: asCloudHydrationService({ downloadState }),
+      };
+      const store = useSyncStore();
+
+      await store.setAuthenticated("user-a", dependencies);
+      const firstOperation = store.syncAndHydrate("user-a", dependencies);
+
+      await vi.waitFor(() => expect(downloadState).toHaveBeenCalledTimes(1));
+
+      await store.setAuthenticated("user-a", dependencies);
+
+      resolveFirstDownload(emptyHydrationResult());
+      await firstOperation;
+
+      await vi.waitFor(() => expect(downloadState).toHaveBeenCalledTimes(2));
+
+      expect(downloadState.mock.calls).toEqual([["user-a"], ["user-a"]]);
+    });
+
     it("uses the authenticated user's id when no userId argument is given", async () => {
       const authStore = useAuthStore();
       authStore.$patch({
@@ -349,7 +385,7 @@ describe("sync store", () => {
       expect(downloadState).not.toHaveBeenCalled();
     });
 
-    it("stops the online retry listener and preserves local counts on sign-out", async () => {
+    it("stops the online retry listener, preserves local counts, and clears syncing on sign-out", async () => {
       const stopListener = vi.fn();
       const onNetworkChange = vi.fn(() => stopListener);
       let resolveSyncPending!: (result: GuestSyncResult) => void;
@@ -368,6 +404,9 @@ describe("sync store", () => {
       store.failedCount = 1;
 
       await store.setAuthenticated("user-1", dependencies);
+      const activeOperation = store.syncAndHydrate("user-1", dependencies);
+      await vi.waitFor(() => expect(store.syncing).toBe(true));
+
       await store.setAuthenticated(null, dependencies);
 
       expect(stopListener).toHaveBeenCalledTimes(1);
@@ -377,9 +416,44 @@ describe("sync store", () => {
       expect(store.hydrating).toBe(false);
       expect(store.hydrationErrorMessage).toBeNull();
       expect(store.accountConflictMessage).toBeNull();
+      expect(store.syncing).toBe(false);
 
       resolveSyncPending(emptyGuestSyncResult());
-      await vi.waitFor(() => expect(syncPending).toHaveBeenCalled());
+      await activeOperation;
+
+      expect(store.syncing).toBe(false);
+    });
+
+    it("does not install a listener or start coordination when sign-out occurs while the guest sync service is resolving", async () => {
+      let resolveService!: (service: GuestSyncService) => void;
+      const onNetworkChange = vi.fn(() => () => undefined);
+      const syncPending = vi.fn(async () => emptyGuestSyncResult());
+      const downloadState = vi.fn(async () => emptyHydrationResult());
+      const servicePromise = new Promise<GuestSyncService>((resolve) => {
+        resolveService = resolve;
+      });
+      const dependencies: SyncCoordinationDependencies = {
+        ownerRepository: resolvingOwnerRepository(),
+        resolveGuestSyncService: () => servicePromise,
+        cloudHydrationService: asCloudHydrationService({ downloadState }),
+      };
+      const store = useSyncStore();
+
+      const staleAuthentication = store.setAuthenticated(
+        "user-a",
+        dependencies,
+      );
+
+      await store.setAuthenticated(null, dependencies);
+
+      resolveService(asGuestSyncService({ syncPending, onNetworkChange }));
+
+      await staleAuthentication;
+      await Promise.resolve();
+
+      expect(onNetworkChange).not.toHaveBeenCalled();
+      expect(syncPending).not.toHaveBeenCalled();
+      expect(downloadState).not.toHaveBeenCalled();
     });
 
     it("does not restore hydration state after signing out during an in-flight download", async () => {

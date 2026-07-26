@@ -38,11 +38,13 @@ interface SyncStoreState {
 export interface SyncCoordinationDependencies {
   ownerRepository?: Pick<LocalDataOwnerRepository, "bind">;
   guestSyncService?: GuestSyncService;
+  resolveGuestSyncService?: () => Promise<GuestSyncService>;
   cloudHydrationService?: CloudHydrationService;
 }
 
 interface ActiveSyncAndHydrate {
   userId: string;
+  generation: number;
   promise: Promise<void>;
 }
 
@@ -100,6 +102,18 @@ function getDefaultService(): Promise<GuestSyncService> {
   defaultServicePromise ??= createDefaultService();
 
   return defaultServicePromise;
+}
+
+async function resolveGuestSyncService(
+  dependencies?: SyncCoordinationDependencies,
+): Promise<GuestSyncService> {
+  if (dependencies?.guestSyncService) {
+    return dependencies.guestSyncService;
+  }
+  if (dependencies?.resolveGuestSyncService) {
+    return dependencies.resolveGuestSyncService();
+  }
+  return getDefaultService();
 }
 
 async function createDefaultCloudHydrationService(): Promise<CloudHydrationService> {
@@ -208,11 +222,12 @@ export const useSyncStore = defineStore("sync", {
       userId: string | null,
       dependencies?: SyncCoordinationDependencies,
     ): Promise<void> {
-      authGeneration += 1;
+      const generation = ++authGeneration;
       stopOnlineRetry?.();
       stopOnlineRetry = null;
 
       if (userId === null) {
+        this.syncing = false;
         this.hydrating = false;
         this.hydratedUserId = null;
         this.hydrationErrorMessage = null;
@@ -223,14 +238,22 @@ export const useSyncStore = defineStore("sync", {
       this.hydrationErrorMessage = null;
       this.accountConflictMessage = null;
 
-      const guestSyncService =
-        dependencies?.guestSyncService ?? (await getDefaultService());
+      const guestSyncService = await resolveGuestSyncService(dependencies);
+      // A newer setAuthenticated() call (including a sign-out) may have
+      // already run to completion while the service above was resolving;
+      // this call must not install a listener, replace the current
+      // listener handle, or start coordination on its behalf.
+      if (generation !== authGeneration) {
+        return;
+      }
 
       // GuestSyncService.retryWhenOnline only re-runs syncPending(); the
       // complete upload-first-then-hydrate operation is syncAndHydrate, so
-      // the store subscribes to network changes itself instead.
+      // the store subscribes to network changes itself instead. The
+      // listener re-checks the generation at fire time too, since it can
+      // outlive this call by a long margin.
       stopOnlineRetry = guestSyncService.onNetworkChange((online) => {
-        if (online) {
+        if (online && generation === authGeneration) {
           void this.syncAndHydrate(userId, dependencies);
         }
       });
@@ -244,10 +267,12 @@ export const useSyncStore = defineStore("sync", {
      * cloud hydration never runs while pending/failed Attempts remain, and
      * never runs against a local database bound to a different account.
      *
-     * Concurrent calls for the SAME user share one in-flight operation.
-     * A call for a DIFFERENT user never reuses that operation (two
-     * accounts' coordination must never run concurrently against the same
-     * local database) - it waits for the current one to settle, then
+     * Concurrent calls for the SAME user in the SAME authentication
+     * generation share one in-flight operation. A call for a different
+     * user, or the same user in a newer generation (e.g. setAuthenticated
+     * was called again for the same account), never reuses that operation
+     * - two coordinations must never run concurrently against the same
+     * local database - it waits for the current one to settle, then
      * re-evaluates from scratch.
      */
     async syncAndHydrate(
@@ -261,7 +286,10 @@ export const useSyncStore = defineStore("sync", {
 
       const current = activeSyncAndHydrate;
       if (current !== null) {
-        if (current.userId === targetUserId) {
+        if (
+          current.userId === targetUserId &&
+          current.generation === authGeneration
+        ) {
           return current.promise;
         }
         await current.promise.catch(() => undefined);
@@ -269,7 +297,10 @@ export const useSyncStore = defineStore("sync", {
       }
 
       const generation = authGeneration;
-      const operation = { userId: targetUserId } as ActiveSyncAndHydrate;
+      const operation = {
+        userId: targetUserId,
+        generation,
+      } as ActiveSyncAndHydrate;
       operation.promise = this.performSyncAndHydrate(
         targetUserId,
         generation,
@@ -298,8 +329,7 @@ export const useSyncStore = defineStore("sync", {
 
       const ownerRepository =
         dependencies?.ownerRepository ?? (await getDefaultOwnerRepository());
-      const guestSyncService =
-        dependencies?.guestSyncService ?? (await getDefaultService());
+      const guestSyncService = await resolveGuestSyncService(dependencies);
 
       // Checked before any upload: a local database bound to a different
       // account must never upload that account's pending Attempts under
