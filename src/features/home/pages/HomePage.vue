@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 
 import { openVimForgeDatabase } from "../../../infrastructure/indexed-db/database";
@@ -8,6 +8,7 @@ import { SessionRepository } from "../../../infrastructure/indexed-db/session-re
 import { SkillMasteryRepository } from "../../../infrastructure/indexed-db/skill-mastery-repository";
 import { reportError } from "../../../infrastructure/monitoring/error-reporter";
 import { SupabaseCourseRepository } from "../../../infrastructure/supabase/supabase-course-repository";
+import { useSyncStore } from "../../../stores/sync-store";
 import LearningModeGrid from "../components/LearningModeGrid.vue";
 import {
   HomeLearningSummaryService,
@@ -18,6 +19,7 @@ type SummaryLoadState = "loading" | "loaded" | "error";
 
 const loadState = ref<SummaryLoadState>("loading");
 const summary = ref<HomeLearningSummary | null>(null);
+const syncStore = useSyncStore();
 
 const hasSummaryContent = computed(
   () =>
@@ -27,7 +29,10 @@ const hasSummaryContent = computed(
       summary.value.weakestSkill !== null),
 );
 
+let loadRequestId = 0;
+
 async function loadSummary(): Promise<void> {
+  const requestId = ++loadRequestId;
   loadState.value = "loading";
   try {
     const database = await openVimForgeDatabase();
@@ -43,9 +48,15 @@ async function loadSummary(): Promise<void> {
     } finally {
       database.close();
     }
+    if (requestId !== loadRequestId) {
+      return;
+    }
     summary.value = loadedSummary;
     loadState.value = "loaded";
   } catch (error: unknown) {
+    if (requestId !== loadRequestId) {
+      return;
+    }
     reportError("home.load-summary", error);
     loadState.value = "error";
   }
@@ -53,6 +64,19 @@ async function loadSummary(): Promise<void> {
 
 onMounted(() => {
   void loadSummary();
+});
+
+const stopRevisionWatch = watch(
+  () => syncStore.localLearningStateRevision,
+  (revision, previousRevision) => {
+    if (revision > previousRevision) {
+      void loadSummary();
+    }
+  },
+);
+
+onUnmounted(() => {
+  stopRevisionWatch();
 });
 </script>
 

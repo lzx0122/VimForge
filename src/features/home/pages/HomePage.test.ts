@@ -1,7 +1,9 @@
 import { flushPromises, mount } from "@vue/test-utils";
+import { createPinia, setActivePinia } from "pinia";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { useSyncStore } from "../../../stores/sync-store";
 import type { HomeLearningSummary } from "../services/home-learning-summary-service";
 
 const { getSummary, openDatabase } = vi.hoisted(() => ({
@@ -35,6 +37,8 @@ function summary(overrides: Partial<HomeLearningSummary> = {}): HomeLearningSumm
 }
 
 async function mountHomePage() {
+  const pinia = createPinia();
+  setActivePinia(pinia);
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -56,9 +60,10 @@ async function mountHomePage() {
   await router.isReady();
 
   const wrapper = mount(HomePage, {
-    global: { plugins: [router] },
+    global: { plugins: [router, pinia] },
   });
-  return { wrapper, router };
+  const syncStore = useSyncStore();
+  return { wrapper, router, syncStore };
 }
 
 describe("HomePage", () => {
@@ -130,5 +135,65 @@ describe("HomePage", () => {
     expect(wrapper.find('a[href^="/practice/"]').exists()).toBe(false);
     expect(wrapper.find('a[href="/review"]').exists()).toBe(false);
     expect(wrapper.findAll("button")).toHaveLength(3);
+  });
+
+  describe("cloud hydration refresh", () => {
+    it("reloads the summary when localLearningStateRevision increases", async () => {
+      getSummary.mockResolvedValueOnce(summary());
+      const { wrapper, syncStore } = await mountHomePage();
+      await flushPromises();
+
+      expect(getSummary).toHaveBeenCalledTimes(1);
+
+      getSummary.mockResolvedValueOnce(summary({ dueReviewCount: 3 }));
+      syncStore.localLearningStateRevision = 1;
+      await flushPromises();
+
+      expect(getSummary).toHaveBeenCalledTimes(2);
+      expect(wrapper.text()).toContain("今日有 3 題待複習");
+    });
+
+    it("ignores an older request that resolves after a newer one", async () => {
+      let resolveFirst!: (value: HomeLearningSummary) => void;
+      let resolveSecond!: (value: HomeLearningSummary) => void;
+      getSummary.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+      );
+      const { wrapper, syncStore } = await mountHomePage();
+      await flushPromises();
+
+      getSummary.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveSecond = resolve;
+        }),
+      );
+      syncStore.localLearningStateRevision = 1;
+      await flushPromises();
+
+      resolveSecond(summary({ dueReviewCount: 9 }));
+      await flushPromises();
+      resolveFirst(summary({ dueReviewCount: 1 }));
+      await flushPromises();
+
+      expect(wrapper.text()).toContain("今日有 9 題待複習");
+      expect(wrapper.text()).not.toContain("今日有 1 題待複習");
+    });
+
+    it("stops reloading after the page unmounts", async () => {
+      getSummary.mockResolvedValueOnce(summary());
+      const { wrapper, syncStore } = await mountHomePage();
+      await flushPromises();
+
+      expect(getSummary).toHaveBeenCalledTimes(1);
+
+      wrapper.unmount();
+      getSummary.mockResolvedValueOnce(summary({ dueReviewCount: 5 }));
+      syncStore.localLearningStateRevision = 1;
+      await flushPromises();
+
+      expect(getSummary).toHaveBeenCalledTimes(1);
+    });
   });
 });

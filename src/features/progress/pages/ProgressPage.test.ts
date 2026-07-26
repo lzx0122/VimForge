@@ -1,7 +1,9 @@
 import { flushPromises, mount } from "@vue/test-utils";
+import { createPinia, setActivePinia } from "pinia";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { useSyncStore } from "../../../stores/sync-store";
 import type { ProgressDashboard } from "../services/progress-query-service";
 
 const { getDashboard, openDatabase } = vi.hoisted(() => ({
@@ -82,6 +84,8 @@ function dashboard(overrides: Partial<ProgressDashboard> = {}): ProgressDashboar
 }
 
 async function mountProgressPage() {
+  const pinia = createPinia();
+  setActivePinia(pinia);
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -98,9 +102,11 @@ async function mountProgressPage() {
   await router.push("/progress");
   await router.isReady();
 
-  return mount(ProgressPage, {
-    global: { plugins: [router] },
+  const wrapper = mount(ProgressPage, {
+    global: { plugins: [router, pinia] },
   });
+  const syncStore = useSyncStore();
+  return { wrapper, syncStore };
 }
 
 describe("ProgressPage", () => {
@@ -112,7 +118,7 @@ describe("ProgressPage", () => {
   it("shows a loading state before the dashboard resolves", async () => {
     getDashboard.mockReturnValue(new Promise(() => {}));
 
-    const wrapper = await mountProgressPage();
+    const { wrapper } = await mountProgressPage();
 
     expect(wrapper.text()).toContain("正在載入學習進度");
   });
@@ -120,7 +126,7 @@ describe("ProgressPage", () => {
   it("shows skill mastery from Level 0 through Level 5 and due reviews", async () => {
     getDashboard.mockResolvedValue(dashboard());
 
-    const wrapper = await mountProgressPage();
+    const { wrapper } = await mountProgressPage();
     await flushPromises();
 
     expect(wrapper.text()).toContain("基礎移動");
@@ -134,7 +140,7 @@ describe("ProgressPage", () => {
   it("shows unit completion and recent errors", async () => {
     getDashboard.mockResolvedValue(dashboard());
 
-    const wrapper = await mountProgressPage();
+    const { wrapper } = await mountProgressPage();
     await flushPromises();
 
     expect(wrapper.get('[data-unit-slug="basic-cursor-movement"]').text()).toContain(
@@ -154,7 +160,7 @@ describe("ProgressPage", () => {
   it("does not introduce XP or rankings", async () => {
     getDashboard.mockResolvedValue(dashboard());
 
-    const wrapper = await mountProgressPage();
+    const { wrapper } = await mountProgressPage();
     await flushPromises();
 
     expect(wrapper.text()).not.toMatch(/XP|排名/);
@@ -171,7 +177,7 @@ describe("ProgressPage", () => {
       }),
     );
 
-    const wrapper = await mountProgressPage();
+    const { wrapper } = await mountProgressPage();
     await flushPromises();
 
     expect(wrapper.text()).toContain("尚無學習紀錄");
@@ -184,7 +190,7 @@ describe("ProgressPage", () => {
   it("shows a retryable error state when loading fails, and recovers on retry", async () => {
     getDashboard.mockRejectedValueOnce(new Error("db unavailable"));
 
-    const wrapper = await mountProgressPage();
+    const { wrapper } = await mountProgressPage();
     await flushPromises();
 
     expect(wrapper.get('[role="alert"]').text()).toContain(
@@ -196,5 +202,70 @@ describe("ProgressPage", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("基礎移動");
+  });
+
+  describe("cloud hydration refresh", () => {
+    it("reloads the dashboard when localLearningStateRevision increases", async () => {
+      getDashboard.mockResolvedValueOnce(dashboard());
+      const { wrapper, syncStore } = await mountProgressPage();
+      await flushPromises();
+
+      expect(getDashboard).toHaveBeenCalledTimes(1);
+
+      getDashboard.mockResolvedValueOnce(
+        dashboard({ dueReviewCount: 40 }),
+      );
+      syncStore.localLearningStateRevision = 1;
+      await flushPromises();
+
+      expect(getDashboard).toHaveBeenCalledTimes(2);
+      expect(wrapper.get('[data-testid="due-review-count"]').text()).toBe(
+        "40",
+      );
+    });
+
+    it("ignores an older request that resolves after a newer one", async () => {
+      let resolveFirst!: (value: ProgressDashboard) => void;
+      let resolveSecond!: (value: ProgressDashboard) => void;
+      getDashboard.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+      );
+      const { wrapper, syncStore } = await mountProgressPage();
+      await flushPromises();
+
+      getDashboard.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveSecond = resolve;
+        }),
+      );
+      syncStore.localLearningStateRevision = 1;
+      await flushPromises();
+
+      resolveSecond(dashboard({ dueReviewCount: 9 }));
+      await flushPromises();
+      resolveFirst(dashboard({ dueReviewCount: 1 }));
+      await flushPromises();
+
+      expect(wrapper.get('[data-testid="due-review-count"]').text()).toBe(
+        "9",
+      );
+    });
+
+    it("stops reloading after the page unmounts", async () => {
+      getDashboard.mockResolvedValueOnce(dashboard());
+      const { wrapper, syncStore } = await mountProgressPage();
+      await flushPromises();
+
+      expect(getDashboard).toHaveBeenCalledTimes(1);
+
+      wrapper.unmount();
+      getDashboard.mockResolvedValueOnce(dashboard({ dueReviewCount: 5 }));
+      syncStore.localLearningStateRevision = 1;
+      await flushPromises();
+
+      expect(getDashboard).toHaveBeenCalledTimes(1);
+    });
   });
 });

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 
 import { AttemptRepository } from "../../../infrastructure/indexed-db/attempt-repository";
@@ -7,6 +7,7 @@ import { openVimForgeDatabase } from "../../../infrastructure/indexed-db/databas
 import { ExerciseReviewRepository } from "../../../infrastructure/indexed-db/exercise-review-repository";
 import { SkillMasteryRepository } from "../../../infrastructure/indexed-db/skill-mastery-repository";
 import { SupabaseCourseRepository } from "../../../infrastructure/supabase/supabase-course-repository";
+import { useSyncStore } from "../../../stores/sync-store";
 import RecentAttempts from "../components/RecentAttempts.vue";
 import SkillMasteryList from "../components/SkillMasteryList.vue";
 import UnitProgressGrid from "../components/UnitProgressGrid.vue";
@@ -19,8 +20,12 @@ type ProgressLoadState = "loading" | "loaded" | "empty" | "error";
 
 const loadState = ref<ProgressLoadState>("loading");
 const dashboard = ref<ProgressDashboard | null>(null);
+const syncStore = useSyncStore();
+
+let loadRequestId = 0;
 
 async function loadDashboard(): Promise<void> {
+  const requestId = ++loadRequestId;
   loadState.value = "loading";
   try {
     const database = await openVimForgeDatabase();
@@ -36,15 +41,34 @@ async function loadDashboard(): Promise<void> {
     } finally {
       database.close();
     }
+    if (requestId !== loadRequestId) {
+      return;
+    }
     dashboard.value = loadedDashboard;
     loadState.value = loadedDashboard.hasLearningHistory ? "loaded" : "empty";
   } catch {
+    if (requestId !== loadRequestId) {
+      return;
+    }
     loadState.value = "error";
   }
 }
 
 onMounted(() => {
   void loadDashboard();
+});
+
+const stopRevisionWatch = watch(
+  () => syncStore.localLearningStateRevision,
+  (revision, previousRevision) => {
+    if (revision > previousRevision) {
+      void loadDashboard();
+    }
+  },
+);
+
+onUnmounted(() => {
+  stopRevisionWatch();
 });
 </script>
 

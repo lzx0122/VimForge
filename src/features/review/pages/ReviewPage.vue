@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 
 import { AttemptRepository } from "../../../infrastructure/indexed-db/attempt-repository";
@@ -7,6 +7,7 @@ import { openVimForgeDatabase } from "../../../infrastructure/indexed-db/databas
 import { ExerciseReviewRepository } from "../../../infrastructure/indexed-db/exercise-review-repository";
 import { SkillMasteryRepository } from "../../../infrastructure/indexed-db/skill-mastery-repository";
 import { SupabasePracticeCandidateRepository } from "../../../infrastructure/supabase/supabase-practice-candidate-repository";
+import { useSyncStore } from "../../../stores/sync-store";
 import type { QuestionCount } from "../../../types/learning";
 import QuestionCountSelector from "../../practice/components/QuestionCountSelector.vue";
 import DailyReviewSummary from "../components/DailyReviewSummary.vue";
@@ -21,8 +22,12 @@ type ReviewLoadState = "loading" | "loaded" | "empty" | "error";
 const loadState = ref<ReviewLoadState>("loading");
 const summary = ref<ReviewSummary | null>(null);
 const questionCount = ref<QuestionCount>(10);
+const syncStore = useSyncStore();
+
+let loadRequestId = 0;
 
 async function loadSummary(): Promise<void> {
+  const requestId = ++loadRequestId;
   loadState.value = "loading";
   try {
     const database = await openVimForgeDatabase();
@@ -38,15 +43,34 @@ async function loadSummary(): Promise<void> {
     } finally {
       database.close();
     }
+    if (requestId !== loadRequestId) {
+      return;
+    }
     summary.value = result;
     loadState.value = result.hasLearningHistory ? "loaded" : "empty";
   } catch {
+    if (requestId !== loadRequestId) {
+      return;
+    }
     loadState.value = "error";
   }
 }
 
 onMounted(() => {
   void loadSummary();
+});
+
+const stopRevisionWatch = watch(
+  () => syncStore.localLearningStateRevision,
+  (revision, previousRevision) => {
+    if (revision > previousRevision) {
+      void loadSummary();
+    }
+  },
+);
+
+onUnmounted(() => {
+  stopRevisionWatch();
 });
 </script>
 

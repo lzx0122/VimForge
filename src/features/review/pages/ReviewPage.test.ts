@@ -1,7 +1,9 @@
 import { flushPromises, mount } from "@vue/test-utils";
+import { createPinia, setActivePinia } from "pinia";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { useSyncStore } from "../../../stores/sync-store";
 import type { AttemptSyncInput } from "../../practice/repositories/attempt-sync-repository";
 import type {
   PracticeCandidateListOptions,
@@ -96,6 +98,8 @@ function attempt(overrides: Partial<AttemptSyncInput> = {}): AttemptSyncInput {
 }
 
 async function mountReviewPage() {
+  const pinia = createPinia();
+  setActivePinia(pinia);
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -110,9 +114,11 @@ async function mountReviewPage() {
   await router.push("/review");
   await router.isReady();
 
-  return mount(ReviewPage, {
-    global: { plugins: [router] },
+  const wrapper = mount(ReviewPage, {
+    global: { plugins: [router, pinia] },
   });
+  const syncStore = useSyncStore();
+  return { wrapper, syncStore };
 }
 
 describe("ReviewPage", () => {
@@ -126,7 +132,7 @@ describe("ReviewPage", () => {
     listPublishedCandidates.mockReturnValue(new Promise(() => {}));
     listAll.mockReturnValue(new Promise(() => {}));
 
-    const wrapper = await mountReviewPage();
+    const { wrapper } = await mountReviewPage();
 
     expect(wrapper.text()).toContain("正在載入複習資料…");
   });
@@ -169,7 +175,7 @@ describe("ReviewPage", () => {
       }),
     ]);
 
-    const wrapper = await mountReviewPage();
+    const { wrapper } = await mountReviewPage();
     await flushPromises();
 
     expect(wrapper.get('[data-testid="due-count"]').text()).toBe("1");
@@ -183,7 +189,7 @@ describe("ReviewPage", () => {
     listPublishedCandidates.mockResolvedValue([]);
     listAll.mockResolvedValue([attempt({ completed: false })]);
 
-    const wrapper = await mountReviewPage();
+    const { wrapper } = await mountReviewPage();
     await flushPromises();
 
     const selector = wrapper.get('[data-testid="question-count-selector"]');
@@ -212,7 +218,7 @@ describe("ReviewPage", () => {
     listPublishedCandidates.mockResolvedValue([]);
     listAll.mockResolvedValue([]);
 
-    const wrapper = await mountReviewPage();
+    const { wrapper } = await mountReviewPage();
     await flushPromises();
 
     expect(wrapper.text()).toContain("尚無練習紀錄");
@@ -229,7 +235,7 @@ describe("ReviewPage", () => {
     listPublishedCandidates.mockRejectedValueOnce(new Error("network down"));
     listAll.mockResolvedValue([]);
 
-    const wrapper = await mountReviewPage();
+    const { wrapper } = await mountReviewPage();
     await flushPromises();
 
     expect(wrapper.get('[role="alert"]').text()).toContain(
@@ -242,5 +248,111 @@ describe("ReviewPage", () => {
     await flushPromises();
 
     expect(wrapper.get('[data-testid="due-count"]').text()).toBe("1");
+  });
+
+  describe("cloud hydration refresh", () => {
+    it("reloads the summary when localLearningStateRevision increases", async () => {
+      listPublishedCandidates.mockResolvedValueOnce([
+        candidate({ exerciseId: "incorrect-1" }),
+      ]);
+      listAll.mockResolvedValueOnce([
+        attempt({
+          clientAttemptId: "incorrect-attempt",
+          exerciseId: "incorrect-1",
+          completed: false,
+        }),
+      ]);
+      const { wrapper, syncStore } = await mountReviewPage();
+      await flushPromises();
+
+      expect(wrapper.get('[data-testid="due-count"]').text()).toBe("1");
+      expect(listPublishedCandidates).toHaveBeenCalledTimes(1);
+
+      listPublishedCandidates.mockResolvedValueOnce([
+        candidate({ exerciseId: "incorrect-1" }),
+        candidate({ exerciseId: "incorrect-2" }),
+      ]);
+      listAll.mockResolvedValueOnce([
+        attempt({
+          clientAttemptId: "incorrect-attempt",
+          exerciseId: "incorrect-1",
+          completed: false,
+        }),
+        attempt({
+          clientAttemptId: "incorrect-attempt-2",
+          exerciseId: "incorrect-2",
+          completed: false,
+        }),
+      ]);
+      syncStore.localLearningStateRevision = 1;
+      await flushPromises();
+
+      expect(listPublishedCandidates).toHaveBeenCalledTimes(2);
+      expect(wrapper.get('[data-testid="due-count"]').text()).toBe("2");
+    });
+
+    it("ignores an older request that resolves after a newer one", async () => {
+      let resolveFirstCandidates!: (
+        value: PracticeCandidateRecord[],
+      ) => void;
+      let resolveSecondCandidates!: (
+        value: PracticeCandidateRecord[],
+      ) => void;
+      listPublishedCandidates.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirstCandidates = resolve;
+        }),
+      );
+      listAll.mockResolvedValue([]);
+      const { wrapper, syncStore } = await mountReviewPage();
+      await flushPromises();
+
+      listPublishedCandidates.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveSecondCandidates = resolve;
+        }),
+      );
+      listAll.mockResolvedValueOnce([
+        attempt({
+          clientAttemptId: "attempt-a",
+          exerciseId: "incorrect-1",
+          completed: false,
+        }),
+      ]);
+      syncStore.localLearningStateRevision = 1;
+      await flushPromises();
+
+      resolveSecondCandidates([candidate({ exerciseId: "incorrect-1" })]);
+      await flushPromises();
+      resolveFirstCandidates([]);
+      await flushPromises();
+
+      expect(wrapper.get('[data-testid="due-count"]').text()).toBe("1");
+    });
+
+    it("stops reloading after the page unmounts", async () => {
+      listPublishedCandidates.mockResolvedValueOnce([]);
+      listAll.mockResolvedValueOnce([]);
+      const { wrapper, syncStore } = await mountReviewPage();
+      await flushPromises();
+
+      expect(listPublishedCandidates).toHaveBeenCalledTimes(1);
+
+      wrapper.unmount();
+      listPublishedCandidates.mockResolvedValueOnce([
+        candidate({ exerciseId: "incorrect-1" }),
+      ]);
+      listAll.mockResolvedValueOnce([
+        attempt({
+          clientAttemptId: "incorrect-attempt",
+          exerciseId: "incorrect-1",
+          completed: false,
+        }),
+      ]);
+      syncStore.localLearningStateRevision = 1;
+      await flushPromises();
+
+      expect(listPublishedCandidates).toHaveBeenCalledTimes(1);
+    });
   });
 });
