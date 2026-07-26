@@ -424,6 +424,13 @@ describe("IndexedDbCloudHydrationCommitter", () => {
       );
       expect(stored?.revision).toBe(4);
       expect(stored?.masteryScore).toBe(60);
+      // The page cursor still advances even when every item in it is
+      // skipped as stale - pagination progress and per-item revision
+      // guarding are independent concerns.
+      expect(
+        (await new CloudHydrationMetadataRepository(database).get(USER_ID))
+          .masteryCursor,
+      ).toEqual(masteryCursor);
     });
 
     it("does not duplicate or re-increment when the same mastery page is replayed", async () => {
@@ -562,6 +569,13 @@ describe("IndexedDbCloudHydrationCommitter", () => {
       );
       expect(stored?.revision).toBe(4);
       expect(stored?.dueAt).toBe("2026-07-25T00:00:00.000Z");
+      // The page cursor still advances even when every item in it is
+      // skipped as stale - pagination progress and per-item revision
+      // guarding are independent concerns.
+      expect(
+        (await new CloudHydrationMetadataRepository(database).get(USER_ID))
+          .reviewsCursor,
+      ).toEqual(reviewCursor);
     });
 
     it("does not duplicate or re-increment when the same review page is replayed", async () => {

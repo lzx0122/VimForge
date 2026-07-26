@@ -11,7 +11,10 @@ import {
   openVimForgeDatabase,
   transactionToPromise,
 } from "../../../infrastructure/indexed-db/database";
+import { AttemptRepository } from "../../../infrastructure/indexed-db/attempt-repository";
 import { LocalDataOwnerRepository } from "../../../infrastructure/indexed-db/local-data-owner-repository";
+import { SkillMasteryRepository } from "../../../infrastructure/indexed-db/skill-mastery-repository";
+import { ExerciseReviewRepository } from "../../../infrastructure/indexed-db/exercise-review-repository";
 import type {
   AttemptHydrationCursor,
   CloudAttemptSnapshot,
@@ -515,6 +518,81 @@ describe("CloudHydrationService", () => {
 
     expect(first.attempts).toEqual({ inserted: 1, preservedPending: 0 });
     expect(second.attempts).toEqual({ inserted: 0, preservedPending: 0 });
+  });
+
+  it("does not regress unchanged mastery or review projections on a completed-hydration rerun", async () => {
+    const ownerRepository = new LocalDataOwnerRepository(database);
+    const metadataRepository = new CloudHydrationMetadataRepository(database);
+    const committer = new IndexedDbCloudHydrationCommitter(database);
+    const masteryRepository = new SkillMasteryRepository(database);
+    const reviewRepository = new ExerciseReviewRepository(database);
+    const attemptRepository = new AttemptRepository(database);
+
+    const listAttemptsPage = vi
+      .fn<
+        (
+          cursor: AttemptHydrationCursor | null,
+        ) => Promise<CloudPage<CloudAttemptSnapshot, AttemptHydrationCursor>>
+      >()
+      .mockResolvedValueOnce(page([attemptItem()], attemptCursor, false))
+      .mockResolvedValueOnce(page([], attemptCursor, false));
+    const listMasteryPage = vi
+      .fn<
+        (
+          cursor: MasteryHydrationCursor | null,
+        ) => Promise<CloudPage<CloudSkillMasterySnapshot, MasteryHydrationCursor>>
+      >()
+      .mockResolvedValueOnce(page([masteryItem()], masteryCursor, false))
+      .mockResolvedValueOnce(page([], masteryCursor, false));
+    const listReviewsPage = vi
+      .fn<
+        (
+          cursor: ReviewHydrationCursor | null,
+        ) => Promise<CloudPage<CloudExerciseReviewSnapshot, ReviewHydrationCursor>>
+      >()
+      .mockResolvedValueOnce(page([reviewItem()], reviewCursor, false))
+      .mockResolvedValueOnce(page([], reviewCursor, false));
+    const cloudRepository = createCloudRepository({
+      listAttemptsPage,
+      listMasteryPage,
+      listReviewsPage,
+    });
+
+    const service = new CloudHydrationService({
+      ownerRepository,
+      cloudRepository,
+      committer,
+      metadataRepository,
+      hydrateSettings: vi.fn(async () => undefined),
+      now: () => NOW,
+    });
+
+    const first = await service.downloadState(USER_ID);
+    const attemptsAfterFirst = await attemptRepository.listAll();
+    const masteryAfterFirst = await masteryRepository.listAll();
+    const reviewsAfterFirst = await reviewRepository.listAll();
+
+    const second = await service.downloadState(USER_ID);
+    const attemptsAfterSecond = await attemptRepository.listAll();
+    const masteryAfterSecond = await masteryRepository.listAll();
+    const reviewsAfterSecond = await reviewRepository.listAll();
+
+    expect(first.attempts).toEqual({ inserted: 1, preservedPending: 0 });
+    expect(first.mastery).toEqual({ applied: 1, skippedNewer: 0 });
+    expect(first.reviews).toEqual({ applied: 1, skippedNewer: 0 });
+
+    expect(second.attempts).toEqual({ inserted: 0, preservedPending: 0 });
+    expect(second.mastery).toEqual({ applied: 0, skippedNewer: 0 });
+    expect(second.reviews).toEqual({ applied: 0, skippedNewer: 0 });
+
+    expect(attemptsAfterSecond).toHaveLength(1);
+    expect(attemptsAfterSecond).toEqual(attemptsAfterFirst);
+    expect(masteryAfterSecond).toEqual(masteryAfterFirst);
+    expect(reviewsAfterSecond).toEqual(reviewsAfterFirst);
+
+    expect(listAttemptsPage).toHaveBeenNthCalledWith(2, attemptCursor);
+    expect(listMasteryPage).toHaveBeenNthCalledWith(2, masteryCursor);
+    expect(listReviewsPage).toHaveBeenNthCalledWith(2, reviewCursor);
   });
 
   it("never calls GuestSyncService", async () => {

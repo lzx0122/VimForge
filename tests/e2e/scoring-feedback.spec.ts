@@ -847,8 +847,8 @@ test("shows a cursor target and auto-completes a movement exercise", async ({ pa
   await expect.poll(() => readAttemptCount(page)).toBe(1);
 });
 
-test("autofocuses the target and restarts with a fresh timed attempt", async ({ page }) => {
-  await startPracticeSession(page);
+test("autofocuses the target and restarts preserving the same timed attempt", async ({ page }) => {
+  const sessionId = await startPracticeSession(page);
 
   const editor = page.locator(".cm-content");
   const mode = page.locator(".practice-editor-status-bar .vim-mode-badge");
@@ -870,26 +870,45 @@ test("autofocuses the target and restarts with a fresh timed attempt", async ({ 
   await expect(mode).toHaveText("Insert");
   await page.keyboard.type("x");
 
-  const restartButton = page.getByRole("button", { name: "重新開始本題" });
-  const restartRequestedAt = Date.now();
-  await restartButton.click();
+  // P1 Restart contract: the same clientAttemptId/startedAt carry through a
+  // restart (elapsed time is preserved, not reset to 0) and only resetCount
+  // advances - captured here before restarting so the post-restart draft can
+  // be compared against it directly, rather than against a wall-clock guess.
+  const preRestartDraft = (await readPersistedAttemptDraft(page, sessionId)) as {
+    clientAttemptId: string;
+    startedAt: string;
+    resetCount: number;
+  };
+  const preRestartElapsedSeconds = elapsedSeconds(await timer.textContent());
+
+  await page.getByRole("button", { name: "重新開始本題" }).click();
 
   await expect(editor).toHaveText("const name = true;");
   await expect(editor).toBeFocused();
   await expect.poll(() => domCursorOffset(page)).toBe(6);
   await expect(mode).toHaveText("Normal");
+  // Restarting resets the editor content/cursor/mode, but the hint level
+  // already revealed carries over (fresh-attempt-service.ts preserves
+  // current.highestHintLevel) - restarting should not let a learner farm
+  // extra hint reveals for free.
+  await expect(page.getByText("已解鎖 1 / 3", { exact: true })).toBeVisible();
+  expect(await readAttemptCount(page)).toBe(0);
   await expect
     .poll(async () => elapsedSeconds(await timer.textContent()))
-    .toBeLessThanOrEqual(1);
-  await expect(page.getByText("已解鎖 0 / 3", { exact: true })).toBeVisible();
-  expect(await readAttemptCount(page)).toBe(0);
+    .toBeGreaterThanOrEqual(preRestartElapsedSeconds);
+
+  const postRestartDraft = (await readPersistedAttemptDraft(page, sessionId)) as {
+    clientAttemptId: string;
+    startedAt: string;
+    resetCount: number;
+  };
+  expect(postRestartDraft.clientAttemptId).toBe(preRestartDraft.clientAttemptId);
+  expect(postRestartDraft.startedAt).toBe(preRestartDraft.startedAt);
+  expect(postRestartDraft.resetCount).toBe(preRestartDraft.resetCount + 1);
 
   await completeInsertExercise(page);
   const timing = await readLatestAttemptTiming(page);
-  expect(Date.parse(timing.startedAt)).toBeGreaterThanOrEqual(
-    restartRequestedAt - 1_000,
-  );
-  expect(timing.durationMs).toBeLessThan(10_000);
+  expect(timing.startedAt).toBe(preRestartDraft.startedAt);
 });
 
 test("keeps the pre-restart attempt visible when the fresh draft fails to persist", async ({ page }) => {

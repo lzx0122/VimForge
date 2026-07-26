@@ -1,7 +1,7 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { createMemoryHistory, createRouter } from "vue-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useSyncStore } from "../../../stores/sync-store";
 import type { AttemptSyncInput } from "../../practice/repositories/attempt-sync-repository";
@@ -123,9 +123,15 @@ async function mountReviewPage() {
 
 describe("ReviewPage", () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-19T09:00:00.000Z"));
     listPublishedCandidates.mockReset();
     listAll.mockReset();
     openDatabase.mockReset().mockResolvedValue({ close: vi.fn() });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("shows a loading state before the summary resolves", async () => {

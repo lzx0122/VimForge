@@ -276,6 +276,7 @@ interface MockCloudLearningStateOptions {
     attempts?: Promise<void>;
     mastery?: Promise<void>;
     reviews?: Promise<void>;
+    rpc?: Promise<void>;
   };
 }
 
@@ -355,7 +356,8 @@ async function mockCloudLearningState(
   await page.route(
     "**/rest/v1/rpc/record_exercise_attempt",
     async (route: Route) => {
-      recordRequest?.("rpc:record_exercise_attempt");
+      recordRequest?.("rpc:record_exercise_attempt:start");
+      await gates.rpc;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -365,6 +367,7 @@ async function mockCloudLearningState(
           dueAt: null,
         }),
       });
+      recordRequest?.("rpc:record_exercise_attempt:complete");
     },
   );
 }
@@ -492,6 +495,14 @@ async function seedIndexedDbRecord(
   );
 }
 
+async function readCloudHydrationCompletedAt(page: Page): Promise<string | null> {
+  const records = await readStore<{ key: string; completedAt: string | null }>(
+    page,
+    "metadata",
+  );
+  return records.find((record) => record.key === "cloud-hydration")?.completedAt ?? null;
+}
+
 function seedPendingAttempt(page: Page, clientAttemptId: string): Promise<void> {
   return seedIndexedDbRecord(page, "attempts", {
     clientAttemptId,
@@ -547,6 +558,23 @@ test.describe("P1 cloud hydration", () => {
 
     await page.goto("/");
     await openIndexedDb(page);
+    // Seeds a device-local sound preference and stale local values for
+    // every other cloud-backed field, so the final assertions can prove
+    // both directions at once: cloud values overwrite the stale local
+    // settings, while the device-local soundEnabled preference (which the
+    // cloud fixture and row shape have no field for) is left untouched.
+    await seedIndexedDbRecord(page, "settings", {
+      key: "preferences",
+      value: {
+        editorFontSize: 16,
+        showLineNumbers: true,
+        showKeypresses: false,
+        soundEnabled: true,
+        preferredQuestionCount: 5,
+        lastLearningMode: "beginner",
+        updatedAt: "2026-07-01T00:00:00.000Z",
+      },
+    });
     await seedAuthToken(page, USER_ID);
     // A full reload, exactly once - the genuine cold-start moment where the
     // app boots and hydration begins. Every navigation after this uses
@@ -576,23 +604,135 @@ test.describe("P1 cloud hydration", () => {
       "設定已同步至登入帳號。",
     );
 
-    const attempts = await readStore<{ clientAttemptId: string; syncStatus: string }>(
-      page,
-      "attempts",
-    );
-    expect(attempts).toHaveLength(2);
-    for (const attempt of attempts) {
-      expect(attempt.syncStatus).toBe("synced");
-    }
-    const mastery = await readStore<{ skillId: string; masteryScore: number }>(
-      page,
-      "skillMastery",
-    );
-    expect(mastery).toEqual([
-      expect.objectContaining({ skillId: SKILL_ID, masteryScore: 82 }),
+    const settingsRecords = await readStore<{
+      key: string;
+      value: Record<string, unknown>;
+    }>(page, "settings");
+    expect(
+      settingsRecords.find((record) => record.key === "preferences")?.value,
+    ).toEqual({
+      editorFontSize: 20,
+      showLineNumbers: false,
+      showKeypresses: true,
+      // Preserved from the local seed above - the cloud row has no
+      // soundEnabled field, so this proves it is never sourced from cloud.
+      soundEnabled: true,
+      preferredQuestionCount: 20,
+      lastLearningMode: null,
+      updatedAt: "2026-07-16T08:00:00.000Z",
+    });
+
+    const attempts = await readStore<Record<string, unknown>>(page, "attempts");
+    expect(
+      [...attempts].sort((a, b) =>
+        String(a.clientAttemptId).localeCompare(String(b.clientAttemptId)),
+      ),
+    ).toEqual([
+      {
+        clientAttemptId: ATTEMPT_ID_1,
+        sessionId: null,
+        exerciseId: EXERCISE_ID_1,
+        exerciseVersion: 1,
+        learningMode: "memory_review",
+        source: "web",
+        completed: true,
+        startedAt: "2026-07-16T08:00:00.000Z",
+        completedAt: "2026-07-16T08:00:08.000Z",
+        durationMs: 8000,
+        keystrokeCount: 3,
+        recommendedKeystrokeCount: 3,
+        mistakeCount: 0,
+        undoCount: 0,
+        resetCount: 0,
+        highestHintLevel: 0,
+        usedRecommendedSolution: true,
+        normalizedActions: [{ type: "vim_command", command: "dw" }],
+        speedScore: 100,
+        accuracyScore: 100,
+        performanceQuality: 5,
+        practiceContext: "different_exercise",
+        syncStatus: "synced",
+      },
+      {
+        clientAttemptId: ATTEMPT_ID_2,
+        sessionId: null,
+        exerciseId: EXERCISE_ID_2,
+        exerciseVersion: 1,
+        learningMode: "memory_review",
+        source: "web",
+        completed: true,
+        startedAt: "2026-07-16T08:00:00.000Z",
+        completedAt: "2026-07-16T08:00:07.000Z",
+        durationMs: 8000,
+        keystrokeCount: 3,
+        recommendedKeystrokeCount: 3,
+        mistakeCount: 0,
+        undoCount: 0,
+        resetCount: 0,
+        highestHintLevel: 0,
+        usedRecommendedSolution: true,
+        normalizedActions: [{ type: "vim_command", command: "dw" }],
+        speedScore: 100,
+        accuracyScore: 100,
+        performanceQuality: 5,
+        practiceContext: "different_exercise",
+        syncStatus: "synced",
+      },
     ]);
-    const reviews = await readStore<{ exerciseId: string }>(page, "exerciseReviews");
-    expect(reviews).toEqual([expect.objectContaining({ exerciseId: EXERCISE_ID_1 })]);
+
+    const mastery = await readStore<Record<string, unknown>>(page, "skillMastery");
+    expect(mastery).toEqual([
+      {
+        skillId: SKILL_ID,
+        masteryScore: 82,
+        masteryLevel: 4,
+        successfulAttempts: 6,
+        uniqueExerciseIds: [EXERCISE_ID_1, EXERCISE_ID_2],
+        consecutiveSuccesses: 3,
+        firstUnhintedSuccessAt: "2026-07-01T08:00:00.000Z",
+        latestUnhintedSuccessAt: "2026-07-16T08:00:00.000Z",
+        lastAttemptAt: "2026-07-16T08:00:00.000Z",
+        updatedAt: "2026-07-16T08:00:00.000Z",
+        revision: 1,
+      },
+    ]);
+
+    const reviews = await readStore<Record<string, unknown>>(page, "exerciseReviews");
+    expect(reviews).toEqual([
+      {
+        exerciseId: EXERCISE_ID_1,
+        masteryLevel: 4,
+        currentIntervalDays: 1,
+        dueAt: "2026-07-16T00:00:00.000Z",
+        lastPerformanceQuality: 5,
+        lastAttemptAt: "2026-07-16T08:00:00.000Z",
+        updatedAt: "2026-07-16T08:00:00.000Z",
+        revision: 1,
+      },
+    ]);
+
+    const metadataRecords = await readStore<Record<string, unknown>>(page, "metadata");
+    expect(
+      metadataRecords.find((record) => record.key === "local-data-owner")?.userId,
+    ).toBe(USER_ID);
+    const cloudHydration = metadataRecords.find(
+      (record) => record.key === "cloud-hydration",
+    );
+    expect(cloudHydration?.userId).toBe(USER_ID);
+    expect(cloudHydration?.completedAt).not.toBeNull();
+    expect(cloudHydration?.schemaVersion).toBe(1);
+    expect(cloudHydration?.attemptsCursor).toEqual({
+      createdAt: "2026-07-16T08:05:00.000Z",
+      clientAttemptId: ATTEMPT_ID_2,
+    });
+    expect(cloudHydration?.masteryCursor).toEqual({
+      updatedAt: "2026-07-16T08:00:00.000Z",
+      skillId: SKILL_ID,
+    });
+    expect(cloudHydration?.reviewsCursor).toEqual({
+      updatedAt: "2026-07-16T08:00:00.000Z",
+      exerciseId: EXERCISE_ID_1,
+    });
   });
 
   test("Journey B - uploads pending attempts before downloading cloud state", async ({
@@ -600,26 +740,40 @@ test.describe("P1 cloud hydration", () => {
   }) => {
     await mockCourseCatalog(page);
     const calls: string[] = [];
+    let releaseRpc!: () => void;
+    const rpcGate = new Promise<void>((resolve) => {
+      releaseRpc = resolve;
+    });
     await mockCloudLearningState(
       page,
       { settings: defaultSettings(), attempts: [], mastery: [], reviews: [] },
-      { recordRequest: (name) => calls.push(name) },
+      { recordRequest: (name) => calls.push(name), gates: { rpc: rpcGate } },
     );
 
     await page.goto("/");
     await openIndexedDb(page);
     await seedPendingAttempt(page, ATTEMPT_ID_1);
     await seedAuthToken(page, USER_ID);
-    await page.reload({ waitUntil: "networkidle" });
+    // Do not await networkidle - the RPC response is deliberately held open
+    // below to prove the download SELECTs wait for the RPC to *complete*,
+    // not merely for it to have been *sent*.
+    await page.reload();
+
+    await expect
+      .poll(() => calls.includes("rpc:record_exercise_attempt:start"))
+      .toBe(true);
+    expect(calls.some((call) => call.startsWith("select:"))).toBe(false);
+
+    releaseRpc();
 
     await expect(page.getByText("正在恢復帳號學習進度…")).toBeHidden();
 
-    expect(calls[0]).toBe("rpc:record_exercise_attempt");
-    const rpcIndex = calls.indexOf("rpc:record_exercise_attempt");
+    const rpcCompleteIndex = calls.indexOf("rpc:record_exercise_attempt:complete");
+    expect(rpcCompleteIndex).toBeGreaterThanOrEqual(0);
     const selectIndexesAfterRpc = calls
       .map((call, index) => ({ call, index }))
       .filter(({ call }) => call.startsWith("select:"))
-      .every(({ index }) => index > rpcIndex);
+      .every(({ index }) => index > rpcCompleteIndex);
     expect(selectIndexesAfterRpc).toBe(true);
   });
 
@@ -773,7 +927,10 @@ test.describe("P1 cloud hydration", () => {
       .toBe(65);
 
     releaseMasteryGate();
-    await page.waitForTimeout(500);
+    await expect
+      .poll(() => readCloudHydrationCompletedAt(page))
+      .not.toBeNull();
+    await expect(page.getByText("正在恢復帳號學習進度…")).toBeHidden();
 
     const finalMastery = await readStore<{ masteryScore: number; revision: number }>(
       page,
