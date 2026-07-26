@@ -6,10 +6,12 @@ import type { AttemptSyncInput } from "../../features/practice/repositories/atte
 import type { AttemptDraft } from "../../types/attempt";
 import type { PracticeSession } from "../../types/session";
 import { AttemptRepository } from "./attempt-repository";
+import { IndexedDbCloudHydrationCommitter } from "./cloud-hydration-committer";
 import {
   deleteVimForgeDatabase,
   openVimForgeDatabase,
   transactionToPromise,
+  VIM_FORGE_DATABASE_VERSION,
 } from "./database";
 import { SessionRepository } from "./session-repository";
 import { SettingsRepository } from "./settings-repository";
@@ -302,6 +304,27 @@ describe("IndexedDB repositories", () => {
     expect(attempts.map((attempt) => attempt.clientAttemptId).sort()).toEqual(
       ["attempt-1", "attempt-3"],
     );
+  });
+
+  it("keeps the database at version 2 with the same stores after a cloud hydration commit", async () => {
+    const committer = new IndexedDbCloudHydrationCommitter(database);
+
+    await committer.commitAttemptsPage({
+      userId: "user-a",
+      items: [],
+      nextCursor: null,
+    });
+
+    expect(database.version).toBe(VIM_FORGE_DATABASE_VERSION);
+    expect(Array.from(database.objectStoreNames).sort()).toEqual([
+      "attempts",
+      "exerciseReviews",
+      "learningOutcomes",
+      "metadata",
+      "sessions",
+      "settings",
+      "skillMastery",
+    ]);
   });
 
   it("rolls back every object store when a transaction aborts", async () => {
