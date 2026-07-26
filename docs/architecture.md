@@ -498,17 +498,33 @@ Progress（`/progress`）與首頁個人化摘要不是 prop-driven 元件：兩
 
 ### 20.1 Restart 與 Retry 的差異
 
-`fresh-attempt-service.ts` 提供兩個不同的純函式，分別對應「重新開始本題」與完成回饋後的「再試一次」：
+`fresh-attempt-service.ts` 提供兩個不同的純函式：
 
 ```ts
-export function createFreshAttemptForExercise(
-  input: CreateFreshAttemptInput,
-): FreshAttemptState; // Retry：全新 clientAttemptId／startedAt，所有計分歸零
+export function createFreshAttemptState(
+  input: CreateFreshAttemptStateInput,
+): FreshAttemptState; // 建立全新計分狀態（clientAttemptId／startedAt／計分欄位皆由呼叫端提供或歸零）
 
 export function restartCurrentAttempt(
   input: RestartCurrentAttemptInput,
 ): FreshAttemptState; // Restart：延續同一個 Attempt
 ```
+
+`createFreshAttemptState()` 本身不是「Retry」——它是建立一個全新計分狀態的通用建構子，`clientAttemptId`／`startedAt` 皆由呼叫端傳入，而非自行產生。完成回饋後的「再試一次」（Retry）呼叫的是 `PracticePage.vue` 內的頁面層級 helper：
+
+```ts
+function createFreshAttemptForExercise(
+  activeExercise: PracticeExercise,
+): FreshAttemptState {
+  return createFreshAttemptState({
+    exercise: activeExercise,
+    clientAttemptId: crypto.randomUUID(),
+    startedAt: new Date().toISOString(),
+  });
+}
+```
+
+這個 `createFreshAttemptForExercise()` 只存在於 `PracticePage.vue`，不是 `fresh-attempt-service.ts` 的匯出——它負責產生新的 `clientAttemptId`／`startedAt`，再委託 `createFreshAttemptState()` 建構其餘欄位。
 
 「重新開始本題」（Restart）：
 
@@ -594,13 +610,23 @@ export interface VimEditorEmits {
 }
 ```
 
-修飾鍵單獨按下（`Shift`／`Control`／`Alt`／`Meta`）不發出事件；唯讀編輯器不發出事件。目前（本分支）`PracticePage.vue` 的 `recordKeypress()` 只用這個事件累計 `keystrokeCount` 並排程 Draft 儲存，尚未維護畫面上「最近 8 個按鍵」的顯示佇列——`RecentKeypresses.vue` 元件與其掛載邏輯屬於執行計畫 Task 10（PR #1／分支 `feat/p1-2-editor-settings`，尚未合併）的範圍。以下描述的是該顯示佇列合併後的目標行為：
+修飾鍵單獨按下（`Shift`／`Control`／`Alt`／`Meta`）不發出事件；唯讀編輯器不發出事件。
 
-- 這份佇列只存在於畫面狀態，**不寫入 `AttemptDraft`**，也不上傳雲端——它是裝置本地、純展示用的臨時資料。
-- Restart、Retry、下一題與 Resume 都會清空佇列；Resume 後的按鍵總數（`keystrokeCount`）仍照常累計，只是顯示佇列從空開始。
-- `showKeypresses` 設定關閉時仍持續累計 `keystrokeCount`，只是不渲染這個區塊。
+這裡有兩個必須分開的概念，不可混為一談：
 
-無論顯示佇列是否已合併，`keyPressed` 事件本身、`keystrokeCount` 累計與「不寫入 `AttemptDraft`」的裝置本地邊界都是本分支已實作並有 Vitest／Playwright 證據的行為（見 `docs/testing-strategy.md` 第 8 節）。
+**`keystrokeCount`（已計分電文，本分支已實作、會持久化）**
+
+目前（本分支）`PracticePage.vue` 的 `recordKeypress()` 用這個事件累計 `keystrokeCount` 並排程 Draft 儲存。`keystrokeCount` 是 `AttemptDraft` 明確定義的欄位（見第 8 節），透過 `buildAttemptDraft()`／`buildFreshAttemptDraft()` 寫入，並在 Resume 時還原——它會持久化、會上傳、屬於計分資料的一部分，不是裝置本地展示用的暫存值。
+
+**最近按鍵顯示佇列（PR #1 待合併，屬於 UI 展示層）**
+
+`PracticePage.vue` 目前尚未維護畫面上「最近 8 個按鍵」的顯示佇列——`RecentKeypresses.vue` 元件與其掛載邏輯屬於執行計畫 Task 10（PR #1／分支 `feat/p1-2-editor-settings`，尚未合併）的範圍。這個顯示佇列合併後的目標行為：
+
+- 這份佇列只是畫面上「最近 8 個按鍵」的展示字串陣列，**不是** `keystrokeCount`，**不寫入 `AttemptDraft`**，也不上傳雲端——它是裝置本地、純展示用的臨時資料。
+- Restart、Retry、下一題與 Resume 都會清空這份顯示佇列；`keystrokeCount` 本身不受影響，仍照常累計。
+- `showKeypresses` 設定關閉時只是不渲染這份顯示佇列，`keystrokeCount` 仍持續累計。
+
+`keyPressed` 事件本身、`keystrokeCount` 的累計與持久化，都是本分支已實作並有 Vitest／Playwright 證據的行為；「最近按鍵顯示佇列不持久化」則是 PR #1 合併後才能驗證的目標行為，本分支目前沒有也不能有對應證據（見 `docs/testing-strategy.md` 第 8 節、`docs/acceptance-verification.md` AC-054）。
 
 ## 21. P1：設定與編輯器整合
 
@@ -764,7 +790,9 @@ Mastery、Review 每一頁提交時，都以 `captureProjectionRevisions()` 拍�
 
 ### 22.7 已開啟頁面的即時刷新
 
-`ProgressPage.vue`（以及 Review／Home 對應頁面）以 `watch(() => syncStore.localLearningStateRevision, ...)` 監聽本機學習狀態的整體版本號；雲端下載提交任何一頁資料後會推進這個版本號，已經開啟的頁面因此會重新呼叫 service／repository 取得最新資料，而不需要使用者手動重新整理或導航離開再回來（見 `p1-cloud-hydration.spec.ts` Journey C：頁面停留在 Progress，雲端回應被延遲保留，回應釋放後畫面自動從「尚無學習紀錄」更新為真實資料）。
+`HomePage.vue`、`ProgressPage.vue`、`ReviewPage.vue` 都以 `watch(() => syncStore.localLearningStateRevision, ...)` 監聽本機學習狀態的整體版本號。`localLearningStateRevision` **只在整個 `downloadState()` 呼叫成功完成後才加一次**（`src/stores/sync-store.ts`：`await cloudHydrationService.downloadState(targetUserId)` 完成、且 generation 未過期後才 `this.localLearningStateRevision += 1`）——它不是逐頁提交時遞增的計數器；若下載在完成 Attempts／Mastery／Reviews 其中幾頁後才失敗，這個版本號完全不會前進。
+
+因此已開啟的頁面是在整個 hydration 流程結束、所有頁面資料都已提交完成之後，才重新呼叫 service／repository 取得一次最終狀態，而不是隨著雲端下載逐頁提交而多次重新載入。見 `p1-cloud-hydration.spec.ts` Journey C（Progress）、Journey F（Home）、Journey G（Review）：頁面停留在原地，雲端回應被延遲保留，回應釋放、hydration 完成後畫面才一次性更新為最終資料，過程中不發生導航或重新整理。
 
 ### 22.8 Active Session 與 Attempt Draft 永遠留在裝置本地
 

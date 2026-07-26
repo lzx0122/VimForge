@@ -234,7 +234,7 @@ npm run test:e2e
 
 - `tests/e2e/p1-scoring-reliability.spec.ts` — Resume 後計分欄位正確恢復並持續累計；Restart 與 Retry 在真實瀏覽器下產生的 Attempt 身分差異。
 - `tests/e2e/scoring-feedback.spec.ts` — 除既有 P0 涵蓋範圍外，另涵蓋 Restart 的持久化優先於畫面套用（`restores the fresh restart draft, not the pre-restart draft, after an immediate reload`、`keeps the pre-restart attempt visible when the fresh draft fails to persist`）、緊接在 reload 前的實體按鍵仍保留在同一個 Attempt 身分下（`keeps a physical keypress that lands immediately before a reload, with the same Attempt identity`）。
-- `tests/e2e/p1-cloud-hydration.spec.ts` — 五個 journey：新裝置完整 hydration（含 Settings／Attempts／Mastery／Reviews／metadata 的逐欄位精確比對）、pending Attempt 上傳完成後才開始下載讀取（以完成標記與明確的讀取呼叫順序證明，不依賴畫面 banner 的有無或固定等待）、帳號衝突同時停止上傳與下載、已開啟頁面在 hydration 完成後自動刷新、延遲的過期 Mastery 回應不得覆蓋競態中產生的較新本機分數與 revision。
+- `tests/e2e/p1-cloud-hydration.spec.ts` — 七個 journey：新裝置完整 hydration（含 Settings／Attempts／Mastery／Reviews／metadata 的逐欄位精確比對）、pending Attempt 上傳完成後才開始下載讀取（以完成標記與明確的讀取呼叫順序證明，不依賴畫面 banner 的有無或固定等待）、帳號衝突同時停止上傳與下載、已開啟的 Progress／Home／Review 三頁各自在 hydration 完成後自動刷新且不發生導航、延遲的過期 Mastery 回應不得覆蓋競態中產生的較新本機分數與 revision。
 - `tests/e2e/auth-sync.spec.ts` — 登入合併、伺服器絕對值調和、已同步 Attempt 不重送。
 
 本節沿用第 1 節既有的規則：純 domain／repository／transaction／service orchestration（例如原子提交、版本調和本身）由 Vitest／IndexedDB integration test 證明即可；任何「執行期頁面已經走過這條路徑」的宣稱都必須額外有對應 Playwright 證據。
@@ -243,10 +243,36 @@ npm run test:e2e
 
 `AppBootstrap.test.ts`、`RecentKeypresses.test.ts`、`tests/e2e/p1-editor-settings.spec.ts` 與 `VimEditor.vue` 的字級／行號 `Compartment` 測試案例屬於 PR #1（分支 `feat/p1-2-editor-settings`）範圍，截至本文件撰寫時該分支尚未合併，本分支（`feat/p1-3-cloud-hydration`）尚無這些檔案；對應行為僅在 `docs/architecture.md` 第 21.1／21.2 節與第 20.5 節以「計畫目標行為」描述，不得視為本分支已驗證完成，見 `docs/acceptance-verification.md` AC-054／055／056。
 
-### 資料庫層（外部環境，Docker 相依）
+### PostgreSQL／pgTAP 證據（外部環境，Docker 相依）
 
-- `supabase/tests/p1_learning_hydration.sql` — 需在已連結真實 PostgreSQL 的環境執行 `supabase test db` 才能驗證；本機沙盒若無 Docker，此項目維持未執行狀態，不得以本機 Vitest／Playwright 結果替代。
-- `scripts/user-learning-migrations.test.ts` — 驗證遷移檔本身的欄位／約束契約（純解析層級，非對真實 PostgreSQL 執行）。
+檔案：
+
+- `supabase/migrations/20260721000100_add_p1_hydration_contract.sql`
+- `supabase/tests/p1_learning_hydration.sql`
+
+`p1_learning_hydration.sql` 對應驗證的行為：
+
+- Attempt 正確儲存 `performance_quality`／`practice_context`（呼叫 `record_exercise_attempt` 後）。
+- Mastery 正確累積 `unique_exercise_ids` 與未提示成功時間戳記（`first_unhinted_success_at`／`latest_unhinted_success_at`）。
+- Review 正確帶入 `mastery_level`／`last_performance_quality`／`last_attempt_at`。
+- RLS 隔離：使用者 A 無法讀取使用者 B 的列。
+- 三個分頁 Cursor 索引（`attempts_user_hydration_cursor_idx`、`mastery_user_hydration_cursor_idx`、`reviews_user_hydration_cursor_idx`）確實存在。
+- 測試結束時 rollback，不留下測試資料。
+
+必須對真實 PostgreSQL 執行的指令：
+
+```bash
+npm run supabase:cli -- db reset
+npm run supabase:cli -- db lint
+npm run supabase:cli -- test db
+```
+
+目前狀態：
+
+- **尚未對真實 PostgreSQL 執行**——本機沙盒環境沒有 Docker，`supabase db reset`／`db lint`／`test db` 皆無法啟動本機 Postgres 容器。
+- 靜態檢查、mock 過的 Vitest、或單純解析 SQL 檔案內容，都不能取代這個關卡；`scripts/user-learning-migrations.test.ts` 只驗證遷移檔本身的欄位／約束契約是否存在，不對真實 PostgreSQL 執行任何一行 SQL，因此不能作為此項目的替代證據。
+- Task 15（新裝置 hydration 的資料庫層驗證）維持「暫時性接受」（provisionally accepted）狀態，不是完整通過。
+- Task 26 與 PR 3 都不能在這三個指令對真實 PostgreSQL 全部通過之前宣告完成或視為「已完成資料庫驗證」。
 
 ## 9. Definition of Done
 

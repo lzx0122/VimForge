@@ -67,7 +67,7 @@
 | AC-059 | `cloud-hydration-committer.test.ts` | — |
 | AC-060 | `cloud-hydration-committer.test.ts`、`p1-cloud-hydration.spec.ts`（`Journey E - a stale mastery response cannot overwrite a newer local completion`） | — |
 | AC-061 | `settings-merge-service.test.ts`、`p1-cloud-hydration.spec.ts`（`Journey A - new device hydration populates every page and marks settings synced`） | — |
-| AC-062 | `cloud-hydration-service.test.ts`、`p1-cloud-hydration.spec.ts`（`Journey C - an already-open Progress page refreshes without navigation once hydration completes`） | — |
+| AC-062 | 元件層 watcher 覆蓋：`HomePage.test.ts`、`ProgressPage.test.ts`、`ReviewPage.test.ts`（各自的 `localLearningStateRevision` 監聽測試）；瀏覽器已開啟頁面證據：`p1-cloud-hydration.spec.ts`（`Journey C - an already-open Progress page refreshes without navigation once hydration completes`、`Journey F - an already-open Home page refreshes without navigation once hydration completes`、`Journey G - an already-open Review page refreshes without navigation once hydration completes`） | — |
 | AC-063 | `cloud-learning-state-mapper.test.ts`、`supabase-cloud-learning-state-repository.test.ts` | — |
 
 ## 驗收紀錄規則
