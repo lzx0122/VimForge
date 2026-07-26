@@ -875,6 +875,86 @@ test.describe("P1 cloud hydration", () => {
     await expect(page.getByText("基礎移動")).toBeVisible();
   });
 
+  test("Journey F - an already-open Home page refreshes without navigation once hydration completes", async ({
+    page,
+  }) => {
+    await mockCourseCatalog(page);
+    let releaseGates!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGates = resolve;
+    });
+    await mockCloudLearningState(
+      page,
+      {
+        settings: defaultSettings(),
+        attempts: [],
+        mastery: [defaultMastery()],
+        reviews: [defaultReview()],
+      },
+      { gates: { settings: gate, attempts: gate, mastery: gate, reviews: gate } },
+    );
+
+    await page.goto("/");
+    await openIndexedDb(page);
+    await seedAuthToken(page, USER_ID);
+    // Do not await networkidle - the whole point is to observe Home while
+    // hydration's cloud responses are still held open, then confirm it
+    // refreshes in place once they are released.
+    await page.reload();
+
+    await expect(
+      page.getByRole("heading", { name: "Vim Practice", level: 1 }),
+    ).toBeVisible();
+    await expect(page.getByText("建議加強：", { exact: false })).toHaveCount(0);
+    await expect(page.getByText("今日有", { exact: false })).toHaveCount(0);
+
+    releaseGates();
+
+    await expect
+      .poll(() => readCloudHydrationCompletedAt(page))
+      .not.toBeNull();
+    await expect(page.getByText("建議加強：基礎移動")).toBeVisible();
+    await expect(page).toHaveURL("/");
+  });
+
+  test("Journey G - an already-open Review page refreshes without navigation once hydration completes", async ({
+    page,
+  }) => {
+    await mockCourseCatalog(page);
+    let releaseGates!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGates = resolve;
+    });
+    await mockCloudLearningState(
+      page,
+      {
+        settings: defaultSettings(),
+        attempts: [],
+        mastery: [defaultMastery()],
+        reviews: [defaultReview()],
+      },
+      { gates: { settings: gate, attempts: gate, mastery: gate, reviews: gate } },
+    );
+
+    await page.goto("/");
+    await openIndexedDb(page);
+    await seedAuthToken(page, USER_ID);
+    // Do not await networkidle - hold hydration open while Review is
+    // already mounted, then confirm it refreshes in place once released.
+    await page.reload();
+
+    await page.getByRole("link", { name: "複習", exact: true }).click();
+    await expect(page.getByText("尚無練習紀錄")).toBeVisible();
+
+    releaseGates();
+
+    await expect
+      .poll(() => readCloudHydrationCompletedAt(page))
+      .not.toBeNull();
+    await expect(page.getByTestId("due-count")).toHaveText("1");
+    await expect(page).toHaveURL("/review");
+  });
+
   test("Journey E - a stale mastery response cannot overwrite a newer local completion", async ({
     page,
   }) => {
