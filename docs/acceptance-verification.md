@@ -56,6 +56,19 @@
 | AC-048 | `synced-attempt-committer.test.ts`、`auth-sync.spec.ts`（`reconciles the local mastery prediction...`） | 完成實際 Google OAuth 登入後重驗調和結果 |
 | AC-049 | `progress-query-service.test.ts`、`ProgressPage.test.ts`、`learning-loop.spec.ts` | — |
 | AC-050 | `home-learning-summary-service.test.ts`、`HomePage.test.ts`、`learning-loop.spec.ts` | — |
+| AC-051 | `fresh-attempt-service.test.ts`、`p1-scoring-reliability.spec.ts`（`restart preserves Attempt identity and telemetry while retry creates a new Attempt`）、`scoring-feedback.spec.ts`（`autofocuses the target and restarts preserving the same timed attempt`） | — |
+| AC-052 | `attempt-mistake-service.test.ts`、`p1-scoring-reliability.spec.ts`（`resume telemetry: restores keystrokeCount/mistakeCount/fingerprint and keeps counting them correctly`） | — |
+| AC-053 | `attempt-draft-save-scheduler.test.ts`、`scoring-feedback.spec.ts`（`restores the fresh restart draft, not the pre-restart draft, after an immediate reload`、`keeps the pre-restart attempt visible when the fresh draft fails to persist`） | — |
+| AC-054 | `keyboard-display.test.ts`、`scoring-feedback.spec.ts`（`keeps a physical keypress that lands immediately before a reload, with the same Attempt identity`）— 涵蓋按鍵事件、計數與不寫入 Draft；「最近 8 個按鍵顯示佇列」子項目見下方註記 | 顯示佇列元件（`RecentKeypresses.vue`）屬於 PR #1（分支 `feat/p1-2-editor-settings`，尚未合併），該分支合併後需補上對應測試 |
+| AC-055 | 屬於 PR #1（分支 `feat/p1-2-editor-settings`，尚未合併）— 尚無本分支證據 | 待 PR #1 合併並提供 `AppBootstrap.test.ts` 後補上 |
+| AC-056 | 屬於 PR #1（分支 `feat/p1-2-editor-settings`，尚未合併）— 尚無本分支證據 | 待 PR #1 合併並提供對應 `VimEditor.test.ts` 案例與 `p1-editor-settings.spec.ts` 後補上 |
+| AC-057 | `cloud-hydration-service.test.ts`、`p1-cloud-hydration.spec.ts`（`Journey B - uploads pending attempts before downloading cloud state`） | — |
+| AC-058 | `local-data-owner-repository.test.ts`、`p1-cloud-hydration.spec.ts`（`Journey D - account conflict stops upload and download, and preserves existing local progress`） | — |
+| AC-059 | `cloud-hydration-committer.test.ts` | — |
+| AC-060 | `cloud-hydration-committer.test.ts`、`p1-cloud-hydration.spec.ts`（`Journey E - a stale mastery response cannot overwrite a newer local completion`） | — |
+| AC-061 | `settings-merge-service.test.ts`、`p1-cloud-hydration.spec.ts`（`Journey A - new device hydration populates every page and marks settings synced`） | — |
+| AC-062 | `cloud-hydration-service.test.ts`、`p1-cloud-hydration.spec.ts`（`Journey C - an already-open Progress page refreshes without navigation once hydration completes`） | — |
+| AC-063 | `cloud-learning-state-mapper.test.ts`、`supabase-cloud-learning-state-repository.test.ts` | — |
 
 ## 驗收紀錄規則
 

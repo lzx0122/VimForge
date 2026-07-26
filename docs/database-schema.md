@@ -496,3 +496,84 @@ Seed 完成後必須通過：
 - supported_modes 只包含合法值。
 - 游標位置不超出 initial_content。
 - expected_content 與 completion_rule 可被 TypeScript Schema 驗證。
+
+## 8. P1 雲端學習狀態同步 Schema 擴充
+
+遷移檔：`supabase/migrations/20260721000100_add_p1_hydration_contract.sql`。目的是補齊 `CloudAttemptSnapshot`、`CloudSkillMasterySnapshot`、`CloudExerciseReviewSnapshot`（見 `docs/architecture.md` 第 22 節）需要、但既有 Schema 尚未持久化的欄位，並加入分頁 Cursor 需要的穩定索引。
+
+### 8.1 新增欄位
+
+`exercise_attempts`：
+
+```sql
+alter table public.exercise_attempts
+  add column performance_quality smallint,
+  add column practice_context text;
+```
+
+Backfill 依既有 `speed_score * 0.5 + accuracy_score * 0.5` 分數帶（與 `src/domain/scoring/scoring-config.ts` 的 `PERFORMANCE_QUALITY_BANDS` 一致）換算歷史列的 `performance_quality`；歷史列一律回填 `practice_context = 'different_exercise'`。Backfill 完成後兩欄位皆設為 `not null`，並加上：
+
+```sql
+check (performance_quality between 0 and 5)
+check (practice_context in (
+  'same_exercise_immediate', 'different_exercise', 'next_day', 'seven_days'
+))
+```
+
+`user_skill_mastery`：
+
+```sql
+alter table public.user_skill_mastery
+  add column unique_exercise_ids uuid[] not null default '{}',
+  add column first_unhinted_success_at timestamptz,
+  add column latest_unhinted_success_at timestamptz;
+```
+
+Backfill 依 `exercise_attempts` 與 `exercise_skills` 重新聚合每個 `(user_id, skill_id)` 已完成過的相異 `exercise_id`（排序後的陣列），以及最早／最新一次「完成且未使用提示」（`hint_level_used = 0`）的時間；沒有符合條件的歷史紀錄則為空陣列與 `null`。
+
+`user_review_items`：
+
+```sql
+alter table public.user_review_items
+  add column mastery_level smallint,
+  add column last_performance_quality smallint,
+  add column last_attempt_at timestamptz;
+```
+
+Backfill 依對應 `user_skill_mastery.mastery_level`（找不到時預設 `0`）、該題最近一筆 Attempt 的 `performance_quality`（找不到時預設 `0`）、以及 `completed_at` → `started_at` → 既有 `updated_at` 的第一個非空值填入 `last_attempt_at`。Backfill 完成後三欄位皆設為 `not null`，並加上：
+
+```sql
+check (mastery_level between 0 and 5)
+check (last_performance_quality between 0 and 5)
+```
+
+### 8.2 分頁 Cursor 索引
+
+`AttemptHydrationCursor`／`MasteryHydrationCursor`／`ReviewHydrationCursor`（見 `docs/architecture.md` 第 22.3 節）依賴以下三個複合索引提供穩定、單調遞增的分頁排序：
+
+```sql
+create index if not exists attempts_user_hydration_cursor_idx
+  on public.exercise_attempts (user_id, created_at, client_attempt_id);
+
+create index if not exists mastery_user_hydration_cursor_idx
+  on public.user_skill_mastery (user_id, updated_at, skill_id);
+
+create index if not exists reviews_user_hydration_cursor_idx
+  on public.user_review_items (user_id, updated_at, exercise_id);
+```
+
+### 8.3 `record_exercise_attempt()` 擴充
+
+同一個 RPC 函式（見第 5 節）在不改變對外簽章、`security invoker`、去重鍵與既有計分／熟練公式的前提下，額外維護：
+
+- Attempt 的 `performance_quality`、`practice_context`。
+- Mastery 的 `unique_exercise_ids`（每次由 `exercise_attempts` 重新聚合，而非增量合併——重複呼叫在早先的去重 `on conflict do nothing` 已經提前 return，因此重算天生對重試安全）、`first_unhinted_success_at`（只設定一次，不會被之後的紀錄覆寫）、`latest_unhinted_success_at`（只在完成且未使用提示時前進）。
+- Review 的 `mastery_level`、`last_performance_quality`、`last_attempt_at`。
+
+### 8.4 `sound_enabled` 為已棄用相容欄位
+
+`user_settings.sound_enabled` 資料行本身**不在 P1 移除**，繼續保留供既有部署與資料庫工具相容，且雲端同步層級已經不再把它當作跨裝置同步的欄位——`settings-merge-service.ts` 一律採用裝置本地既有值，從不從雲端讀取或寫入它（見 `docs/architecture.md` 第 21.4 節）。前端 UI／Pinia state／`LocalSettings` 欄位對應的完整移除屬於 PR #1（分支 `feat/p1-2-editor-settings`）範圍，截至本文件撰寫時尚未合併；該分支合併前，Settings 頁面仍會顯示「開啟音效」開關，但其值不影響、也不受雲端同步結果影響。之後若要真正移除 `sound_enabled` 資料行本身，需要另一個獨立的遷移與明確的棄用期，不屬於本次範圍。
+
+### 8.5 SQL 驗收測試
+
+`supabase/tests/p1_learning_hydration.sql` 驗證：呼叫 `record_exercise_attempt` 後 Attempt 正確儲存 `performance_quality`／`practice_context`；Mastery 正確累積 `unique_exercise_ids` 與未提示成功時間戳記；Review 正確帶入 `mastery_level`／`last_performance_quality`／`last_attempt_at`；使用者 A 無法讀取使用者 B 的列；三個 Cursor 索引存在；測試結束時 rollback。

@@ -401,3 +401,116 @@ And 三張學習模式卡片維持完整顯示\
 Given 使用者沒有任何學習紀錄，或個人化摘要載入失敗\
 Then 不顯示上述任何一張個人化卡片，也不顯示虛構數字\
 And 三張學習模式卡片仍完整顯示且可操作
+
+## AC-051：Restart 保留同一 Attempt，Retry 建立新 Attempt
+
+Given 使用者已修改內容、揭露一層提示並累積按鍵與已練習時間\
+When 點擊「重新開始本題」\
+Then `clientAttemptId` 與 `startedAt` 不變、已練習時間不歸零、`resetCount` 加一\
+And 已揭露的提示層級不因重來而清空\
+And 內容、游標還原為初始值，Mode 回到 Normal\
+When 之後完成題目、看到單題回饋並點擊「再試一次」\
+Then 建立全新的 `clientAttemptId` 與 `startedAt`\
+And 按鍵、錯誤、提示、`resetCount` 皆歸零
+
+## AC-052：失敗檢查才計入錯誤，且相同快照不重複計數
+
+Given 使用者按下「檢查目前結果」但目前內容、游標與 Mode 仍不符合完成條件\
+When 系統計算 `mistakeCount`\
+Then 該次失敗計入一次錯誤\
+When 使用者在未變更內容、游標或 Mode 的情況下再次按下「檢查目前結果」\
+Then `mistakeCount` 不再增加\
+When 使用者變更內容、游標或 Mode 後再次檢查仍失敗\
+Then `mistakeCount` 再增加一次\
+And Undo 只計入 `undoCount`，Restart 只計入 `resetCount`，兩者皆不進入 `mistakeCount`
+
+## AC-053：Restart 的持久化優先於畫面套用
+
+Given 使用者點擊「重新開始本題」\
+When 系統處理這次重新開始\
+Then 先完成既有 Draft 的排程儲存、再儲存重新開始後的 Draft\
+And 只有儲存成功後才把還原後的內容、游標、Mode 套用到畫面\
+When 儲存重新開始後的 Draft 失敗\
+Then 畫面維持重來前的內容，不套用還原狀態\
+And 顯示可重試的錯誤訊息
+
+## AC-054：實體按鍵顯示為裝置本地展示，不進入同步資料
+
+Given 使用者在編輯器中按下有效按鍵\
+When 系統更新最近按鍵顯示\
+Then 顯示區塊呈現最新 8 個按鍵的可讀格式\
+And 修飾鍵單獨按下不產生顯示項目\
+And 這份顯示佇列不寫入 `AttemptDraft`，也不上傳雲端\
+When 重新開始本題、再試一次或進入下一題\
+Then 顯示佇列清空，但 `keystrokeCount` 總數不受影響\
+When 使用者關閉「顯示按鍵」設定\
+Then 不顯示此區塊，但 `keystrokeCount` 仍持續累計
+
+## AC-055：應用程式啟動初始化順序集中管理
+
+Given 應用程式首次載入\
+When 啟動流程執行\
+Then 依序初始化 Settings Store、Sync Store，並在 Auth Store 尚未初始化時完成其初始化\
+And 之後才呼叫帳號同步協調（`setAuthenticated`）\
+And 即使初始化過程回報錯誤，畫面仍正常渲染，不整頁卡住
+
+## AC-056：字級與行號即時反應且不重建編輯器
+
+Given 使用者在設定頁調整字級或關閉行號\
+When 使用者返回練習頁\
+Then 練習中的編輯器套用新的字級與行號設定\
+And 編輯器實例不會因此重建（既有 Undo 歷史與游標不受影響）
+
+## AC-057：雲端同步先上傳待同步紀錄，才開始下載
+
+Given 使用者的裝置存在尚未同步的本機 Attempt\
+When 使用者完成 Google 登入\
+Then 系統先呼叫記錄函式上傳所有待同步 Attempt\
+And 上傳完成後才開始下載 Settings、Attempts、Mastery、Reviews\
+And 下載階段開始前，所有下載讀取都尚未發生
+
+## AC-058：一個瀏覽器資料庫只綁定一個雲端帳號
+
+Given 目前瀏覽器的本機資料庫已綁定使用者 A\
+When 使用者 B 登入同一個瀏覽器\
+Then 系統顯示帳號衝突訊息\
+And 同時停止上傳與下載\
+And 使用者 A 原有的本機投影資料維持不變、不被覆蓋或刪除
+
+## AC-059：下載頁面與其分頁進度原子提交
+
+Given 系統正在下載一頁 Attempts、Mastery 或 Reviews 資料\
+When 該頁其中一筆寫入失敗\
+Then 這一頁的資料與對應的分頁進度（cursor）皆不生效，不留下部分寫入\
+When 該頁所有項目皆因版本過期而被捨棄\
+Then 資料不套用，但這一頁的分頁進度仍然前進
+
+## AC-060：較新的本機 Mastery／Review 版本不被過期雲端回應覆蓋
+
+Given 使用者在雲端下載仍在進行中時，於本機完成一題並產生更新的技能熟練或複習排程\
+When 稍後才完成的雲端下載回應帶有較舊版本的 Mastery 或 Review 資料\
+Then 本機較新的分數與版本號皆維持不變\
+And 該筆雲端資料被視為過期並捨棄
+
+## AC-061：Settings 合併採比較後交換，不覆蓋同步中發生的本機變更
+
+Given 使用者的雲端 Settings 較新\
+When 系統即將把雲端 Settings 寫回本機\
+But 使用者在雲端讀取進行中已經變更了本機 Settings\
+Then 系統重新讀取本機並依最新本機快照重新判定合併結果\
+And 不會用雲端值覆蓋使用者剛做的本機變更\
+And 裝置本地的音效偏好一律維持原本機值，不被雲端值覆蓋、也不上傳雲端
+
+## AC-062：已開啟頁面在雲端下載完成後自動刷新
+
+Given 使用者已開啟「學習進度」頁且雲端下載尚未完成\
+When 雲端下載完成並套用新資料\
+Then 已開啟的頁面自動顯示最新資料\
+And 使用者不需要手動重新整理或離開再返回
+
+## AC-063：進行中 Session 與未完成 Draft 永遠只留在裝置本地
+
+Given 使用者在裝置上有進行中的練習 Session 與未完成的 Attempt Draft\
+When 該帳號的雲端同步執行上傳或下載\
+Then 進行中 Session 與未完成 Draft 皆不被上傳，也不會被雲端資料覆蓋或下載到其他裝置\
+And 只有已完成或已跳過的 Attempt、Settings、Mastery、Reviews 屬於雲端同步的資料集

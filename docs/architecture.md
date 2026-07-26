@@ -493,3 +493,286 @@ Progress（`/progress`）與首頁個人化摘要不是 prop-driven 元件：兩
 - `ProgressPage.vue`、`HomePage.vue` 都以 `loading`／`loaded`（或有內容／無內容）／`error` 狀態呈現；`HomePage.vue` 的三張學習模式卡片與載入狀態、錯誤狀態無關，一律顯示。
 
 本節描述的「頁面整合真實資料」宣稱，只有在對應執行期頁面實際呼叫上述 repository／service 時才算完成；只靠 prop-driven 元件測試（例如直接把假資料傳進 `ProgressPage` props）或獨立 domain 測試，不能證明頁面真的整合了本機資料，因此本節提到的頁面行為都必須同時有 Vitest（service／repository 層）與 Playwright（頁面實際讀寫 IndexedDB）兩層證據。第 10.1／10.2 節描述的是投影提交、版本調和與選題服務本身的 orchestration 行為，不是頁面整合宣稱，由對應的 Vitest／IndexedDB integration test 證明即可，不強制要求額外的 Playwright 證據；見 `docs/testing-strategy.md` 與 `docs/acceptance-verification.md`。
+
+## 20. P1：計分與 Draft 可靠性
+
+### 20.1 Restart 與 Retry 的差異
+
+`fresh-attempt-service.ts` 提供兩個不同的純函式，分別對應「重新開始本題」與完成回饋後的「再試一次」：
+
+```ts
+export function createFreshAttemptForExercise(
+  input: CreateFreshAttemptInput,
+): FreshAttemptState; // Retry：全新 clientAttemptId／startedAt，所有計分歸零
+
+export function restartCurrentAttempt(
+  input: RestartCurrentAttemptInput,
+): FreshAttemptState; // Restart：延續同一個 Attempt
+```
+
+「重新開始本題」（Restart）：
+
+- 保留同一個 `clientAttemptId` 與 `startedAt`（已練習時間不歸零）。
+- 保留 `keystrokeCount`、`mistakeCount`、`lastMistakeFingerprint`、`highestHintLevel`（提示層級不因重來而清空，避免透過反覆重來刷提示）。
+- `resetCount` 加一，操作序列追加 `{ type: "reset" }`。
+- 內容、游標還原為題目初始值，Mode 回到 Normal。
+- 不建立成功、失敗或中止的 Attempt 紀錄。
+
+完成回饋後的「再試一次」（Retry）：
+
+- 建立全新的 `clientAttemptId` 與 `startedAt`。
+- 所有計分欄位（按鍵、錯誤、提示、resetCount）歸零。
+- 保留已完成題目原本保存的 Attempt。
+
+Resume 對話框的「重設這一題」捨棄未完成的 Draft 並直接開始新的 Attempt，不計為 Restart。
+
+### 20.2 失敗檢查的錯誤計數語意
+
+`attempt-mistake-service.ts` 定義「錯誤」只在使用者按下「檢查目前結果」且目前編輯器快照仍不符合完成條件時計數：
+
+```ts
+export function createEditorSnapshotFingerprint(
+  snapshot: CheckedEditorSnapshot,
+): string; // JSON.stringify([content, cursor.line, cursor.column, mode])
+
+export function recordFailedCheck(input: {
+  snapshot: CheckedEditorSnapshot;
+  mistakeCount: number;
+  lastMistakeFingerprint: string | null;
+}): FailedCheckResult;
+```
+
+- 相同的內容／游標／Mode 指紋只計一次；快照改變後再次失敗才會再加一次。
+- Undo 只計入 `undoCount`，Restart 只計入 `resetCount`，皆不進入 `mistakeCount`。
+- 跳過題目不算一次錯誤。
+- 操作正確時仍自動完成，不需要按「檢查目前結果」。
+
+`AttemptDraft`（見第 8 節）持久化 `mistakeCount` 與 `lastMistakeFingerprint`；Resume 時一律以 Normal Mode 呈現未完成內容，若持久化指紋對應目前快照，會先正規化成 Normal Mode 版本，避免重新整理後把同一個失敗狀態視為新的錯誤。
+
+### 20.3 Draft 保存排程與 flush 邊界
+
+`attempt-draft-save-scheduler.ts` 以 dirty flag 取代固定時間輪詢：
+
+```ts
+export interface AttemptDraftSaveScheduler {
+  schedule(): void;
+  flush(): Promise<FlushResult>; // "completed" | "failed"
+  dispose(): Promise<void>;
+}
+```
+
+- 同一個 JavaScript turn 內多次呼叫 `schedule()` 只會排入一個 microtask。
+- 儲存序列化執行；儲存中若再被標記為 dirty，會在目前儲存完成後再跑一次，讀取的是執行當下的最新狀態，而不是排程當下的舊快照。
+- 儲存失敗會呼叫 `onError` 並維持 dirty，讓之後的 `flush()`重試。
+- `flush()` 只在沒有排隊中的 microtask、dirty 狀態或進行中的儲存時才 resolve；呼叫端（Restart、下一題、離開路由、`visibilitychange` 隱藏、卸載）在推進前都必須 `await scheduler.flush()`。
+- `dispose()` 先 flush 一次再拒絕之後所有 `schedule()` 呼叫。
+
+`draft-recovery-journal.ts` 在排入非同步 IndexedDB 儲存之前，於同一個 task 內同步寫入 `localStorage` 復原日誌；即使頁面在非同步儲存完成前就被關閉，也能在下次載入時比對日誌與實際持久化內容，判斷是否需要恢復。
+
+### 20.4 Restart 的持久化優先於畫面更新
+
+`PracticePage.vue` 的 `restartExercise()` 依序執行：
+
+```text
+flush 既有 Draft 排程
+以純函式建立 restarted 狀態與 Draft
+儲存 restarted Draft 到 IndexedDB
+儲存 restarted Draft 到 Practice Store
+才把 restarted 狀態套用到畫面（VimEditor、計時器、提示面板）
+```
+
+任一儲存步驟失敗時，維持重來前的畫面內容，不套用 restarted 狀態，並顯示可重試的錯誤訊息（見 `scoring-feedback.spec.ts` 的「keeps the pre-restart attempt visible when the fresh draft fails to persist」與「restores the fresh restart draft, not the pre-restart draft, after an immediate reload」）。
+
+### 20.5 實體按鍵顯示與所有權
+
+`VimEditor.vue` 透過 CodeMirror `domEventObservers` 監聽實際 `keydown`，發出格式化後的顯示字串（例如 `d`、`<Esc>`、`Shift-g`、`Ctrl-r`）：
+
+```ts
+export interface VimEditorEmits {
+  // ...既有 emits
+  keyPressed: [display: string];
+}
+```
+
+修飾鍵單獨按下（`Shift`／`Control`／`Alt`／`Meta`）不發出事件；唯讀編輯器不發出事件。目前（本分支）`PracticePage.vue` 的 `recordKeypress()` 只用這個事件累計 `keystrokeCount` 並排程 Draft 儲存，尚未維護畫面上「最近 8 個按鍵」的顯示佇列——`RecentKeypresses.vue` 元件與其掛載邏輯屬於執行計畫 Task 10（PR #1／分支 `feat/p1-2-editor-settings`，尚未合併）的範圍。以下描述的是該顯示佇列合併後的目標行為：
+
+- 這份佇列只存在於畫面狀態，**不寫入 `AttemptDraft`**，也不上傳雲端——它是裝置本地、純展示用的臨時資料。
+- Restart、Retry、下一題與 Resume 都會清空佇列；Resume 後的按鍵總數（`keystrokeCount`）仍照常累計，只是顯示佇列從空開始。
+- `showKeypresses` 設定關閉時仍持續累計 `keystrokeCount`，只是不渲染這個區塊。
+
+無論顯示佇列是否已合併，`keyPressed` 事件本身、`keystrokeCount` 累計與「不寫入 `AttemptDraft`」的裝置本地邊界都是本分支已實作並有 Vitest／Playwright 證據的行為（見 `docs/testing-strategy.md` 第 8 節）。
+
+## 21. P1：設定與編輯器整合
+
+> 本節第 21.1、21.2 節描述的行為屬於 PR #1（分支 `feat/p1-2-editor-settings`）的範圍，**截至本文件撰寫時尚未合併**，本分支（`feat/p1-3-cloud-hydration`）的實際程式碼還沒有 `AppBootstrap.vue`、`editorFontSize` Prop 或對應的字級／行號 `Compartment`。以下描述的是執行計畫（`docs/superpowers/plans/2026-07-21-p1-vibe-execution-plan.md` Task 8、Task 9）定義的目標行為，供 PR #3 對照；PR #1 合併後應在這兩節補上實際檔案路徑與測試證據的交叉參照，而不是視為本分支已完成的既有事實。
+
+### 21.1 應用程式啟動責任（PR #1，尚未合併）
+
+計畫定義 `AppBootstrap.vue`（`src/app/providers/`）作為唯一負責初始化順序的元件：
+
+```text
+初始化 Settings Store
+初始化 Sync Store
+初始化 Auth Store（若尚未初始化）
+呼叫 syncStore.setAuthenticated(currentUserId | null)
+啟動一個監聽 Auth 使用者 id 變化的 watcher
+```
+
+`GoogleSignInButton.vue`、`OfflineSyncBanner.vue` 屆時不再各自初始化 Auth／Sync 或啟動監聽；即使初始化過程回報錯誤，`AppBootstrap.vue` 的 default slot 仍應渲染，不阻塞整個應用程式。
+
+### 21.2 Settings Store 到已掛載 VimEditor 的反應式流程（PR #1，尚未合併）
+
+計畫要求 `VimEditor.vue` 以 CodeMirror `Compartment` 讓下列 Props 在掛載後仍可反應式切換，且不改變既有 EditorView 實例：
+
+```ts
+export interface VimEditorProps {
+  // ...
+  editorFontSize: number;
+  showLineNumbers: boolean;
+}
+```
+
+`showKeypresses` 屆時不再是 VimEditor 的 Prop——最近按鍵顯示（見 20.5 節）屆時將屬於 `PracticePage.vue` 層級的關注點，不屬於編輯器包裝元件。目前（本分支）`VimEditor.vue` 只有既有的 `readOnlyCompartment`，沒有字級或行號 Compartment，`showKeypresses` 仍是既有 Prop、尚未搬移到 `PracticePage.vue`。這與第 20.5 節已經存在的 `keyPressed` emit（按鍵事件本身、`keystrokeCount` 累計）是兩件獨立的事：後者已在本分支實作，前者（反應式字級／行號、`showKeypresses` 搬移）仍待 PR #1 合併。
+
+### 21.3 練習題量偏好的判斷順序
+
+`PracticeSetupPage.vue` 決定題量選擇器預設值的優先順序固定為：
+
+```text
+URL 上合法的 count（5、10、20 之一）
+→ 已同步的 settingsStore.preferredQuestionCount
+→ Store 預設值
+```
+
+```ts
+function parseQuestionCount(value: unknown): QuestionCount | null {
+  if (value === "5" || value === "10" || value === "20") {
+    return Number(value) as QuestionCount;
+  }
+  return null;
+}
+```
+
+見 `PracticeSetupPage.test.ts` 的「prefers an explicit URL count of 10 over the synced setting」。使用者在頁面上手動變更題量後、若稍後才完成的 Settings 初始化不得覆蓋使用者的手動選擇——這部分的「延遲初始化與手動選擇保護」邏輯已在 PR #1（Task 12）實作並涵蓋測試，本文件不重複描述其實作細節，僅在此標註優先順序契約供 PR #3 對照；PR #1 合併後應在本節補上明確的交叉參照。
+
+### 21.4 音效偏好：雲端同步層級已裝置本地化，前端 UI 移除待 PR #1 合併
+
+雲端同步層級已經把 `soundEnabled` 視為純裝置本地欄位（本分支已實作並有測試）：`settings-merge-service.ts` 的 `resolveDeviceSound()`／`withSoundEnabled()` 在任何合併結果下都固定採用本機既有值，從不從雲端讀取或寫入——見 `settings-merge-service.test.ts` 與 `p1-cloud-hydration.spec.ts` Journey A（雲端 fixture 沒有 `soundEnabled` 欄位，本機值也不因雲端同步而改變）。
+
+目前（本分支）Settings 頁面仍保留「開啟音效」UI 開關與對應的 Pinia state／`LocalSettings` 欄位——完整移除前端音效偏好（UI、Pinia state、`LocalSettings`、本機與雲端 repository 的欄位對應）屬於執行計畫 Task 11（PR #1／分支 `feat/p1-2-editor-settings`，尚未合併）的範圍，該分支合併後應更新本節，移除「目前仍保留」的描述。Supabase 的 `user_settings.sound_enabled` 資料行本身不受此影響，見 `docs/database-schema.md` 第 8.4 節：無論前端 UI 何時移除，這個資料行都作為部署相容性欄位保留。
+
+## 22. P1：雲端學習狀態同步（Cloud Hydration）
+
+### 22.1 責任邊界：上傳優先、下載獨立
+
+`src/stores/sync-store.ts` 的 `syncAndHydrate()` 是唯一的「先上傳、成功後才下載」協調點：
+
+```text
+setAuthenticated(userId)
+→ 若目前離線，等待 online 事件（且仍是目前 generation）
+→ syncAndHydrate：先上傳所有 pending 本機 Attempt
+→ 上傳完成後才呼叫 CloudHydrationService.downloadState(userId)
+```
+
+每次 `setAuthenticated()`（含登出）都會遞增內部 `generation` 計數器；任何非同步流程在恢復執行時都會重新比對 generation，過期的呼叫（例如使用者在同步進行中又登出或切換帳號）會直接變成 no-op，不會套用過期結果。
+
+`CloudHydrationService.downloadState()`（`src/features/cloud-hydration/services/cloud-hydration-service.ts`）本身**只下載，不上傳**——上傳 pending Attempt 是 Sync Store 的職責，兩者刻意分離，讓下載服務可以獨立測試、獨立驗證原子性與版本調和規則，不必牽涉上傳重試邏輯。`downloadState()` 的固定順序：
+
+```text
+LocalDataOwnerRepository.bind(userId)
+→ hydrateSettings(userId)（Settings CAS 合併，見 22.6 節）
+→ CloudHydrationMetadataRepository.get(userId)（讀取已儲存的三組 cursor）
+→ committer.captureProjectionRevisions()（在套用任何一頁之前，先拍下目前本機 Mastery／Review 版本快照）
+→ 逐頁下載並提交 Attempts（見 22.4／22.5 節）
+→ 逐頁下載並提交 Mastery
+→ 逐頁下載並提交 Reviews
+→ metadataRepository.markCompleted(userId, now)
+```
+
+任一步驟失敗都會中止整個下載，不會呼叫後續步驟或標記完成。
+
+### 22.2 一個瀏覽器資料庫只綁定一個帳號
+
+`LocalDataOwnerRepository`（`src/infrastructure/indexed-db/local-data-owner-repository.ts`）把目前 IndexedDB 綁定的帳號 id 存在既有 `metadata` store（沿用既有 key path，不需要升版）：
+
+- 第一次綁定：直接寫入。
+- 同一使用者再次綁定：視為冪等，不動作。
+- 不同使用者嘗試綁定：拋出 `LocalDataOwnerConflictError`，上傳與下載都會中止，並顯示「此瀏覽器已有其他帳號的本機學習資料，已停止同步。」——絕不會把兩個帳號的資料混進同一份本機投影。
+
+### 22.3 各資料集獨立的分頁 Cursor
+
+`src/types/cloud-learning-state.ts` 為 Attempts、Mastery、Reviews 各自定義獨立的 Cursor 型別（而非共用單一時間戳記）：
+
+```ts
+export interface AttemptHydrationCursor {
+  createdAt: string;
+  clientAttemptId: string;
+}
+export interface MasteryHydrationCursor {
+  updatedAt: string;
+  skillId: string;
+}
+export interface ReviewHydrationCursor {
+  updatedAt: string;
+  exerciseId: string;
+}
+```
+
+`SupabaseCloudLearningStateRepository`（`src/infrastructure/supabase/supabase-cloud-learning-state-repository.ts`）依對應的複合排序（例如 `created_at asc, client_attempt_id asc`）查詢 `limit + 1` 筆，只回傳 `limit` 筆；`hasMore` 只在確實存在多出的那一筆時為真，`nextCursor` 取自實際回傳的最後一筆。`CloudHydrationMetadataRepository`（`src/infrastructure/indexed-db/cloud-hydration-metadata-repository.ts`）將三組 cursor 與 `completedAt`、`schemaVersion` 一併持久化在 `metadata` store 的 `cloud-hydration` 記錄中，讓中斷或分次的下載可以從上次進度繼續，而不必每次都從頭讀取整個帳號的歷史資料。
+
+### 22.4 原子的「資料頁 + Cursor」提交
+
+`IndexedDbCloudHydrationCommitter`（`src/infrastructure/indexed-db/cloud-hydration-committer.ts`）的 `commitAttemptsPage`／`commitMasteryPage`／`commitReviewsPage` 各自在單一 IndexedDB transaction 中，同時寫入該資料集的 store 與 `metadata` store 的對應 cursor 欄位：
+
+```text
+attempts store + metadata store（Attempts 頁）
+skillMastery store + metadata store（Mastery 頁）
+exerciseReviews store + metadata store（Reviews 頁）
+```
+
+任一筆寫入失敗（例如注入的 `DataError`）都會讓整個 transaction abort——不會出現「這一頁的部分資料寫入成功、但 cursor 沒有前進」或反過來的中間狀態。Attempts 的合併規則：本機不存在時以 `syncStatus: "synced"` 新增；本機為 `pending` 時保留本機（尚未同步的本機紀錄優先於雲端回傳）；遠端沒有回傳的本機紀錄一律不刪除。
+
+### 22.5 Mastery／Review 版本調和守則
+
+Mastery、Review 每一頁提交時，都以 `captureProjectionRevisions()` 拍下的快照作為「這一頁遠端資料是基於哪個本機版本算出來的」基準，逐筆套用同一條規則：
+
+```text
+本機目前 revision 等於快照的 expected revision
+  → 套用遠端值，revision 加一
+
+本機目前 revision 大於快照的 expected revision
+  → 判定遠端資料過期，捨棄（skippedNewer），但這一頁的 cursor 仍然前進
+
+本機目前 revision 小於快照的 expected revision
+  → 視為本機狀態不一致的不變量錯誤，中止整個 transaction
+```
+
+「捨棄過期資料」與「分頁進度前進」是兩件互相獨立的事：即使一整頁的項目都因為過期而被捨棄，該頁的 cursor 仍會前進，下次下載才不會卡在同一頁重複比對（見 `cloud-hydration-committer.test.ts` 對 3→4 版本競態的 cursor 斷言，以及 `p1-cloud-hydration.spec.ts` Journey E 在真實瀏覽器下驗證「本機在延遲的雲端回應仍卡住時完成一題」的情境：本機因為樂觀預測與 RPC 權威回應各寫入一次，revision 從 0 推進到 2，之後才釋放的過期 Mastery 頁不得覆蓋分數或 revision）。
+
+### 22.6 Settings 合併的 CAS（比較後交換）保護
+
+`mergeCloudSettings()`（`src/features/settings/services/settings-merge-service.ts`）決定本機與雲端 Settings 何者為準：
+
+```text
+兩者皆無 → 維持預設值，不寫入
+只有本機 → 上傳本機
+只有雲端 → 存回本機
+兩者皆有：較新且合法的 updatedAt 勝出；時間相同或兩者皆不合法時本機勝出
+```
+
+當合併結果初步判定「雲端勝出」時，在真正寫回本機之前會重新讀取一次本機（compare-and-swap）：若使用者在雲端請求進行中又修改了本機設定，改以最新的本機快照重新判定，避免蓋掉使用者剛做的變更；只執行一次重新讀取／重算循環，最終寫入階段若又發生變更，則視為可由下一次雲端同步調和的良性競態。`soundEnabled`（見 21.4 節）不論合併結果如何，一律採用裝置本地既有值，從不被雲端值覆蓋，也從不上傳。
+
+### 22.7 已開啟頁面的即時刷新
+
+`ProgressPage.vue`（以及 Review／Home 對應頁面）以 `watch(() => syncStore.localLearningStateRevision, ...)` 監聽本機學習狀態的整體版本號；雲端下載提交任何一頁資料後會推進這個版本號，已經開啟的頁面因此會重新呼叫 service／repository 取得最新資料，而不需要使用者手動重新整理或導航離開再回來（見 `p1-cloud-hydration.spec.ts` Journey C：頁面停留在 Progress，雲端回應被延遲保留，回應釋放後畫面自動從「尚無學習紀錄」更新為真實資料）。
+
+### 22.8 Active Session 與 Attempt Draft 永遠留在裝置本地
+
+進行中的練習 Session 與尚未完成的 `AttemptDraft`（見第 8 節）不屬於雲端同步的資料集——`cloud-learning-state-mapper.ts` 的型別中沒有對應欄位，`CloudHydrationService` 也不會讀取或寫入 `sessions` store 的進行中內容。跨裝置恢復同一個未完成 Attempt 不是 P1 範圍；換裝置只會看到雲端已保存的 Settings、完成的 Attempts、Mastery、Reviews，不會看到另一台裝置上未完成的練習畫面。
+
+### 22.9 錯誤、重試、離線與帳號衝突
+
+- 帳號衝突（22.2 節）：顯示明確訊息並同時停止上傳與下載，保留現有本機投影不被覆蓋（見 `p1-cloud-hydration.spec.ts` Journey D）。
+- 下載中的錯誤：`sync-store.ts` 記錄 `hydrationErrorMessage`，不會讓整個應用程式崩潰或卡在載入畫面。
+- 離線：現有的 `OfflineSyncBanner.vue` 訊息優先序（Task 23 的 `bannerState`）維持不變，離線不影響已完成的本機投影，恢復連線後才觸發 `syncAndHydrate()`。
+- 上傳去重：已標記 `synced` 的本機 Attempt 不會重送 RPC；伺服器 `record_exercise_attempt` 本身也以 `(user_id, client_attempt_id)` 去重（見 `docs/database-schema.md` 第 5 節）。
