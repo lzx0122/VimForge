@@ -9,10 +9,10 @@ const syncStore = useSyncStore();
 let ready = false;
 
 const stopAuthWatch = watch(
-  () => authStore.isAuthenticated,
-  (authenticated) => {
+  () => authStore.currentUser?.id ?? null,
+  (userId) => {
     if (ready) {
-      void syncStore.setAuthenticated(authenticated);
+      void syncStore.setAuthenticated(userId);
     }
   },
 );
@@ -23,7 +23,7 @@ onMounted(async () => {
     await authStore.initialize();
   }
   ready = true;
-  await syncStore.setAuthenticated(authStore.isAuthenticated);
+  await syncStore.setAuthenticated(authStore.currentUser?.id ?? null);
 });
 
 onUnmounted(() => {
@@ -33,23 +33,23 @@ onUnmounted(() => {
 
 <template>
   <aside
-    v-if="syncStore.showOfflineBanner"
+    v-if="syncStore.bannerState !== null"
     class="offline-sync-banner"
     role="status"
     aria-live="polite"
   >
-    <p>目前無法同步，紀錄已保存在這台裝置。</p>
+    <p>{{ syncStore.bannerState?.message }}</p>
     <button
       v-if="
         authStore.isAuthenticated &&
-          syncStore.online &&
-          syncStore.pendingCount > 0
+          syncStore.bannerState?.kind !== 'conflict' &&
+          syncStore.bannerState?.kind !== 'hydrating'
       "
       type="button"
-      :disabled="syncStore.syncing"
-      @click="syncStore.syncPending()"
+      :disabled="syncStore.syncing || syncStore.hydrating"
+      @click="syncStore.syncAndHydrate()"
     >
-      {{ syncStore.syncing ? "同步中…" : "重試同步" }}
+      {{ syncStore.syncing || syncStore.hydrating ? "同步中…" : "重試同步" }}
     </button>
   </aside>
 </template>
