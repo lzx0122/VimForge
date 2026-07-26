@@ -107,6 +107,48 @@ describe("CloudHydrationMetadataRepository", () => {
 
       await expect(repository.get("user-a")).rejects.toThrow();
     });
+
+    it("throws when a cursor timestamp has an out-of-range minute component", async () => {
+      await seed(database, {
+        ...metadata(),
+        attemptsCursor: {
+          createdAt: "2026-07-16T08:60:00Z",
+          clientAttemptId: "attempt-1",
+        },
+      });
+      const repository = new CloudHydrationMetadataRepository(database);
+
+      await expect(repository.get("user-a")).rejects.toThrow();
+    });
+
+    it("throws when a cursor timestamp has an out-of-range UTC offset", async () => {
+      await seed(database, {
+        ...metadata(),
+        masteryCursor: {
+          updatedAt: "2026-07-15T08:00:00+99:99",
+          skillId: "skill-1",
+        },
+      });
+      const repository = new CloudHydrationMetadataRepository(database);
+
+      await expect(repository.get("user-a")).rejects.toThrow();
+    });
+
+    it("accepts a valid offset timestamp with extended fractional precision unchanged", async () => {
+      const timestamp = "2026-07-20T17:00:00.123456+08:00";
+      await seed(database, {
+        ...metadata(),
+        attemptsCursor: {
+          createdAt: timestamp,
+          clientAttemptId: "attempt-1",
+        },
+      });
+      const repository = new CloudHydrationMetadataRepository(database);
+
+      const result = await repository.get("user-a");
+
+      expect(result.attemptsCursor?.createdAt).toBe(timestamp);
+    });
   });
 
   describe("markCompleted", () => {
@@ -127,6 +169,17 @@ describe("CloudHydrationMetadataRepository", () => {
 
       await expect(
         repository.markCompleted("user-a", "not-a-timestamp"),
+      ).rejects.toThrow();
+
+      await expect(repository.get("user-a")).resolves.toEqual(metadata());
+    });
+
+    it("rejects an invalid completion second without mutating the stored record", async () => {
+      await seed(database, metadata());
+      const repository = new CloudHydrationMetadataRepository(database);
+
+      await expect(
+        repository.markCompleted("user-a", "2026-07-20T09:00:60Z"),
       ).rejects.toThrow();
 
       await expect(repository.get("user-a")).resolves.toEqual(metadata());

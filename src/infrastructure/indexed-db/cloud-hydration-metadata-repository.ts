@@ -18,8 +18,11 @@ const TIMESTAMP_PATTERN =
 /**
  * Validates the literal calendar date/time components, not just whether
  * Date.parse() can make sense of the string - a bare Date.parse() silently
- * normalizes impossible dates (e.g. Feb 30 rolls into March) instead of
- * rejecting them.
+ * normalizes impossible dates or times (e.g. Feb 30 rolls into March,
+ * minute 60 rolls into the next hour) instead of rejecting them. The
+ * offset hour/minute are range-checked too, but never applied to the
+ * calendar round trip - the string is returned unchanged, never
+ * normalized to UTC.
  */
 function assertTimestamp(value: unknown, field: string): string {
   if (typeof value !== "string") {
@@ -30,21 +33,51 @@ function assertTimestamp(value: unknown, field: string): string {
     throw new Error(`${field} is not a valid ISO-8601 timestamp: ${value}`);
   }
 
-  const [, year, month, day, hour, minute, second] = match;
-  const asUtc = new Date(
-    Date.UTC(
-      Number(year),
-      Number(month) - 1,
-      Number(day),
-      Number(hour),
-      Number(minute),
-      Number(second),
-    ),
-  );
+  const [
+    ,
+    yearText,
+    monthText,
+    dayText,
+    hourText,
+    minuteText,
+    secondText,
+    offsetSign,
+    offsetHourText,
+    offsetMinuteText,
+  ] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+
+  if (month < 1 || month > 12) {
+    throw new Error(`${field} has an invalid month: ${value}`);
+  }
+  if (hour > 23) {
+    throw new Error(`${field} has an invalid hour: ${value}`);
+  }
+  if (minute > 59) {
+    throw new Error(`${field} has an invalid minute: ${value}`);
+  }
+  if (second > 59) {
+    throw new Error(`${field} has an invalid second: ${value}`);
+  }
+  if (offsetSign !== undefined) {
+    if (Number(offsetHourText) > 23) {
+      throw new Error(`${field} has an invalid UTC offset hour: ${value}`);
+    }
+    if (Number(offsetMinuteText) > 59) {
+      throw new Error(`${field} has an invalid UTC offset minute: ${value}`);
+    }
+  }
+
+  const asUtc = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
   if (
-    asUtc.getUTCFullYear() !== Number(year) ||
-    asUtc.getUTCMonth() !== Number(month) - 1 ||
-    asUtc.getUTCDate() !== Number(day)
+    asUtc.getUTCFullYear() !== year ||
+    asUtc.getUTCMonth() !== month - 1 ||
+    asUtc.getUTCDate() !== day
   ) {
     throw new Error(`${field} is not a valid calendar date: ${value}`);
   }
