@@ -178,7 +178,9 @@ type UserSettingsTable = {
     editor_font_size: number;
     show_line_numbers: boolean;
     show_keypresses: boolean;
-    sound_enabled: boolean;
+    // Has a database default (false); intentionally never written by the
+    // app - sound_enabled is a per-device preference, not cloud-synced.
+    sound_enabled?: boolean;
     preferred_question_count: number;
     last_learning_mode: string | null;
     updated_at: string;

@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 
+import { mergeCloudSettings } from "../features/settings/services/settings-merge-service";
 import {
   SettingsRepository,
   type LocalSettings,
@@ -16,7 +17,13 @@ export interface LocalSettingsRepository {
 }
 
 export interface CloudSettingsRepository {
+  get(userId: string): Promise<LocalSettings | null>;
   save(userId: string, settings: LocalSettings): Promise<void>;
+}
+
+interface CloudHydrationOptions {
+  local?: LocalSettingsRepository;
+  cloud?: CloudSettingsRepository;
 }
 
 export type SettingsPersistenceStatus = "local" | "synced" | "error";
@@ -177,6 +184,35 @@ export const useSettingsStore = defineStore("settings", {
         this.errorMessage = "無法將設定保存在這台裝置。";
       } finally {
         this.saving = false;
+      }
+    },
+
+    async hydrateFromCloud(
+      userId: string,
+      options?: CloudHydrationOptions,
+    ): Promise<void> {
+      try {
+        const local = options?.local ?? (await getDefaultLocalRepository());
+        const cloud = options?.cloud ?? getDefaultCloudRepository();
+
+        const result = await mergeCloudSettings({
+          userId,
+          local,
+          cloud,
+          preserveSoundEnabled: this.soundEnabled,
+        });
+
+        if (result.settings !== null) {
+          this.$patch(normalizeSettings(result.settings));
+          this.initialized = true;
+          if (result.source === "cloud") {
+            this.persistenceStatus = "synced";
+          }
+        }
+      } catch (error: unknown) {
+        reportError("settings.cloud-hydrate", error);
+        this.persistenceStatus = "error";
+        this.errorMessage = "無法從雲端同步設定。";
       }
     },
   },

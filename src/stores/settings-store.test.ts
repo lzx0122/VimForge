@@ -30,6 +30,7 @@ function createLocalRepository(
 
 function createCloudRepository(): CloudSettingsRepository {
   return {
+    get: vi.fn(async () => null),
     save: vi.fn(async () => undefined),
   };
 }
@@ -96,6 +97,7 @@ describe("settings store", () => {
       }),
     };
     const cloud: CloudSettingsRepository = {
+      get: vi.fn(async () => null),
       save: vi.fn(async () => {
         calls.push("cloud");
       }),
@@ -131,6 +133,7 @@ describe("settings store", () => {
   it("keeps local settings when cloud synchronization fails", async () => {
     const local = createLocalRepository();
     const cloud: CloudSettingsRepository = {
+      get: vi.fn(async () => null),
       save: vi.fn(async () => {
         throw new Error("cloud unavailable");
       }),
@@ -171,5 +174,102 @@ describe("settings store", () => {
     expect(store.editorFontSize).toBe(DEFAULT_SETTINGS.editorFontSize);
     expect(store.persistenceStatus).toBe("error");
     expect(store.errorMessage).toBe("無法將設定保存在這台裝置。");
+  });
+
+  describe("hydrateFromCloud", () => {
+    it("patches the store with cloud settings when cloud wins the merge", async () => {
+      const local = createLocalRepository({
+        ...savedSettings,
+        updatedAt: "2026-07-15T08:00:00.000Z",
+      });
+      const cloud: CloudSettingsRepository = {
+        get: vi.fn(async () => ({
+          ...savedSettings,
+          editorFontSize: 22,
+          updatedAt: "2026-07-20T08:00:00.000Z",
+        })),
+        save: vi.fn(async () => undefined),
+      };
+      const store = useSettingsStore();
+      await store.initialize(local);
+
+      await store.hydrateFromCloud("user-1", { local, cloud });
+
+      expect(store.editorFontSize).toBe(22);
+      expect(store.persistenceStatus).toBe("synced");
+      expect(local.save).toHaveBeenCalled();
+      expect(cloud.save).not.toHaveBeenCalled();
+    });
+
+    it("uploads local settings to the cloud when local wins the merge", async () => {
+      const local = createLocalRepository({
+        ...savedSettings,
+        updatedAt: "2026-07-20T08:00:00.000Z",
+      });
+      const cloud: CloudSettingsRepository = {
+        get: vi.fn(async () => ({
+          ...savedSettings,
+          editorFontSize: 12,
+          updatedAt: "2026-07-15T08:00:00.000Z",
+        })),
+        save: vi.fn(async () => undefined),
+      };
+      const store = useSettingsStore();
+      await store.initialize(local);
+
+      await store.hydrateFromCloud("user-1", { local, cloud });
+
+      expect(cloud.save).toHaveBeenCalledWith(
+        "user-1",
+        expect.objectContaining({
+          editorFontSize: savedSettings.editorFontSize,
+        }),
+      );
+      expect(store.editorFontSize).toBe(savedSettings.editorFontSize);
+    });
+
+    it("leaves the store intact when the cloud read fails", async () => {
+      const local = createLocalRepository(savedSettings);
+      const cloud: CloudSettingsRepository = {
+        get: vi.fn(async () => {
+          throw new Error("cloud unavailable");
+        }),
+        save: vi.fn(async () => undefined),
+      };
+      const store = useSettingsStore();
+      await store.initialize(local);
+
+      await store.hydrateFromCloud("user-1", { local, cloud });
+
+      expect(store.$state).toMatchObject(savedSettings);
+      expect(store.persistenceStatus).toBe("error");
+    });
+
+    it("leaves the store intact when persisting cloud settings locally fails", async () => {
+      const local: LocalSettingsRepository = {
+        get: vi.fn(async () => ({
+          ...savedSettings,
+          updatedAt: "2026-07-10T08:00:00.000Z",
+        })),
+        save: vi.fn(async () => {
+          throw new Error("indexeddb unavailable");
+        }),
+      };
+      const cloud: CloudSettingsRepository = {
+        get: vi.fn(async () => ({
+          ...savedSettings,
+          editorFontSize: 24,
+          updatedAt: "2026-07-20T08:00:00.000Z",
+        })),
+        save: vi.fn(async () => undefined),
+      };
+      const store = useSettingsStore();
+      await store.initialize(local);
+
+      await store.hydrateFromCloud("user-1", { local, cloud });
+
+      expect(store.editorFontSize).toBe(savedSettings.editorFontSize);
+      expect(store.persistenceStatus).toBe("error");
+    });
   });
 });
