@@ -766,15 +766,29 @@ test.describe("P1 cloud hydration", () => {
 
     releaseRpc();
 
-    await expect(page.getByText("正在恢復帳號學習進度…")).toBeHidden();
+    // The banner's absence is not a completion signal by itself - before
+    // hydration begins the banner doesn't exist either, and an empty
+    // selectIndexesAfterRpc.every(...) is vacuously true. Wait for the
+    // metadata store to actually record a completed hydration instead.
+    await expect
+      .poll(() => readCloudHydrationCompletedAt(page))
+      .not.toBeNull();
+
+    const expectedSelects = [
+      "select:user_settings",
+      "select:exercise_attempts",
+      "select:user_skill_mastery",
+      "select:user_review_items",
+    ];
+    for (const expectedSelect of expectedSelects) {
+      expect(calls).toContain(expectedSelect);
+    }
 
     const rpcCompleteIndex = calls.indexOf("rpc:record_exercise_attempt:complete");
     expect(rpcCompleteIndex).toBeGreaterThanOrEqual(0);
-    const selectIndexesAfterRpc = calls
-      .map((call, index) => ({ call, index }))
-      .filter(({ call }) => call.startsWith("select:"))
-      .every(({ index }) => index > rpcCompleteIndex);
-    expect(selectIndexesAfterRpc).toBe(true);
+    for (const expectedSelect of expectedSelects) {
+      expect(calls.indexOf(expectedSelect)).toBeGreaterThan(rpcCompleteIndex);
+    }
   });
 
   test("Journey D - account conflict stops upload and download, and preserves existing local progress", async ({
@@ -938,6 +952,14 @@ test.describe("P1 cloud hydration", () => {
     );
     expect(finalMastery).toHaveLength(1);
     expect(finalMastery[0]?.masteryScore).toBe(65);
+    // Completing the exercise writes mastery twice while hydration's
+    // mastery page is held open: an optimistic local-predicted commit
+    // (revision 0 -> 1), then the RPC's authoritative reconciliation
+    // (revision 1 -> 2, matching auth-sync.spec.ts's "reconciles the local
+    // mastery prediction to the server's absolute value exactly once").
+    // The stale remote hydration page must not overwrite either the value
+    // or the revision that proves it lost the race.
+    expect(finalMastery[0]?.revision).toBe(2);
     expect(recordAttemptCalls).toBe(1);
   });
 });
