@@ -269,6 +269,29 @@ describe("IndexedDbCloudHydrationCommitter", () => {
           .attemptsCursor,
       ).toEqual(attemptCursor);
     });
+
+    it("rolls back the whole page and its cursor when a later attempt fails to write", async () => {
+      const committer = new IndexedDbCloudHydrationCommitter(database);
+
+      await expect(
+        committer.commitAttemptsPage({
+          userId: USER_ID,
+          items: [
+            cloudAttempt(),
+            cloudAttempt({
+              clientAttemptId: undefined as unknown as string,
+            }),
+          ],
+          nextCursor: attemptCursor,
+        }),
+      ).rejects.toThrow();
+
+      expect(await new AttemptRepository(database).listAll()).toHaveLength(0);
+      expect(
+        (await new CloudHydrationMetadataRepository(database).get(USER_ID))
+          .attemptsCursor,
+      ).toBeNull();
+    });
   });
 
   describe("commitMasteryPage", () => {
@@ -374,6 +397,58 @@ describe("IndexedDbCloudHydrationCommitter", () => {
           .masteryCursor,
       ).toBeNull();
     });
+
+    it("keeps a local mastery completion that advanced past the expected snapshot during hydration", async () => {
+      // Snapshot captured at the start of hydration: skill-1 was at
+      // revision 3. A local attempt completes DURING the download,
+      // advancing skill-1 to revision 4 before this page is committed - the
+      // remote page (still reflecting revision 3) must not overwrite that
+      // newer local completion.
+      await seed(
+        database,
+        "skillMastery",
+        storedMastery({ revision: 4, masteryScore: 60 }),
+      );
+      const committer = new IndexedDbCloudHydrationCommitter(database);
+
+      const result = await committer.commitMasteryPage({
+        userId: USER_ID,
+        items: [cloudMastery()],
+        nextCursor: masteryCursor,
+        expectedRevisions: new Map([["skill-1", 3]]),
+      });
+
+      expect(result).toEqual({ applied: 0, skippedNewer: 1 });
+      const stored = await new SkillMasteryRepository(database).get(
+        "skill-1",
+      );
+      expect(stored?.revision).toBe(4);
+      expect(stored?.masteryScore).toBe(60);
+    });
+
+    it("does not duplicate or re-increment when the same mastery page is replayed", async () => {
+      await seed(database, "skillMastery", storedMastery({ revision: 3 }));
+      const committer = new IndexedDbCloudHydrationCommitter(database);
+      const page = {
+        userId: USER_ID,
+        items: [cloudMastery()],
+        nextCursor: masteryCursor,
+        expectedRevisions: new Map([["skill-1", 3]]),
+      };
+
+      const first = await committer.commitMasteryPage(page);
+      const second = await committer.commitMasteryPage(page);
+
+      expect(first).toEqual({ applied: 1, skippedNewer: 0 });
+      expect(second).toEqual({ applied: 0, skippedNewer: 1 });
+      const stored = await new SkillMasteryRepository(database).get(
+        "skill-1",
+      );
+      expect(stored?.revision).toBe(4);
+      expect(
+        await new SkillMasteryRepository(database).listAll(),
+      ).toHaveLength(1);
+    });
   });
 
   describe("commitReviewsPage", () => {
@@ -432,6 +507,85 @@ describe("IndexedDbCloudHydrationCommitter", () => {
         "exercise-1",
       );
       expect(stored?.revision).toBe(2);
+    });
+
+    it("rolls back the whole page and its cursor when a later review fails to write", async () => {
+      await seed(database, "exerciseReviews", storedReview({ revision: 3 }));
+      const committer = new IndexedDbCloudHydrationCommitter(database);
+
+      await expect(
+        committer.commitReviewsPage({
+          userId: USER_ID,
+          items: [
+            cloudReview(),
+            cloudReview({
+              exerciseId: undefined as unknown as string,
+            }),
+          ],
+          nextCursor: reviewCursor,
+          expectedRevisions: new Map([["exercise-1", 3]]),
+        }),
+      ).rejects.toThrow();
+
+      const stored = await new ExerciseReviewRepository(database).get(
+        "exercise-1",
+      );
+      expect(stored?.revision).toBe(3);
+      expect(stored?.dueAt).toBe("2026-07-22T00:00:00.000Z");
+      expect(
+        (await new CloudHydrationMetadataRepository(database).get(USER_ID))
+          .reviewsCursor,
+      ).toBeNull();
+    });
+
+    it("keeps a local review completion that advanced past the expected snapshot during hydration", async () => {
+      await seed(
+        database,
+        "exerciseReviews",
+        storedReview({
+          revision: 4,
+          dueAt: "2026-07-25T00:00:00.000Z",
+        }),
+      );
+      const committer = new IndexedDbCloudHydrationCommitter(database);
+
+      const result = await committer.commitReviewsPage({
+        userId: USER_ID,
+        items: [cloudReview()],
+        nextCursor: reviewCursor,
+        expectedRevisions: new Map([["exercise-1", 3]]),
+      });
+
+      expect(result).toEqual({ applied: 0, skippedNewer: 1 });
+      const stored = await new ExerciseReviewRepository(database).get(
+        "exercise-1",
+      );
+      expect(stored?.revision).toBe(4);
+      expect(stored?.dueAt).toBe("2026-07-25T00:00:00.000Z");
+    });
+
+    it("does not duplicate or re-increment when the same review page is replayed", async () => {
+      await seed(database, "exerciseReviews", storedReview({ revision: 3 }));
+      const committer = new IndexedDbCloudHydrationCommitter(database);
+      const page = {
+        userId: USER_ID,
+        items: [cloudReview()],
+        nextCursor: reviewCursor,
+        expectedRevisions: new Map([["exercise-1", 3]]),
+      };
+
+      const first = await committer.commitReviewsPage(page);
+      const second = await committer.commitReviewsPage(page);
+
+      expect(first).toEqual({ applied: 1, skippedNewer: 0 });
+      expect(second).toEqual({ applied: 0, skippedNewer: 1 });
+      const stored = await new ExerciseReviewRepository(database).get(
+        "exercise-1",
+      );
+      expect(stored?.revision).toBe(4);
+      expect(
+        await new ExerciseReviewRepository(database).listAll(),
+      ).toHaveLength(1);
     });
   });
 });

@@ -101,7 +101,7 @@ test("keeps a pending attempt local and allows navigation while offline", async 
   await page.evaluate(() => window.dispatchEvent(new Event("offline")));
 
   await expect(
-    page.getByText("目前無法同步，紀錄已保存在這台裝置。"),
+    page.getByText("目前離線，紀錄已保存在這台裝置。"),
   ).toBeVisible();
   await page.getByRole("link", { name: "課程" }).click();
   await expect(

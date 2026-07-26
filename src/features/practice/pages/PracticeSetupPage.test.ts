@@ -1,5 +1,5 @@
 import { flushPromises, mount } from "@vue/test-utils";
-import { createPinia } from "pinia";
+import { createPinia, setActivePinia } from "pinia";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -8,6 +8,7 @@ import type {
   PracticeCandidateListOptions,
   PracticeCandidateRecord,
 } from "../repositories/practice-candidate-repository";
+import { useSettingsStore } from "../../../stores/settings-store";
 import type { PracticeSession } from "../../../types/session";
 import { topicSkillSlugs } from "../data/topic-definitions";
 
@@ -111,7 +112,13 @@ function attemptRecord(
   };
 }
 
-async function mountSetupPage(mode: string) {
+async function mountSetupPage(
+  mode: string,
+  query: Record<string, string> = {},
+) {
+  const pinia = createPinia();
+  setActivePinia(pinia);
+  const settingsStore = useSettingsStore();
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -130,14 +137,14 @@ async function mountSetupPage(mode: string) {
   });
   await router.push({
     name: "practice-setup",
-    query: { mode },
+    query: { mode, ...query },
   });
   await router.isReady();
 
   const wrapper = mount(PracticeSetupPage, {
-    global: { plugins: [createPinia(), router] },
+    global: { plugins: [pinia, router] },
   });
-  return { wrapper, router };
+  return { wrapper, router, settingsStore };
 }
 
 describe("PracticeSetupPage", () => {
@@ -159,6 +166,63 @@ describe("PracticeSetupPage", () => {
       "20",
     ]);
     expect(selector.get('input[value="10"]').element).toMatchObject({
+      checked: true,
+    });
+  });
+
+  it("defaults the question count to the synced setting when the URL has no count param", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const settingsStore = useSettingsStore();
+    settingsStore.$patch({ preferredQuestionCount: 20 });
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        {
+          path: "/practice/setup",
+          name: "practice-setup",
+          component: PracticeSetupPage,
+        },
+      ],
+    });
+    await router.push({ name: "practice-setup", query: { mode: "memory_review" } });
+    await router.isReady();
+    const wrapper = mount(PracticeSetupPage, {
+      global: { plugins: [pinia, router] },
+    });
+
+    const selector = wrapper.get('[data-testid="question-count-selector"]');
+    expect(selector.get('input[value="20"]').element).toMatchObject({
+      checked: true,
+    });
+  });
+
+  it("prefers the URL's count param over the synced setting", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const settingsStore = useSettingsStore();
+    settingsStore.$patch({ preferredQuestionCount: 20 });
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        {
+          path: "/practice/setup",
+          name: "practice-setup",
+          component: PracticeSetupPage,
+        },
+      ],
+    });
+    await router.push({
+      name: "practice-setup",
+      query: { mode: "memory_review", count: "5" },
+    });
+    await router.isReady();
+    const wrapper = mount(PracticeSetupPage, {
+      global: { plugins: [pinia, router] },
+    });
+
+    const selector = wrapper.get('[data-testid="question-count-selector"]');
+    expect(selector.get('input[value="5"]').element).toMatchObject({
       checked: true,
     });
   });

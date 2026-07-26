@@ -10,6 +10,7 @@ import { SkillMasteryRepository } from "../../../infrastructure/indexed-db/skill
 import { reportError } from "../../../infrastructure/monitoring/error-reporter";
 import { SupabasePracticeCandidateRepository } from "../../../infrastructure/supabase/supabase-practice-candidate-repository";
 import { usePracticeStore } from "../../../stores/practice-store";
+import { useSettingsStore } from "../../../stores/settings-store";
 import type {
   LearningMode,
   QuestionCount,
@@ -34,8 +35,13 @@ interface PendingPracticeSelection {
 const route = useRoute();
 const router = useRouter();
 const practiceStore = usePracticeStore();
+const settingsStore = useSettingsStore();
 const questionCount = ref<QuestionCount>(
-  route.query.count === "5" ? 5 : route.query.count === "20" ? 20 : 10,
+  route.query.count === "5"
+    ? 5
+    : route.query.count === "20"
+      ? 20
+      : settingsStore.preferredQuestionCount,
 );
 const practiceSource = ref<PracticeSource>(
   route.query.source === "topic_practice"

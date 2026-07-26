@@ -491,6 +491,32 @@ describe("CloudHydrationService", () => {
     expect(metadata.completedAt).toBe(NOW.toISOString());
   });
 
+  it("does not duplicate attempts when downloadState is called twice with the same page", async () => {
+    const ownerRepository = new LocalDataOwnerRepository(database);
+    const metadataRepository = new CloudHydrationMetadataRepository(database);
+    const committer = new IndexedDbCloudHydrationCommitter(database);
+    const cloudRepository = createCloudRepository({
+      listAttemptsPage: vi.fn(async () =>
+        page([attemptItem()], attemptCursor, false),
+      ),
+    });
+
+    const service = new CloudHydrationService({
+      ownerRepository,
+      cloudRepository,
+      committer,
+      metadataRepository,
+      hydrateSettings: vi.fn(async () => undefined),
+      now: () => NOW,
+    });
+
+    const first = await service.downloadState(USER_ID);
+    const second = await service.downloadState(USER_ID);
+
+    expect(first.attempts).toEqual({ inserted: 1, preservedPending: 0 });
+    expect(second.attempts).toEqual({ inserted: 0, preservedPending: 0 });
+  });
+
   it("never calls GuestSyncService", async () => {
     const syncPendingSpy = vi.spyOn(GuestSyncService.prototype, "syncPending");
     const saveCompletedAttemptSpy = vi.spyOn(
