@@ -37,9 +37,11 @@ interface SyncStoreState {
 
 export interface SyncCoordinationDependencies {
   ownerRepository?: Pick<LocalDataOwnerRepository, "bind">;
+  resolveOwnerRepository?: () => Promise<Pick<LocalDataOwnerRepository, "bind">>;
   guestSyncService?: GuestSyncService;
   resolveGuestSyncService?: () => Promise<GuestSyncService>;
   cloudHydrationService?: CloudHydrationService;
+  resolveCloudHydrationService?: () => Promise<CloudHydrationService>;
 }
 
 interface ActiveSyncAndHydrate {
@@ -85,6 +87,18 @@ function getDefaultOwnerRepository(): Promise<LocalDataOwnerRepository> {
   defaultOwnerRepositoryPromise ??= createDefaultOwnerRepository();
 
   return defaultOwnerRepositoryPromise;
+}
+
+async function resolveOwnerRepository(
+  dependencies?: SyncCoordinationDependencies,
+): Promise<Pick<LocalDataOwnerRepository, "bind">> {
+  if (dependencies?.ownerRepository) {
+    return dependencies.ownerRepository;
+  }
+  if (dependencies?.resolveOwnerRepository) {
+    return dependencies.resolveOwnerRepository();
+  }
+  return getDefaultOwnerRepository();
 }
 
 async function createDefaultService(): Promise<GuestSyncService> {
@@ -133,6 +147,18 @@ function getDefaultCloudHydrationService(): Promise<CloudHydrationService> {
   defaultCloudHydrationServicePromise ??= createDefaultCloudHydrationService();
 
   return defaultCloudHydrationServicePromise;
+}
+
+async function resolveCloudHydrationService(
+  dependencies?: SyncCoordinationDependencies,
+): Promise<CloudHydrationService> {
+  if (dependencies?.cloudHydrationService) {
+    return dependencies.cloudHydrationService;
+  }
+  if (dependencies?.resolveCloudHydrationService) {
+    return dependencies.resolveCloudHydrationService();
+  }
+  return getDefaultCloudHydrationService();
 }
 
 function getErrorMessage(): string {
@@ -284,19 +310,29 @@ export const useSyncStore = defineStore("sync", {
         return;
       }
 
+      // Captured before inspecting the active operation: if this request
+      // has to wait, only a generation that was still current when the
+      // request was MADE may start work afterward. Otherwise, a queued
+      // request for an account that has since been signed out of (or
+      // superseded by another account) could restart under whatever
+      // generation happens to be current once it is finally its turn.
+      const requestedGeneration = authGeneration;
       const current = activeSyncAndHydrate;
       if (current !== null) {
         if (
           current.userId === targetUserId &&
-          current.generation === authGeneration
+          current.generation === requestedGeneration
         ) {
           return current.promise;
         }
         await current.promise.catch(() => undefined);
+        if (requestedGeneration !== authGeneration) {
+          return;
+        }
         return this.syncAndHydrate(userId, dependencies);
       }
 
-      const generation = authGeneration;
+      const generation = requestedGeneration;
       const operation = {
         userId: targetUserId,
         generation,
@@ -327,9 +363,10 @@ export const useSyncStore = defineStore("sync", {
         return;
       }
 
-      const ownerRepository =
-        dependencies?.ownerRepository ?? (await getDefaultOwnerRepository());
-      const guestSyncService = await resolveGuestSyncService(dependencies);
+      const ownerRepository = await resolveOwnerRepository(dependencies);
+      if (generation !== authGeneration) {
+        return;
+      }
 
       // Checked before any upload: a local database bound to a different
       // account must never upload that account's pending Attempts under
@@ -353,6 +390,13 @@ export const useSyncStore = defineStore("sync", {
         return;
       }
 
+      // Resolved only after ownership is confirmed, so account ownership
+      // stays the first meaningful coordination step.
+      const guestSyncService = await resolveGuestSyncService(dependencies);
+      if (generation !== authGeneration) {
+        return;
+      }
+
       this.syncing = true;
       this.errorMessage = null;
 
@@ -372,8 +416,10 @@ export const useSyncStore = defineStore("sync", {
 
         try {
           const cloudHydrationService =
-            dependencies?.cloudHydrationService ??
-            (await getDefaultCloudHydrationService());
+            await resolveCloudHydrationService(dependencies);
+          if (generation !== authGeneration) {
+            return;
+          }
           await cloudHydrationService.downloadState(targetUserId);
           if (generation !== authGeneration) {
             return;

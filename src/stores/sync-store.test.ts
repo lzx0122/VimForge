@@ -251,6 +251,133 @@ describe("sync store", () => {
       expect(downloadState.mock.calls).toEqual([["user-a"], ["user-a"]]);
     });
 
+    it("does not start a queued account after sign-out changes the generation", async () => {
+      let resolveUserA!: (result: CloudHydrationResult) => void;
+      const downloadState = vi.fn((userId: string) => {
+        if (userId === "user-a") {
+          return new Promise<CloudHydrationResult>((resolve) => {
+            resolveUserA = resolve;
+          });
+        }
+        return Promise.resolve(emptyHydrationResult());
+      });
+      const dependencies: SyncCoordinationDependencies = {
+        ownerRepository: resolvingOwnerRepository(),
+        guestSyncService: asGuestSyncService({
+          syncPending: vi.fn(async () => emptyGuestSyncResult()),
+          onNetworkChange: vi.fn(() => () => undefined),
+        }),
+        cloudHydrationService: asCloudHydrationService({ downloadState }),
+      };
+      const store = useSyncStore();
+
+      await store.setAuthenticated("user-a", dependencies);
+      const userAOperation = store.syncAndHydrate("user-a", dependencies);
+      await vi.waitFor(() =>
+        expect(downloadState).toHaveBeenCalledWith("user-a"),
+      );
+
+      const queuedUserB = store.syncAndHydrate("user-b", dependencies);
+
+      await store.setAuthenticated(null, dependencies);
+
+      resolveUserA(emptyHydrationResult());
+      await Promise.all([userAOperation, queuedUserB]);
+
+      expect(downloadState).not.toHaveBeenCalledWith("user-b");
+      expect(store.hydratedUserId).toBeNull();
+      expect(store.localLearningStateRevision).toBe(0);
+    });
+
+    it("does not bind, upload, or download when sign-out occurs while the owner repository is resolving", async () => {
+      let resolveOwner!: (repo: Pick<LocalDataOwnerRepository, "bind">) => void;
+      const bind = vi.fn(async () => undefined);
+      const syncPending = vi.fn(async () => emptyGuestSyncResult());
+      const downloadState = vi.fn(async () => emptyHydrationResult());
+      const ownerPromise = new Promise<Pick<LocalDataOwnerRepository, "bind">>(
+        (resolve) => {
+          resolveOwner = resolve;
+        },
+      );
+      const dependencies: SyncCoordinationDependencies = {
+        resolveOwnerRepository: () => ownerPromise,
+        guestSyncService: asGuestSyncService({
+          syncPending,
+          onNetworkChange: vi.fn(() => () => undefined),
+        }),
+        cloudHydrationService: asCloudHydrationService({ downloadState }),
+      };
+      const store = useSyncStore();
+
+      const staleOperation = store.syncAndHydrate("user-a", dependencies);
+
+      await store.setAuthenticated(null, dependencies);
+
+      resolveOwner(asOwnerRepository({ bind }));
+      await staleOperation;
+
+      expect(bind).not.toHaveBeenCalled();
+      expect(syncPending).not.toHaveBeenCalled();
+      expect(downloadState).not.toHaveBeenCalled();
+    });
+
+    it("does not upload or hydrate when sign-out occurs while the guest sync service is resolving inside the operation", async () => {
+      let resolveService!: (service: GuestSyncService) => void;
+      const bind = vi.fn(async () => undefined);
+      const syncPending = vi.fn(async () => emptyGuestSyncResult());
+      const onNetworkChange = vi.fn(() => () => undefined);
+      const downloadState = vi.fn(async () => emptyHydrationResult());
+      const servicePromise = new Promise<GuestSyncService>((resolve) => {
+        resolveService = resolve;
+      });
+      const dependencies: SyncCoordinationDependencies = {
+        ownerRepository: asOwnerRepository({ bind }),
+        resolveGuestSyncService: () => servicePromise,
+        cloudHydrationService: asCloudHydrationService({ downloadState }),
+      };
+      const store = useSyncStore();
+
+      const staleOperation = store.syncAndHydrate("user-a", dependencies);
+
+      await vi.waitFor(() => expect(bind).toHaveBeenCalledWith("user-a"));
+
+      await store.setAuthenticated(null, dependencies);
+
+      resolveService(asGuestSyncService({ syncPending, onNetworkChange }));
+      await staleOperation;
+
+      expect(syncPending).not.toHaveBeenCalled();
+      expect(downloadState).not.toHaveBeenCalled();
+    });
+
+    it("does not download when sign-out occurs while the cloud hydration service is resolving", async () => {
+      let resolveService!: (service: CloudHydrationService) => void;
+      const downloadState = vi.fn(async () => emptyHydrationResult());
+      const servicePromise = new Promise<CloudHydrationService>((resolve) => {
+        resolveService = resolve;
+      });
+      const dependencies: SyncCoordinationDependencies = {
+        ownerRepository: resolvingOwnerRepository(),
+        guestSyncService: asGuestSyncService({
+          syncPending: vi.fn(async () => emptyGuestSyncResult()),
+          onNetworkChange: vi.fn(() => () => undefined),
+        }),
+        resolveCloudHydrationService: () => servicePromise,
+      };
+      const store = useSyncStore();
+
+      const staleOperation = store.syncAndHydrate("user-a", dependencies);
+
+      await vi.waitFor(() => expect(store.hydrating).toBe(true));
+
+      await store.setAuthenticated(null, dependencies);
+
+      resolveService(asCloudHydrationService({ downloadState }));
+      await staleOperation;
+
+      expect(downloadState).not.toHaveBeenCalled();
+    });
+
     it("uses the authenticated user's id when no userId argument is given", async () => {
       const authStore = useAuthStore();
       authStore.$patch({
