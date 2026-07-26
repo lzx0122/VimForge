@@ -5,7 +5,10 @@ import type { CloudHydrationResult } from "../features/cloud-hydration/services/
 import { CloudHydrationService } from "../features/cloud-hydration/services/cloud-hydration-service";
 import type { GuestSyncResult } from "../features/guest-sync/services/guest-sync-service";
 import { GuestSyncService } from "../features/guest-sync/services/guest-sync-service";
-import { LocalDataOwnerConflictError } from "../infrastructure/indexed-db/local-data-owner-repository";
+import {
+  LocalDataOwnerConflictError,
+  LocalDataOwnerRepository,
+} from "../infrastructure/indexed-db/local-data-owner-repository";
 import { useAuthStore } from "./auth-store";
 import type { SyncCoordinationDependencies } from "./sync-store";
 import { useSyncStore } from "./sync-store";
@@ -43,14 +46,27 @@ function asCloudHydrationService(fake: {
   return fake as unknown as CloudHydrationService;
 }
 
+function asOwnerRepository(fake: {
+  bind: (userId: string) => Promise<void>;
+}): Pick<LocalDataOwnerRepository, "bind"> {
+  return fake;
+}
+
+function resolvingOwnerRepository(): Pick<LocalDataOwnerRepository, "bind"> {
+  return asOwnerRepository({ bind: vi.fn(async () => undefined) });
+}
+
 describe("sync store", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
   });
 
   describe("syncAndHydrate", () => {
-    it("uploads pending attempts before hydrating", async () => {
+    it("verifies account ownership, then uploads, then hydrates, in order", async () => {
       const calls: string[] = [];
+      const bind = vi.fn(async () => {
+        calls.push("bind");
+      });
       const syncPending = vi.fn(async () => {
         calls.push("syncPending");
         return emptyGuestSyncResult();
@@ -60,6 +76,7 @@ describe("sync store", () => {
         return emptyHydrationResult();
       });
       const dependencies: SyncCoordinationDependencies = {
+        ownerRepository: asOwnerRepository({ bind }),
         guestSyncService: asGuestSyncService({
           syncPending,
           onNetworkChange: vi.fn(() => () => undefined),
@@ -70,12 +87,13 @@ describe("sync store", () => {
 
       await store.syncAndHydrate("user-1", dependencies);
 
-      expect(calls).toEqual(["syncPending", "downloadState"]);
+      expect(calls).toEqual(["bind", "syncPending", "downloadState"]);
     });
 
     it("does not hydrate when attempts remain pending", async () => {
       const downloadState = vi.fn(async () => emptyHydrationResult());
       const dependencies: SyncCoordinationDependencies = {
+        ownerRepository: resolvingOwnerRepository(),
         guestSyncService: asGuestSyncService({
           syncPending: vi.fn(async () =>
             emptyGuestSyncResult({ total: 2, pending: 2 }),
@@ -95,6 +113,7 @@ describe("sync store", () => {
     it("does not hydrate when an upload failed", async () => {
       const downloadState = vi.fn(async () => emptyHydrationResult());
       const dependencies: SyncCoordinationDependencies = {
+        ownerRepository: resolvingOwnerRepository(),
         guestSyncService: asGuestSyncService({
           syncPending: vi.fn(async () =>
             emptyGuestSyncResult({ total: 2, synced: 1, failed: 1, pending: 1 }),
@@ -113,6 +132,7 @@ describe("sync store", () => {
 
     it("increments localLearningStateRevision exactly once on success", async () => {
       const dependencies: SyncCoordinationDependencies = {
+        ownerRepository: resolvingOwnerRepository(),
         guestSyncService: asGuestSyncService({
           syncPending: vi.fn(async () => emptyGuestSyncResult()),
           onNetworkChange: vi.fn(() => () => undefined),
@@ -129,7 +149,7 @@ describe("sync store", () => {
       expect(store.hydratedUserId).toBe("user-1");
     });
 
-    it("shares one in-flight operation between two concurrent calls", async () => {
+    it("shares one in-flight operation between two concurrent calls for the same user", async () => {
       let resolveDownload!: (value: CloudHydrationResult) => void;
       const downloadState = vi.fn(
         () =>
@@ -139,6 +159,7 @@ describe("sync store", () => {
       );
       const syncPending = vi.fn(async () => emptyGuestSyncResult());
       const dependencies: SyncCoordinationDependencies = {
+        ownerRepository: resolvingOwnerRepository(),
         guestSyncService: asGuestSyncService({
           syncPending,
           onNetworkChange: vi.fn(() => () => undefined),
@@ -159,6 +180,41 @@ describe("sync store", () => {
       expect(store.localLearningStateRevision).toBe(1);
     });
 
+    it("does not share an active operation with another user", async () => {
+      let resolveUserA!: (value: CloudHydrationResult) => void;
+      const downloadState = vi.fn(
+        (userId: string) =>
+          new Promise<CloudHydrationResult>((resolve) => {
+            if (userId === "user-a") {
+              resolveUserA = resolve;
+            } else {
+              resolve(emptyHydrationResult());
+            }
+          }),
+      );
+      const dependencies: SyncCoordinationDependencies = {
+        ownerRepository: resolvingOwnerRepository(),
+        guestSyncService: asGuestSyncService({
+          syncPending: vi.fn(async () => emptyGuestSyncResult()),
+          onNetworkChange: vi.fn(() => () => undefined),
+        }),
+        cloudHydrationService: asCloudHydrationService({ downloadState }),
+      };
+      const store = useSyncStore();
+
+      const userAOperation = store.syncAndHydrate("user-a", dependencies);
+      await vi.waitFor(() =>
+        expect(downloadState).toHaveBeenCalledWith("user-a"),
+      );
+
+      const userBOperation = store.syncAndHydrate("user-b", dependencies);
+
+      resolveUserA(emptyHydrationResult());
+      await Promise.all([userAOperation, userBOperation]);
+
+      expect(downloadState.mock.calls).toEqual([["user-a"], ["user-b"]]);
+    });
+
     it("uses the authenticated user's id when no userId argument is given", async () => {
       const authStore = useAuthStore();
       authStore.$patch({
@@ -166,6 +222,7 @@ describe("sync store", () => {
       });
       const downloadState = vi.fn(async () => emptyHydrationResult());
       const dependencies: SyncCoordinationDependencies = {
+        ownerRepository: resolvingOwnerRepository(),
         guestSyncService: asGuestSyncService({
           syncPending: vi.fn(async () => emptyGuestSyncResult()),
           onNetworkChange: vi.fn(() => () => undefined),
@@ -181,6 +238,7 @@ describe("sync store", () => {
 
     it("records a hydration error and leaves local data usable when hydration fails for a reason other than an account conflict", async () => {
       const dependencies: SyncCoordinationDependencies = {
+        ownerRepository: resolvingOwnerRepository(),
         guestSyncService: asGuestSyncService({
           syncPending: vi.fn(async () => emptyGuestSyncResult()),
           onNetworkChange: vi.fn(() => () => undefined),
@@ -201,6 +259,32 @@ describe("sync store", () => {
       expect(store.accountConflictMessage).toBeNull();
       expect(store.hydrating).toBe(false);
     });
+
+    it("does not upload or hydrate when the local database belongs to another account", async () => {
+      const syncPending = vi.fn(async () => emptyGuestSyncResult());
+      const downloadState = vi.fn(async () => emptyHydrationResult());
+      const bind = vi.fn(async () => {
+        throw new LocalDataOwnerConflictError("user-a", "user-b");
+      });
+      const dependencies: SyncCoordinationDependencies = {
+        ownerRepository: asOwnerRepository({ bind }),
+        guestSyncService: asGuestSyncService({
+          syncPending,
+          onNetworkChange: vi.fn(() => () => undefined),
+        }),
+        cloudHydrationService: asCloudHydrationService({ downloadState }),
+      };
+      const store = useSyncStore();
+
+      await store.syncAndHydrate("user-b", dependencies);
+
+      expect(bind).toHaveBeenCalledWith("user-b");
+      expect(syncPending).not.toHaveBeenCalled();
+      expect(downloadState).not.toHaveBeenCalled();
+      expect(store.accountConflictMessage).toBe(
+        "此瀏覽器已有其他帳號的本機學習資料，已停止同步。",
+      );
+    });
   });
 
   describe("setAuthenticated", () => {
@@ -211,6 +295,7 @@ describe("sync store", () => {
       >(() => () => undefined);
       const downloadState = vi.fn(async () => emptyHydrationResult());
       const dependencies: SyncCoordinationDependencies = {
+        ownerRepository: resolvingOwnerRepository(),
         guestSyncService: asGuestSyncService({ syncPending, onNetworkChange }),
         cloudHydrationService: asCloudHydrationService({ downloadState }),
       };
@@ -240,6 +325,7 @@ describe("sync store", () => {
         throw new LocalDataOwnerConflictError("user-a", "user-b");
       });
       const dependencies: SyncCoordinationDependencies = {
+        ownerRepository: resolvingOwnerRepository(),
         guestSyncService: asGuestSyncService({
           syncPending,
           onNetworkChange: vi.fn(() => () => undefined),
@@ -274,6 +360,7 @@ describe("sync store", () => {
           }),
       );
       const dependencies: SyncCoordinationDependencies = {
+        ownerRepository: resolvingOwnerRepository(),
         guestSyncService: asGuestSyncService({ syncPending, onNetworkChange }),
       };
       const store = useSyncStore();
@@ -295,9 +382,45 @@ describe("sync store", () => {
       await vi.waitFor(() => expect(syncPending).toHaveBeenCalled());
     });
 
+    it("does not restore hydration state after signing out during an in-flight download", async () => {
+      let resolveDownload!: (value: CloudHydrationResult) => void;
+      const downloadState = vi.fn(
+        () =>
+          new Promise<CloudHydrationResult>((resolve) => {
+            resolveDownload = resolve;
+          }),
+      );
+      const dependencies: SyncCoordinationDependencies = {
+        ownerRepository: resolvingOwnerRepository(),
+        guestSyncService: asGuestSyncService({
+          syncPending: vi.fn(async () => emptyGuestSyncResult()),
+          onNetworkChange: vi.fn(() => () => undefined),
+        }),
+        cloudHydrationService: asCloudHydrationService({ downloadState }),
+      };
+      const store = useSyncStore();
+
+      await store.setAuthenticated("user-a", dependencies);
+      const activeOperation = store.syncAndHydrate("user-a", dependencies);
+
+      await vi.waitFor(() => expect(downloadState).toHaveBeenCalled());
+
+      await store.setAuthenticated(null, dependencies);
+
+      resolveDownload(emptyHydrationResult());
+      await activeOperation;
+
+      expect(store.hydratedUserId).toBeNull();
+      expect(store.localLearningStateRevision).toBe(0);
+      expect(store.hydrating).toBe(false);
+      expect(store.hydrationErrorMessage).toBeNull();
+      expect(store.accountConflictMessage).toBeNull();
+    });
+
     it("passes the given user id (not a boolean) as the hydration target", async () => {
       const downloadState = vi.fn(async () => emptyHydrationResult());
       const dependencies: SyncCoordinationDependencies = {
+        ownerRepository: resolvingOwnerRepository(),
         guestSyncService: asGuestSyncService({
           syncPending: vi.fn(async () => emptyGuestSyncResult()),
           onNetworkChange: vi.fn(() => () => undefined),

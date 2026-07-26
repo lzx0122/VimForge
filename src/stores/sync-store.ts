@@ -36,8 +36,14 @@ interface SyncStoreState {
 }
 
 export interface SyncCoordinationDependencies {
+  ownerRepository?: Pick<LocalDataOwnerRepository, "bind">;
   guestSyncService?: GuestSyncService;
   cloudHydrationService?: CloudHydrationService;
+}
+
+interface ActiveSyncAndHydrate {
+  userId: string;
+  promise: Promise<void>;
 }
 
 export type SyncBannerState =
@@ -56,9 +62,28 @@ const OFFLINE_MESSAGE = "目前離線，紀錄已保存在這台裝置。";
 let defaultServicePromise: Promise<GuestSyncService> | null = null;
 let defaultCloudHydrationServicePromise: Promise<CloudHydrationService> | null =
   null;
+let defaultOwnerRepositoryPromise: Promise<LocalDataOwnerRepository> | null =
+  null;
 let stopNetworkStatus: (() => void) | null = null;
 let stopOnlineRetry: (() => void) | null = null;
-let activeSyncAndHydrate: Promise<void> | null = null;
+let activeSyncAndHydrate: ActiveSyncAndHydrate | null = null;
+
+// Incremented by every setAuthenticated() call, including sign-out, so an
+// in-flight operation started for a previous account (or before sign-out)
+// can detect it is stale and stop touching Store state once it resumes.
+let authGeneration = 0;
+
+async function createDefaultOwnerRepository(): Promise<LocalDataOwnerRepository> {
+  const database = await openVimForgeDatabase();
+
+  return new LocalDataOwnerRepository(database);
+}
+
+function getDefaultOwnerRepository(): Promise<LocalDataOwnerRepository> {
+  defaultOwnerRepositoryPromise ??= createDefaultOwnerRepository();
+
+  return defaultOwnerRepositoryPromise;
+}
 
 async function createDefaultService(): Promise<GuestSyncService> {
   const database = await openVimForgeDatabase();
@@ -183,6 +208,7 @@ export const useSyncStore = defineStore("sync", {
       userId: string | null,
       dependencies?: SyncCoordinationDependencies,
     ): Promise<void> {
+      authGeneration += 1;
       stopOnlineRetry?.();
       stopOnlineRetry = null;
 
@@ -213,48 +239,98 @@ export const useSyncStore = defineStore("sync", {
     },
 
     /**
-     * Uploads every pending Attempt first; cloud hydration only runs once
-     * nothing is left pending or failed, so it never downloads a snapshot
-     * that is missing this device's own not-yet-uploaded data. Concurrent
-     * calls share one in-flight operation.
+     * Verifies this device's local database belongs to the requested
+     * account, uploads every pending Attempt, and only then hydrates -
+     * cloud hydration never runs while pending/failed Attempts remain, and
+     * never runs against a local database bound to a different account.
+     *
+     * Concurrent calls for the SAME user share one in-flight operation.
+     * A call for a DIFFERENT user never reuses that operation (two
+     * accounts' coordination must never run concurrently against the same
+     * local database) - it waits for the current one to settle, then
+     * re-evaluates from scratch.
      */
     async syncAndHydrate(
       userId?: string,
       dependencies?: SyncCoordinationDependencies,
     ): Promise<void> {
-      activeSyncAndHydrate ??= this.performSyncAndHydrate(
-        userId,
-        dependencies,
-      ).finally(() => {
-        activeSyncAndHydrate = null;
-      });
-
-      return activeSyncAndHydrate;
-    },
-
-    async performSyncAndHydrate(
-      userId?: string,
-      dependencies?: SyncCoordinationDependencies,
-    ): Promise<void> {
-      // Once a conflict is recorded, every automatic retry (network back
-      // online, etc.) becomes a no-op until a fresh setAuthenticated call
-      // clears it - retrying would only reproduce the same conflict.
-      if (this.accountConflictMessage !== null) {
-        return;
-      }
-
       const targetUserId = userId ?? useAuthStore().currentUser?.id ?? null;
       if (targetUserId === null) {
         return;
       }
 
+      const current = activeSyncAndHydrate;
+      if (current !== null) {
+        if (current.userId === targetUserId) {
+          return current.promise;
+        }
+        await current.promise.catch(() => undefined);
+        return this.syncAndHydrate(userId, dependencies);
+      }
+
+      const generation = authGeneration;
+      const operation = { userId: targetUserId } as ActiveSyncAndHydrate;
+      operation.promise = this.performSyncAndHydrate(
+        targetUserId,
+        generation,
+        dependencies,
+      ).finally(() => {
+        if (activeSyncAndHydrate === operation) {
+          activeSyncAndHydrate = null;
+        }
+      });
+      activeSyncAndHydrate = operation;
+
+      return operation.promise;
+    },
+
+    async performSyncAndHydrate(
+      targetUserId: string,
+      generation: number,
+      dependencies?: SyncCoordinationDependencies,
+    ): Promise<void> {
+      // Once a conflict is recorded, every automatic retry (network back
+      // online, etc.) becomes a no-op until a fresh setAuthenticated call
+      // clears it - retrying would only reproduce the same conflict.
+      if (generation !== authGeneration || this.accountConflictMessage !== null) {
+        return;
+      }
+
+      const ownerRepository =
+        dependencies?.ownerRepository ?? (await getDefaultOwnerRepository());
       const guestSyncService =
         dependencies?.guestSyncService ?? (await getDefaultService());
+
+      // Checked before any upload: a local database bound to a different
+      // account must never upload that account's pending Attempts under
+      // this one's identity, let alone download this account's state into
+      // it. CloudHydrationService.downloadState() binds again internally;
+      // that second bind is idempotent and protects its direct callers.
+      try {
+        await ownerRepository.bind(targetUserId);
+      } catch (error: unknown) {
+        if (generation === authGeneration) {
+          if (error instanceof LocalDataOwnerConflictError) {
+            this.accountConflictMessage = ACCOUNT_CONFLICT_MESSAGE;
+          } else {
+            reportError("sync.hydrate", error);
+            this.hydrationErrorMessage = HYDRATION_ERROR_MESSAGE;
+          }
+        }
+        return;
+      }
+      if (generation !== authGeneration) {
+        return;
+      }
+
       this.syncing = true;
       this.errorMessage = null;
 
       try {
         const result = await guestSyncService.syncPending();
+        if (generation !== authGeneration) {
+          return;
+        }
         this.applyResult(result);
 
         if (result.pending > 0 || result.failed > 0) {
@@ -269,23 +345,34 @@ export const useSyncStore = defineStore("sync", {
             dependencies?.cloudHydrationService ??
             (await getDefaultCloudHydrationService());
           await cloudHydrationService.downloadState(targetUserId);
+          if (generation !== authGeneration) {
+            return;
+          }
           this.hydratedUserId = targetUserId;
           this.localLearningStateRevision += 1;
         } catch (error: unknown) {
-          if (error instanceof LocalDataOwnerConflictError) {
-            this.accountConflictMessage = ACCOUNT_CONFLICT_MESSAGE;
-          } else {
-            reportError("sync.hydrate", error);
-            this.hydrationErrorMessage = HYDRATION_ERROR_MESSAGE;
+          if (generation === authGeneration) {
+            if (error instanceof LocalDataOwnerConflictError) {
+              this.accountConflictMessage = ACCOUNT_CONFLICT_MESSAGE;
+            } else {
+              reportError("sync.hydrate", error);
+              this.hydrationErrorMessage = HYDRATION_ERROR_MESSAGE;
+            }
           }
         } finally {
-          this.hydrating = false;
+          if (generation === authGeneration) {
+            this.hydrating = false;
+          }
         }
       } catch (error: unknown) {
-        reportError("sync.pending-attempts", error);
-        this.errorMessage = getErrorMessage();
+        if (generation === authGeneration) {
+          reportError("sync.pending-attempts", error);
+          this.errorMessage = getErrorMessage();
+        }
       } finally {
-        this.syncing = false;
+        if (generation === authGeneration) {
+          this.syncing = false;
+        }
       }
     },
 
