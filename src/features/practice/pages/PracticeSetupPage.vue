@@ -36,12 +36,15 @@ const route = useRoute();
 const router = useRouter();
 const practiceStore = usePracticeStore();
 const settingsStore = useSettingsStore();
+function parseQuestionCount(value: unknown): QuestionCount | null {
+  if (value === "5" || value === "10" || value === "20") {
+    return Number(value) as QuestionCount;
+  }
+  return null;
+}
+const routeQuestionCount = parseQuestionCount(route.query.count);
 const questionCount = ref<QuestionCount>(
-  route.query.count === "5"
-    ? 5
-    : route.query.count === "20"
-      ? 20
-      : settingsStore.preferredQuestionCount,
+  routeQuestionCount ?? settingsStore.preferredQuestionCount,
 );
 const practiceSource = ref<PracticeSource>(
   route.query.source === "topic_practice"

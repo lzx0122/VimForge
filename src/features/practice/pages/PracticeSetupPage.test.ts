@@ -227,6 +227,35 @@ describe("PracticeSetupPage", () => {
     });
   });
 
+  it("prefers an explicit URL count of 10 over the synced setting", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const settingsStore = useSettingsStore();
+    settingsStore.$patch({ preferredQuestionCount: 20 });
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        {
+          path: "/practice/setup",
+          name: "practice-setup",
+          component: PracticeSetupPage,
+        },
+      ],
+    });
+    await router.push({
+      name: "practice-setup",
+      query: { mode: "efficiency", count: "10" },
+    });
+    await router.isReady();
+    const wrapper = mount(PracticeSetupPage, {
+      global: { plugins: [pinia, router] },
+    });
+
+    expect(
+      wrapper.get('[data-testid="question-count-selector"]').get('input[value="10"]').element,
+    ).toMatchObject({ checked: true });
+  });
+
   it("offers daily review and topic practice for memory review", async () => {
     const { wrapper } = await mountSetupPage("memory_review");
 
