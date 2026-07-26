@@ -271,5 +271,56 @@ describe("settings store", () => {
       expect(store.editorFontSize).toBe(savedSettings.editorFontSize);
       expect(store.persistenceStatus).toBe("error");
     });
+
+    it("preserves a concurrent local sound change made while the cloud request is pending", async () => {
+      let storedLocal: LocalSettings = {
+        ...savedSettings,
+        soundEnabled: false,
+        updatedAt: "2026-07-15T08:00:00.000Z",
+      };
+      const local: LocalSettingsRepository = {
+        get: vi.fn(async () => storedLocal),
+        save: vi.fn(async (settings: LocalSettings) => {
+          storedLocal = settings;
+        }),
+      };
+      let resolveCloudGet!: (settings: LocalSettings | null) => void;
+      const cloud: CloudSettingsRepository = {
+        get: vi.fn(
+          () =>
+            new Promise<LocalSettings | null>((resolve) => {
+              resolveCloudGet = resolve;
+            }),
+        ),
+        save: vi.fn(async () => undefined),
+      };
+      const store = useSettingsStore();
+      await store.initialize(local);
+
+      const hydration = store.hydrateFromCloud("user-1", { local, cloud });
+
+      await store.updateSettings(
+        { soundEnabled: true },
+        {
+          local,
+          userId: null,
+          now: () => new Date("2026-07-17T08:00:00.000Z"),
+        },
+      );
+
+      resolveCloudGet({
+        ...savedSettings,
+        editorFontSize: 30,
+        soundEnabled: false,
+        updatedAt: "2026-07-16T08:00:00.000Z",
+      });
+      await hydration;
+
+      expect(store.soundEnabled).toBe(true);
+      await expect(local.get()).resolves.toMatchObject({
+        soundEnabled: true,
+        updatedAt: "2026-07-17T08:00:00.000Z",
+      });
+    });
   });
 });

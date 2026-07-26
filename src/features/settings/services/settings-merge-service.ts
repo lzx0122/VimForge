@@ -137,42 +137,50 @@ function hasSameUpdatedAt(
   return a.updatedAt === b.updatedAt;
 }
 
-function withPreservedSoundEnabled(
+/**
+ * Resolves this device's sound preference with the freshest local record
+ * always winning over the caller's snapshot: `preserveSoundEnabled` is
+ * captured once at the start of a merge, so it goes stale the instant a
+ * concurrent local save changes soundEnabled during the cloud round
+ * trip. It is only a meaningful signal when no local record exists at
+ * all (a genuinely new device), which is the one case a real record
+ * can't supply the value instead.
+ */
+function resolveDeviceSound(
+  local: LocalSettings | null,
+  fallback: boolean,
+): boolean {
+  return local?.soundEnabled ?? fallback;
+}
+
+function withSoundEnabled(
   settings: LocalSettings,
-  preserveSoundEnabled: boolean,
+  soundEnabled: boolean,
 ): LocalSettings {
-  return { ...settings, soundEnabled: preserveSoundEnabled };
+  return { ...settings, soundEnabled };
 }
 
 async function applyAction(
   action: MergeAction,
   dependencies: SettingsMergeDependencies,
+  soundEnabled: boolean,
 ): Promise<SettingsMergeResult> {
   if (action.kind === "none") {
     return { settings: null, source: "none" };
   }
   if (action.kind === "save-cloud") {
-    const settings = withPreservedSoundEnabled(
-      action.settings,
-      dependencies.preserveSoundEnabled,
-    );
+    const settings = withSoundEnabled(action.settings, soundEnabled);
     await dependencies.local.save(settings);
     return { settings, source: "cloud" };
   }
   if (action.kind === "upload-local") {
-    const settings = withPreservedSoundEnabled(
-      action.settings,
-      dependencies.preserveSoundEnabled,
-    );
+    const settings = withSoundEnabled(action.settings, soundEnabled);
     await dependencies.cloud.save(dependencies.userId, settings);
     return { settings, source: "local" };
   }
 
   return {
-    settings: withPreservedSoundEnabled(
-      action.settings,
-      dependencies.preserveSoundEnabled,
-    ),
+    settings: withSoundEnabled(action.settings, soundEnabled),
     source: "local",
   };
 }
@@ -197,13 +205,19 @@ export async function mergeCloudSettings(
   const cloud = await dependencies.cloud.get(dependencies.userId);
 
   let action = resolveMergeAction(initialLocal, cloud);
+  let latestLocal = initialLocal;
 
   if (action.kind === "save-cloud") {
-    const latestLocal = await dependencies.local.get();
+    latestLocal = await dependencies.local.get();
     if (!hasSameUpdatedAt(latestLocal, initialLocal)) {
       action = resolveMergeAction(latestLocal, cloud);
     }
   }
 
-  return applyAction(action, dependencies);
+  const soundEnabled = resolveDeviceSound(
+    latestLocal,
+    dependencies.preserveSoundEnabled,
+  );
+
+  return applyAction(action, dependencies, soundEnabled);
 }

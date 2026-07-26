@@ -257,6 +257,49 @@ describe("mergeCloudSettings", () => {
       expect(cloudSave).toHaveBeenCalledWith("user-1", freshLocal);
       expect(localSave).not.toHaveBeenCalled();
     });
+
+    it("preserves a concurrent local sound change during the cloud request", async () => {
+      const staleLocal = local({
+        updatedAt: "2026-07-15T08:00:00.000Z",
+        soundEnabled: false,
+      });
+      const freshLocal = local({
+        updatedAt: "2026-07-17T08:00:00.000Z",
+        soundEnabled: true,
+      });
+      const cloudSettings = cloud({
+        updatedAt: "2026-07-16T08:00:00.000Z",
+        soundEnabled: false,
+      });
+
+      const localGet = vi
+        .fn<() => Promise<LocalSettings | null>>()
+        .mockResolvedValueOnce(staleLocal)
+        .mockResolvedValueOnce(freshLocal);
+
+      const localSave = vi.fn(async () => undefined);
+      const cloudGet = vi.fn(async () => cloudSettings);
+      const cloudSave = vi.fn(async () => undefined);
+
+      const result = await mergeCloudSettings({
+        userId: "user-1",
+        local: {
+          get: localGet,
+          save: localSave,
+        },
+        cloud: {
+          get: cloudGet,
+          save: cloudSave,
+        },
+        preserveSoundEnabled: false,
+      });
+
+      expect(result).toEqual({
+        settings: freshLocal,
+        source: "local",
+      });
+      expect(cloudSave).toHaveBeenCalledWith("user-1", freshLocal);
+    });
   });
 
   describe("failure propagation", () => {
@@ -305,7 +348,7 @@ describe("mergeCloudSettings", () => {
   });
 
   describe("sound preference isolation", () => {
-    it("always applies the caller's preserveSoundEnabled value regardless of which side wins", async () => {
+    it("prefers a real local record's soundEnabled over the cloud value and a stale caller fallback", async () => {
       const localSettings = local({
         updatedAt: "2026-07-17T08:00:00.000Z",
         soundEnabled: true,
@@ -326,7 +369,24 @@ describe("mergeCloudSettings", () => {
         preserveSoundEnabled: false,
       });
 
-      expect(result.settings?.soundEnabled).toBe(false);
+      expect(result.settings?.soundEnabled).toBe(true);
+    });
+
+    it("uses the caller's fallback soundEnabled only when no local record exists", async () => {
+      const cloudSettings = cloud({ soundEnabled: false });
+      const localGet = vi.fn(async () => null);
+      const localSave = vi.fn(async () => undefined);
+      const cloudGet = vi.fn(async () => cloudSettings);
+      const cloudSave = vi.fn(async () => undefined);
+
+      const result = await mergeCloudSettings({
+        userId: "user-1",
+        local: { get: localGet, save: localSave },
+        cloud: { get: cloudGet, save: cloudSave },
+        preserveSoundEnabled: true,
+      });
+
+      expect(result.settings?.soundEnabled).toBe(true);
     });
   });
 });
