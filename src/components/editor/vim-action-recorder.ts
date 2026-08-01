@@ -8,6 +8,13 @@ export interface VimActionRecorder {
   recordKey(key: string | null, mode: VimMode): void;
   recordInsertedText(text: string): void;
   finishCommand(): void;
+  beginPrompt(prefix: "/" | "?" | ":"): void;
+  recordPromptSubmission(
+    prefix: "/" | "?" | ":",
+    value: string,
+    initialValue?: string,
+  ): void;
+  recordPromptDecision(key: "y" | "n" | "a" | "l" | "q"): void;
   clear(): void;
 }
 
@@ -54,6 +61,17 @@ export function createVimActionRecorder(
 ): VimActionRecorder {
   let pendingEvents: CommandInputEvent[] = [];
 
+  function flushPendingEvents(): void {
+    if (pendingEvents.length === 0) {
+      return;
+    }
+
+    pendingEvents.push({ type: "command_done" });
+    const actions = normalizeCommandInput(pendingEvents);
+    pendingEvents = [];
+    actions.forEach(onAction);
+  }
+
   return {
     recordKey(key, mode) {
       pendingEvents.push({ type: "handleKey", key, mode });
@@ -64,14 +82,45 @@ export function createVimActionRecorder(
       }
     },
     finishCommand() {
-      if (pendingEvents.length === 0) {
+      flushPendingEvents();
+    },
+    beginPrompt(prefix) {
+      const lastEvent = pendingEvents.at(-1);
+      if (
+        lastEvent?.type === "handleKey" &&
+        lastEvent.key === prefix &&
+        (lastEvent.mode === "normal" || lastEvent.mode === "visual")
+      ) {
+        pendingEvents.pop();
+      }
+    },
+    recordPromptSubmission(prefix, value, initialValue = "") {
+      flushPendingEvents();
+
+      if (prefix === "/") {
+        onAction({ type: "search", query: value, direction: "forward" });
+        return;
+      }
+      if (prefix === "?") {
+        onAction({ type: "search", query: value, direction: "backward" });
         return;
       }
 
-      pendingEvents.push({ type: "command_done" });
-      const actions = normalizeCommandInput(pendingEvents);
-      pendingEvents = [];
-      actions.forEach(onAction);
+      // CodeMirror Vim pre-fills Visual ':' prompts with "'<,'>".
+      // That text is Vim-owned UI state, not learner input, so remove the
+      // unchanged initial value before recording the exact Ex command.
+      const enteredValue =
+        initialValue.length > 0 && value.startsWith(initialValue)
+          ? value.slice(initialValue.length)
+          : value;
+      onAction({
+        type: "vim_command",
+        command: `:${enteredValue}<Enter>`,
+      });
+    },
+    recordPromptDecision(key) {
+      flushPendingEvents();
+      onAction({ type: "vim_command", command: key });
     },
     clear() {
       pendingEvents = [];

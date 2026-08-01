@@ -43,6 +43,90 @@ describe("createVimActionRecorder", () => {
 
     expect(actions).toEqual([]);
   });
+
+  it("records search prompt submissions as semantic search actions", () => {
+    const actions: NormalizedAction[] = [];
+    const recorder = createVimActionRecorder((action) => actions.push(action));
+
+    recorder.recordKey("/", "normal");
+    recorder.beginPrompt("/");
+    recorder.recordPromptSubmission("/", "ProcessAsync");
+    recorder.recordKey("?", "normal");
+    recorder.beginPrompt("?");
+    recorder.recordPromptSubmission("?", "API_URL");
+
+    expect(actions).toEqual([
+      {
+        type: "search",
+        query: "ProcessAsync",
+        direction: "forward",
+      },
+      {
+        type: "search",
+        query: "API_URL",
+        direction: "backward",
+      },
+    ]);
+  });
+
+  it("keeps prompt-like characters when Vim does not open a prompt", () => {
+    const actions: NormalizedAction[] = [];
+    const recorder = createVimActionRecorder((action) => actions.push(action));
+
+    for (const command of ["f:", "T:", "f/", "r?"]) {
+      for (const key of command) {
+        recorder.recordKey(key, "normal");
+      }
+      recorder.finishCommand();
+    }
+
+    expect(actions).toEqual([
+      { type: "vim_command", command: "f:" },
+      { type: "vim_command", command: "T:" },
+      { type: "vim_command", command: "f/" },
+      { type: "vim_command", command: "r?" },
+    ]);
+  });
+
+  it("records Ex prompt submissions and confirmation choices exactly", () => {
+    const actions: NormalizedAction[] = [];
+    const recorder = createVimActionRecorder((action) => actions.push(action));
+
+    recorder.recordKey(":", "normal");
+    recorder.beginPrompt(":");
+    recorder.recordPromptSubmission(":", "%s/debug/trace/gc");
+    recorder.recordPromptDecision("y");
+    recorder.recordPromptDecision("y");
+
+    expect(actions).toEqual([
+      {
+        type: "vim_command",
+        command: ":%s/debug/trace/gc<Enter>",
+      },
+      { type: "vim_command", command: "y" },
+      { type: "vim_command", command: "y" },
+    ]);
+  });
+
+  it("strips Vim-owned initial text from Visual Ex prompt submissions", () => {
+    const actions: NormalizedAction[] = [];
+    const recorder = createVimActionRecorder((action) => actions.push(action));
+
+    recorder.recordKey(":", "visual");
+    recorder.beginPrompt(":");
+    recorder.recordPromptSubmission(
+      ":",
+      "'<,'>s/old/new/g",
+      "'<,'>",
+    );
+
+    expect(actions).toEqual([
+      {
+        type: "vim_command",
+        command: ":s/old/new/g<Enter>",
+      },
+    ]);
+  });
 });
 
 describe("keyboardEventToVimKey", () => {

@@ -40,6 +40,9 @@ let editorView: EditorView | null = null;
 let vimBridge: CodeMirror | null = null;
 const readOnlyCompartment = new Compartment();
 
+type VimPromptPrefix = "/" | "?" | ":";
+type VimPromptDecision = "y" | "n" | "a" | "l" | "q";
+
 function readOnlyExtensions(readOnly: boolean): Extension[] {
   return [
     EditorState.readOnly.of(readOnly),
@@ -48,11 +51,88 @@ function readOnlyExtensions(readOnly: boolean): Extension[] {
 }
 let vimModeHandler: ((event: unknown) => void) | null = null;
 let vimCommandDoneHandler: (() => void) | null = null;
+let vimDialogHandler: (() => void) | null = null;
 let stopReadOnlyWatch: (() => void) | null = null;
 let disposed = false;
+let pendingPromptPrefix: VimPromptPrefix | null = null;
+let promptInput: HTMLInputElement | null = null;
+let promptKeydownHandler: ((event: KeyboardEvent) => void) | null = null;
+
 const actionRecorder = createVimActionRecorder((action) => {
   emit("actionRecorded", action);
 });
+
+function isPromptPrefix(
+  key: string | null,
+  mode: VimMode,
+): key is VimPromptPrefix {
+  return (
+    (mode === "normal" || mode === "visual") &&
+    (key === "/" || key === "?" || key === ":")
+  );
+}
+
+function isPromptDecision(key: string | null): key is VimPromptDecision {
+  return key === "y" || key === "n" || key === "a" || key === "l" || key === "q";
+}
+
+function detachPromptInputListener(): void {
+  if (promptInput && promptKeydownHandler) {
+    promptInput.removeEventListener("keydown", promptKeydownHandler, true);
+  }
+  promptInput = null;
+  promptKeydownHandler = null;
+}
+
+function attachPromptInputListener(
+  promptPrefix: VimPromptPrefix | null,
+): void {
+  detachPromptInputListener();
+
+  const dialog = vimBridge?.state.dialog;
+  if (!(dialog instanceof HTMLElement)) {
+    return;
+  }
+
+  const input = dialog.querySelector("input");
+  if (!(input instanceof HTMLInputElement)) {
+    return;
+  }
+
+  const promptInitialValue = input.value;
+  promptInput = input;
+  promptKeydownHandler = (event: KeyboardEvent) => {
+    if (!(props.readOnly ?? false)) {
+      const display = formatKeyboardEvent(event);
+      if (display !== null) {
+        emit("keyPressed", display);
+      }
+    }
+
+    // Capture runs before CodeMirror Vim's own prompt handler. That is
+    // important for Enter: the runtime closes the prompt and may emit
+    // vim-command-done during the same keydown.
+    if (promptPrefix !== null) {
+      if (event.key === "Enter") {
+        actionRecorder.recordPromptSubmission(
+          promptPrefix,
+          input.value,
+          promptInitialValue,
+        );
+      }
+      return;
+    }
+
+    // :s///c opens a second prompt without a new / ? : trigger. Record the
+    // confirmation choices as exact actions; Enter is not part of this Vim
+    // prompt protocol.
+    const key = keyboardEventToVimKey(event);
+    if (isPromptDecision(key)) {
+      actionRecorder.recordPromptDecision(key);
+    }
+  };
+  input.addEventListener("keydown", promptKeydownHandler, true);
+}
 
 function cursorPosition(update: ViewUpdate) {
   const head = update.state.selection.main.head;
@@ -119,10 +199,16 @@ onMounted(async () => {
   });
   const keyObservers = EditorView.domEventObservers({
     keydown: (event) => {
-      actionRecorder.recordKey(
-        keyboardEventToVimKey(event),
-        currentMode.value,
-      );
+      const vimKey = keyboardEventToVimKey(event);
+      actionRecorder.recordKey(vimKey, currentMode.value);
+      if (isPromptPrefix(vimKey, currentMode.value)) {
+        // This is only a candidate. Characters such as ":" are also valid
+        // literal arguments in commands like f:, T:, and r:. A real Vim
+        // dialog event below is authoritative about whether this key opened
+        // a prompt.
+        pendingPromptPrefix = vimKey;
+      }
+
       if (!(props.readOnly ?? false)) {
         const display = formatKeyboardEvent(event);
         if (display !== null) {
@@ -169,8 +255,34 @@ onMounted(async () => {
     vimBridge.on("vim-mode-change", vimModeHandler);
     vimCommandDoneHandler = () => {
       actionRecorder.finishCommand();
+      // Literal f:/T:/f?/r: commands never open a dialog. Clear any stale
+      // candidate once Vim confirms that the command completed normally.
+      pendingPromptPrefix = null;
     };
     vimBridge.on("vim-command-done", vimCommandDoneHandler);
+    vimDialogHandler = () => {
+      const promptPrefix = pendingPromptPrefix;
+      const dialogOpened = vimBridge?.state.dialog instanceof HTMLElement;
+
+      if (dialogOpened && promptPrefix !== null) {
+        // The dialog event is authoritative: only now do we know that the
+        // last / ? : key opened a prompt instead of being a literal argument
+        // to commands such as f:, T:, f/, or r?.
+        actionRecorder.beginPrompt(promptPrefix);
+        pendingPromptPrefix = null;
+      }
+
+      // CodeMirror Vim signals "dialog" from showDialog() before openDialog()
+      // applies options.value (Visual ':' pre-fills "'<,'>"). Defer one
+      // microtask so the prompt input contains its final Vim-owned initial
+      // value before we snapshot it for normalization.
+      queueMicrotask(() => {
+        if (!disposed) {
+          attachPromptInputListener(promptPrefix);
+        }
+      });
+    };
+    vimBridge.on("dialog", vimDialogHandler);
   }
   if (props.autoFocus && !(props.readOnly ?? false)) {
     view.focus();
@@ -197,9 +309,15 @@ onBeforeUnmount(() => {
   if (vimBridge && vimCommandDoneHandler) {
     vimBridge.off("vim-command-done", vimCommandDoneHandler);
   }
+  if (vimBridge && vimDialogHandler) {
+    vimBridge.off("dialog", vimDialogHandler);
+  }
+  detachPromptInputListener();
   actionRecorder.clear();
+  pendingPromptPrefix = null;
   vimModeHandler = null;
   vimCommandDoneHandler = null;
+  vimDialogHandler = null;
   vimBridge = null;
   editorView?.destroy();
   editorView = null;
