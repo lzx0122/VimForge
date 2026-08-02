@@ -3,6 +3,7 @@ import { normalizeCatalogForProductionExportShape } from "./catalog-production-s
 import {
   exerciseVersionChanged,
   hashCatalog,
+  validateCatalogSnapshot,
   type CatalogExercise,
   type CatalogSnapshot,
   type CatalogUnit,
@@ -96,5 +97,22 @@ export function materializeCatalogReleaseSnapshot(
   // (defaulted fields, nested ordering) must match that round trip exactly,
   // or its hash will never agree with a real post-publish export.
   const normalized = normalizeCatalogForProductionExportShape(draft);
-  return { ...normalized, catalogHash: hashCatalog(normalized) };
+  const withHash = { ...normalized, catalogHash: hashCatalog(normalized) };
+
+  // The base and authoring target can each be individually valid while the
+  // materialized result is not: a retained (unpublished) historical exercise
+  // can reference a unit skill the authoring target no longer declares,
+  // because nothing currently authored uses it. Production would end up
+  // with a relationship graph the catalog contract forbids. Catch this
+  // before any migration file, manifest, or db push exists — the
+  // post-publish full-row check exists as defense in depth, not as the
+  // primary safeguard.
+  const errors = validateCatalogSnapshot(withHash);
+  if (errors.length > 0) {
+    throw new Error(
+      `Materialized post-release catalog is invalid: ${errors.map((error) => `${error.path}: ${error.message}`).join("; ")}`,
+    );
+  }
+
+  return withHash;
 }

@@ -1,9 +1,9 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { hashCatalog, parseCatalogSnapshot } from "../src/content/catalog-contract";
+import { hashCatalog, parseCatalogSnapshot, type CatalogExercise, type CatalogSnapshot } from "../src/content/catalog-contract";
 import { materializeCatalogReleaseSnapshot } from "../src/content/catalog-release-materializer";
 import { prepareRelease } from "./content-prepare-release";
 
@@ -105,5 +105,89 @@ describe("content release preparation", () => {
       confirmLargeChange: true,
       now: () => new Date("2026-07-17T01:02:04.000Z"),
     })).not.toThrow();
+  });
+
+  it("P1 regression: leaves no partial migration, manifest, or materialized-snapshot artifact when the materialized catalog is invalid", () => {
+    function minimalExercise(slug: string, skillSlug: string): CatalogExercise {
+      return {
+        slug,
+        title: slug,
+        instruction: "Edit the target",
+        language: "plaintext",
+        exerciseType: "challenge",
+        difficulty: "beginner",
+        initialContent: "before",
+        expectedContent: "after",
+        initialCursor: { line: 0, column: 0 },
+        completionRule: { contentMatch: "exact", cursorMatch: { type: "ignore" } },
+        supportedModes: ["beginner"],
+        targetDurationMs: 1_000,
+        version: 1,
+        isPublished: true,
+        displayOrder: 1,
+        skills: [{ skillSlug, weight: 1, primary: true }],
+        solutions: [{
+          sequence: "i",
+          normalizedActions: [{ type: "vim_command", command: "i" }],
+          keystrokeCount: 1,
+          recommended: true,
+          explanation: "Type the target.",
+        }],
+        hints: [1, 2, 3, 4].map((level) => ({ level: level as 1 | 2 | 3 | 4, content: `Hint ${level}`, commandPreview: null })),
+      };
+    }
+    function minimalSnapshot(exercises: CatalogExercise[], skills: CatalogSnapshot["units"][number]["skills"]): CatalogSnapshot {
+      const draft: CatalogSnapshot = {
+        schemaVersion: 1,
+        catalogRevision: 1,
+        catalogHash: "sha256:" + "0".repeat(64),
+        exportedAt: "2026-07-17T00:00:00.000Z",
+        units: [{
+          slug: "unit-a",
+          title: "Unit A",
+          description: "A unit",
+          difficulty: "beginner",
+          estimatedMinutes: 5,
+          displayOrder: 1,
+          isPublished: true,
+          skills,
+          exercises,
+        }],
+      };
+      return { ...draft, catalogHash: hashCatalog(draft) };
+    }
+    const movementSkill = { slug: "movement", name: "Movement", description: "Move", category: "movement" as const, difficulty: "beginner" as const };
+    const searchSkill = { slug: "search", name: "Search", description: "Search", category: "search" as const, difficulty: "beginner" as const };
+    const invalidBase = minimalSnapshot(
+      [minimalExercise("kept", "movement"), minimalExercise("exercise-old", "search")],
+      [movementSkill, searchSkill],
+    );
+    // exercise-old is removed and "search" is dropped from Unit A because
+    // nothing currently authored uses it — but exercise-old is retained as
+    // an unpublished historical row that still references "search".
+    const invalidTarget = minimalSnapshot([minimalExercise("kept", "movement")], [movementSkill]);
+
+    const directory = mkdtempSync(join(process.cwd(), ".tmp-vimforge-prepare-invalid-"));
+    temporaryDirectories.push(directory);
+    const invalidBasePath = join(directory, "catalog-base-invalid.json");
+    const targetPath = join(directory, "catalog-target-invalid.json");
+    const migrationDirectory = join(directory, "migrations");
+    const manifestPath = join(directory, "release-manifest.json");
+    const materializedSnapshotPath = join(directory, "release-target.json");
+    writeFileSync(invalidBasePath, `${JSON.stringify(invalidBase, null, 2)}\n`, "utf8");
+    writeFileSync(targetPath, `${JSON.stringify(invalidTarget, null, 2)}\n`, "utf8");
+
+    expect(() => prepareRelease({
+      targetPath,
+      basePath: invalidBasePath,
+      migrationDirectory,
+      manifestPath,
+      materializedSnapshotPath,
+      confirmLargeChange: true,
+    })).toThrow(/materialized post-release catalog is invalid/i);
+
+    expect(existsSync(manifestPath)).toBe(false);
+    expect(existsSync(materializedSnapshotPath)).toBe(false);
+    expect(existsSync(migrationDirectory) ? readdirSync(migrationDirectory) : []).toHaveLength(0);
   });
 });

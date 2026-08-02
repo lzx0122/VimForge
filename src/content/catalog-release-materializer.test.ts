@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { materializeCatalogReleaseSnapshot } from "./catalog-release-materializer";
-import { hashCatalog, type CatalogExercise, type CatalogSnapshot } from "./catalog-contract";
+import { hashCatalog, validateCatalogSnapshot, type CatalogExercise, type CatalogSnapshot } from "./catalog-contract";
 
 function exercise(slug: string, expectedContent = "before"): CatalogExercise {
   return {
@@ -275,5 +275,62 @@ describe("materializeCatalogReleaseSnapshot", () => {
     expect(nested?.skills.map((skill) => skill.skillSlug)).toEqual(["a-first", "b-only", "z-second"]);
     expect(nested?.solutions.map((solution) => solution.sequence)).toEqual(["tie-a", "tie-b", "explicit-later"]);
     expect(nested?.hints.map((hint) => hint.level)).toEqual([1, 2, 3, 4]);
+  });
+
+  describe("materialized post-release catalog validation", () => {
+    function withUnitSkills(source: CatalogSnapshot, skills: CatalogSnapshot["units"][number]["skills"]): CatalogSnapshot {
+      const draft: CatalogSnapshot = {
+        ...source,
+        units: source.units.map((unit, index) => (index === 0 ? { ...unit, skills } : unit)),
+      };
+      return { ...draft, catalogHash: hashCatalog(draft) };
+    }
+
+    const movementSkill = { slug: "movement", name: "Movement", description: "Move", category: "movement" as const, difficulty: "beginner" as const };
+    const searchSkill = { slug: "search", name: "Search", description: "Search", category: "search" as const, difficulty: "beginner" as const };
+
+    it("P1 regression: rejects a materialized release where a retained unpublished exercise references a unit skill no longer declared", () => {
+      const kept = exercise("kept");
+      const removed = { ...exercise("exercise-old"), skills: [{ skillSlug: "search", weight: 1, primary: true }] };
+
+      const base = withUnitSkills(snapshot([kept, removed]), [movementSkill, searchSkill]);
+      // Authoring target: exercise-old is gone, and "search" is dropped from
+      // Unit A because no remaining authored exercise uses it.
+      const authoringTarget = withUnitSkills(snapshot([kept]), [movementSkill]);
+
+      // Both snapshots are individually valid — the problem only exists in
+      // the materialized post-release relationship graph.
+      expect(validateCatalogSnapshot(base)).toEqual([]);
+      expect(validateCatalogSnapshot(authoringTarget)).toEqual([]);
+
+      expect(() => materializeCatalogReleaseSnapshot(base, authoringTarget)).toThrow(
+        /materialized post-release catalog is invalid/i,
+      );
+    });
+
+    it("safe variant: retaining the still-needed unit skill lets materialization succeed", () => {
+      const kept = exercise("kept");
+      const removed = { ...exercise("exercise-old"), skills: [{ skillSlug: "search", weight: 1, primary: true }] };
+
+      const base = withUnitSkills(snapshot([kept, removed]), [movementSkill, searchSkill]);
+      // Authoring target still declares "search" even though no currently
+      // authored published exercise uses it, because the retained historical
+      // unpublished exercise still needs it.
+      const authoringTarget = withUnitSkills(snapshot([kept]), [movementSkill, searchSkill]);
+
+      expect(validateCatalogSnapshot(base)).toEqual([]);
+      expect(validateCatalogSnapshot(authoringTarget)).toEqual([]);
+
+      const result = materializeCatalogReleaseSnapshot(base, authoringTarget);
+
+      expect(validateCatalogSnapshot(result)).toEqual([]);
+      const materializedRemoved = exercisesIn(result, "unit").find((item) => item.slug === "exercise-old");
+      expect(materializedRemoved).toMatchObject({
+        isPublished: false,
+        version: removed.version,
+        skills: [{ skillSlug: "search", weight: 1, primary: true }],
+      });
+      expect(result.catalogHash).toBe(hashCatalog(result));
+    });
   });
 });
