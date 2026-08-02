@@ -80,11 +80,17 @@ function spawnSupabase(
         callback();
       }
     };
-    child.stdout.on("data", (chunk: Buffer | string) => {
-      stdout += chunk.toString();
+    // setEncoding buffers incomplete multi-byte UTF-8 sequences internally
+    // (via StringDecoder) until enough bytes arrive, instead of decoding
+    // each chunk independently — which corrupts characters split across
+    // arbitrary Buffer boundaries.
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
     });
-    child.stderr.on("data", (chunk: Buffer | string) => {
-      stderr += chunk.toString();
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
     });
     child.once("error", () => {
       finish(() => reject(new Error("Unable to start the Supabase CLI.")));
