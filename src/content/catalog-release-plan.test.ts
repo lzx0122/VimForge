@@ -218,6 +218,42 @@ describe("catalog release planning", () => {
     expect(sql).not.toContain("delete from public.exercise_skills");
   });
 
+  it("P1-1b regression: a solution displayOrder-only change persists without advancing the exercise version", () => {
+    const solutionAt = (displayOrder: number) => ({
+      ...exercise("reordered-solution"),
+      solutions: [{
+        sequence: "i",
+        normalizedActions: [{ type: "vim_command" as const, command: "i" }],
+        keystrokeCount: 1,
+        recommended: true,
+        explanation: "Type Bob's target.",
+        displayOrder,
+      }],
+    });
+    const base = snapshot([solutionAt(0)]);
+    const next = snapshot([solutionAt(5)]);
+
+    const plan = buildCatalogReleasePlan(base, next);
+
+    expect(plan.changed[0]).toMatchObject({
+      slug: "reordered-solution",
+      version: 1,
+      versionChanged: false,
+      // Content didn't change by the version-owned definition (solution
+      // displayOrder is deliberately excluded from version semantics), but
+      // the children DID change and must still be persisted.
+      replaceChildren: true,
+    });
+
+    const sql = renderCatalogMigration(plan);
+    expect(sql).toMatch(/insert into public\.exercise_solutions[\s\S]*,\s*5\s*(from|,)/i);
+
+    const materialized = materializeCatalogReleaseSnapshot(base, next);
+    const materializedExercise = materialized.units.flatMap((unit) => unit.exercises).find((item) => item.slug === "reordered-solution");
+    expect(materializedExercise?.version).toBe(1);
+    expect(materializedExercise?.solutions[0]).toMatchObject({ displayOrder: 5 });
+  });
+
   it("detects a unit move, updates unit_id, and replaces stale child links", () => {
     const movedBefore = { ...exercise("moved"), skills: [{ skillSlug: "unit-a-movement", weight: 1, primary: true }] };
     const movedAfter = { ...exercise("moved"), skills: [{ skillSlug: "unit-b-movement", weight: 1, primary: true }] };

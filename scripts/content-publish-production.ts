@@ -16,6 +16,7 @@ import {
   runSupabase as defaultRunSupabase,
   type CliOptions,
 } from "../src/content/supabase-cli-runner";
+import { inspectProductionCatalog } from "./content-export-production";
 
 export type PublishInvoker = (args: readonly string[], options?: CliOptions) => Promise<string>;
 
@@ -205,6 +206,33 @@ export async function publishProduction(input: PublishProductionInput): Promise<
   if (state.revision !== input.manifest.targetRevision || state.hash !== input.manifest.targetHash) {
     throw safeError("Production publish verification failed: release revision or catalog hash does not match the manifest.");
   }
+
+  // The release-state table alone only proves the migration wrote its own
+  // declared revision/hash — not that the actual catalog rows canonicalize
+  // to that hash. That gap is exactly what caused the historical v1->v2
+  // release-state/canonical-data mismatch and its forward hash
+  // reconciliation migration. Independently reconstruct the canonical
+  // snapshot from the real exported rows and require it to agree too.
+  let inspection: Awaited<ReturnType<typeof inspectProductionCatalog>>;
+  try {
+    inspection = await inspectProductionCatalog({
+      expectedProjectRef: input.expectedProjectRef,
+      linkedProjectRef,
+      runSupabase: invoke,
+      cliOptions: input.cliOptions,
+    });
+  } catch {
+    throw safeError("Production publish could not be verified against actual catalog rows; retain the migration evidence and prepare a forward fix.");
+  }
+  if (
+    inspection.snapshot.catalogRevision !== input.manifest.targetRevision
+    || inspection.snapshot.catalogHash !== input.manifest.targetHash
+  ) {
+    throw safeError(
+      "Production publish verification failed: the migration was already applied and the release state matches, but the actual production catalog rows canonicalize to a different hash. Do not roll back or reset the database. Investigate and prepare a reviewed forward-fix migration.",
+    );
+  }
+
   return {
     success: true,
     projectRef: input.expectedProjectRef,

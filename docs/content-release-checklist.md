@@ -18,15 +18,21 @@ know which one you're looking at:
    *same* `catalogRevision` as the baseline it was exported from; the tooling
    advances the revision for you, it does not read a revision bump from this
    file.
-3. **Materialized post-release snapshot** — not a file you write. Computed by
+3. **Materialized post-release snapshot** — `content/release-target.json`,
+   written by `content:prepare-release`. Computed by
    `materializeCatalogReleaseSnapshot(base, authoringTarget)`
    (`src/content/catalog-release-materializer.ts`): the exact data production
    will contain after the migration runs — `catalogRevision` advanced by one,
-   changed-exercise versions incremented, and removed exercises retained as
-   unpublished rows (never deleted) rather than dropped. This is the only
-   correct source of the release's canonical hash.
+   changed-exercise versions incremented, removed exercises retained as
+   unpublished rows (never deleted) rather than dropped, and every nested
+   array (unit skills, exercise skills, solutions, hints) normalized to the
+   same shape `PRODUCTION_EXPORT_QUERY` reconstructs
+   (`src/content/catalog-production-shape.ts`). This is the only correct
+   source of the release's canonical hash. It is **not** a diff input — never
+   pass it as the authoring target for a later release.
 4. **Release manifest / migration evidence** — `content/release-manifest.json`
-   and the generated file under `supabase/migrations/`, produced by
+   (which records `materializedSnapshotPath`, pointing at step 3) and the
+   generated file under `supabase/migrations/`, produced by
    `content:prepare-release`. `manifest.targetHash` must be the materialized
    post-release snapshot's hash (step 3), never the pre-release authoring
    snapshot's own hash (step 2) — those differ because `catalogRevision` and
@@ -38,11 +44,14 @@ know which one you're looking at:
    ongoing drift from the canonical baseline is known, deliberate, and
    deferred (see `scripts/validate-seed.test.ts`).
 
-After a publish succeeds and the post-publish export verification passes
-(the final checklist item below), advance step 1 — overwrite
-`content/catalog.json` with the finalized snapshot and commit it alongside the
-migration and manifest. Skipping this step is exactly what causes the next
-release to diff against a stale baseline.
+After a publish succeeds and **both** post-publish verifications pass (the
+release-state check and the full production-row check — see "Guarded
+production publish" below), advance step 1: copy step 3's file
+(`content/release-target.json`) over `content/catalog.json` and commit it
+alongside the migration and manifest. Skipping this step is exactly what
+causes the next release to diff against a stale baseline. This step never
+needs to re-export from production first — the file to copy already exists,
+locally, before you publish.
 
 ## Before editing
 
@@ -100,15 +109,21 @@ npm run content:prepare-release -- content/catalog-modified.json
 - [ ] Review the single timestamped migration generated under
       `supabase/migrations/`.
 - [ ] Review `content/release-manifest.json`: base revision, target revision,
-      target hash, migration hash/path, and added/changed/unpublished/unchanged
-      counts match the diff. `targetHash` is the *materialized post-release*
-      snapshot's hash (revision advanced, exercise versions computed) — it will
-      not equal `content/catalog-modified.json`'s own `catalogHash`, and that
-      is expected, not a bug.
+      target hash, migration hash/path, `materializedSnapshotPath`, and
+      added/changed/unpublished/unchanged counts match the diff. `targetHash`
+      is the *materialized post-release* snapshot's hash (revision advanced,
+      exercise versions computed) — it will not equal
+      `content/catalog-modified.json`'s own `catalogHash`, and that is
+      expected, not a bug.
+- [ ] Review `content/release-target.json` (the file `materializedSnapshotPath`
+      points at): this is exactly what production will contain after the
+      migration. Confirm `hashCatalog()` of this file equals the manifest's
+      `targetHash`.
 - [ ] Confirm the migration contains no credentials and only upserts catalog
       data plus non-destructive unpublishes.
-- [ ] Commit the modified snapshot, migration, manifest, and documentation as
-      one reviewed change. Do not hand-edit generated SQL or the manifest.
+- [ ] Commit the modified snapshot, migration, manifest, materialized
+      snapshot, and documentation as one reviewed change. Do not hand-edit
+      generated SQL or the manifest.
 
 ## Guarded production publish
 
@@ -126,11 +141,24 @@ npm run content:publish:production -- content/release-manifest.json
 - [ ] Type the exact production project ref when prompted.
 - [ ] Type `PUBLISH` at the separate final confirmation prompt.
 - [ ] Confirm the post-publish private release state has the manifest's target
-      revision and catalog hash.
-- [ ] Overwrite `content/catalog.json` with the finalized (materialized)
-      snapshot and commit it in the same change as the migration and
-      manifest, so the next release diffs against the real production state
-      instead of a stale baseline.
+      revision and catalog hash. **This alone is not sufficient** — it only
+      proves the migration wrote its own declared revision/hash, not that the
+      actual catalog rows canonicalize to that hash. This gap is exactly what
+      caused the historical v1→v2 incident and its forward hash-reconciliation
+      migration.
+- [ ] Confirm the publisher's second, independent check also passed: it
+      re-queries the actual production catalog rows (reusing
+      `inspectProductionCatalog` / `PRODUCTION_EXPORT_QUERY`) and requires the
+      canonically reconstructed snapshot's revision and hash to match the
+      manifest too. `publishProduction()` only returns `success: true` after
+      *both* checks agree; if release state matches but the row-reconstructed
+      hash differs, it fails loudly, states the migration was already
+      applied, and instructs a forward-fix — it never rolls back or resets.
+- [ ] Only once both checks above passed: copy `content/release-target.json`
+      (the manifest's `materializedSnapshotPath`) over `content/catalog.json`
+      and commit it in the same change as the migration and manifest, so the
+      next release diffs against the real production state instead of a
+      stale baseline. Do not advance the baseline before a verified publish.
 
 If any preflight, project-ref, pending-migration, or post-publish check fails,
 stop promotion. Preserve the snapshot, migration, and manifest as evidence and

@@ -9,6 +9,7 @@ import {
 } from "../src/content/catalog-contract";
 import { diffCatalog } from "../src/content/catalog-diff";
 import { buildCatalogReleasePlan } from "../src/content/catalog-release-plan";
+import { materializeCatalogReleaseSnapshot } from "../src/content/catalog-release-materializer";
 import { renderCatalogMigration } from "../src/content/catalog-sql";
 import { hashMigration } from "../src/content/publish-preflight";
 
@@ -17,6 +18,8 @@ export interface PrepareReleaseOptions {
   basePath?: string;
   migrationDirectory?: string;
   manifestPath?: string;
+  /** Where to write the finalized (materialized) post-release snapshot. */
+  materializedSnapshotPath?: string;
   now?: () => Date;
   confirmLargeChange?: boolean;
 }
@@ -30,6 +33,15 @@ export interface ReleaseManifest {
   targetHash: string;
   migrationPath: string;
   migrationHash: string;
+  /**
+   * Repository-relative path to the finalized post-release snapshot
+   * (materializeCatalogReleaseSnapshot's output): revision N+1, computed
+   * exercise versions, production-shape-normalized. Optional so historical
+   * manifests written before this field existed remain valid. This file is
+   * not an authoring diff input; after a verified publish it can become the
+   * next content/catalog.json baseline.
+   */
+  materializedSnapshotPath?: string;
   counts: {
     added: number;
     changed: number;
@@ -41,6 +53,7 @@ export interface ReleaseManifest {
 export interface PrepareReleaseResult {
   migrationPath: string;
   manifestPath: string;
+  materializedSnapshotPath: string;
   manifest: ReleaseManifest;
 }
 
@@ -86,6 +99,16 @@ export function prepareRelease(options: PrepareReleaseOptions): PrepareReleaseRe
   writeFileSync(migrationPath, migrationSql, "utf8");
   const migrationRelativePath = relative(process.cwd(), migrationPath);
   const targetRelativePath = relative(process.cwd(), targetPath);
+
+  // The finalized post-release snapshot production will actually contain —
+  // not the pre-release authoring file, which is never used as a baseline
+  // or diff input on its own.
+  const materializedSnapshot = materializeCatalogReleaseSnapshot(base, target);
+  const materializedSnapshotPath = resolve(options.materializedSnapshotPath ?? "content/release-target.json");
+  mkdirSync(resolve(materializedSnapshotPath, ".."), { recursive: true });
+  writeFileSync(materializedSnapshotPath, `${JSON.stringify(materializedSnapshot, null, 2)}\n`, "utf8");
+  const materializedSnapshotRelativePath = relative(process.cwd(), materializedSnapshotPath);
+
   const manifest: ReleaseManifest = {
     schemaVersion: 1,
     targetPath: targetRelativePath,
@@ -97,6 +120,7 @@ export function prepareRelease(options: PrepareReleaseOptions): PrepareReleaseRe
     targetHash: plan.targetHash,
     migrationPath: migrationRelativePath,
     migrationHash: hashMigration(migrationSql),
+    materializedSnapshotPath: materializedSnapshotRelativePath,
     counts: {
       added: diff.added.length,
       changed: diff.changed.length,
@@ -107,7 +131,12 @@ export function prepareRelease(options: PrepareReleaseOptions): PrepareReleaseRe
   const manifestPath = resolve(options.manifestPath ?? "content/release-manifest.json");
   mkdirSync(resolve(manifestPath, ".."), { recursive: true });
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-  return { migrationPath: migrationRelativePath, manifestPath, manifest };
+  return {
+    migrationPath: migrationRelativePath,
+    manifestPath,
+    materializedSnapshotPath: materializedSnapshotRelativePath,
+    manifest,
+  };
 }
 
 function runCli(): void {
@@ -122,6 +151,7 @@ function runCli(): void {
   try {
     const result = prepareRelease({ targetPath, confirmLargeChange });
     console.log(`Prepared ${basename(result.migrationPath)} with target ${result.manifest.targetHash}`);
+    console.log(`Finalized post-release snapshot written to ${result.materializedSnapshotPath}`);
   } catch (error: unknown) {
     console.error(error instanceof Error ? error.message : "Release preparation failed.");
     process.exitCode = 1;

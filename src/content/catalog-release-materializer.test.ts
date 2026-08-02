@@ -184,4 +184,96 @@ describe("materializeCatalogReleaseSnapshot", () => {
     expect(result.units.map((unit) => unit.slug)).toEqual(["unit-early", "unit-late"]);
     expect(exercisesIn(result, "unit-late").map((item) => item.slug)).toEqual(["a", "b"]);
   });
+
+  it("P1-1 regression A: materializes omitted optional persisted metadata to the values production will actually store", () => {
+    const withoutDisplayOrder = { ...exercise("no-order"), skills: [{ skillSlug: "movement", weight: 1, primary: true }] };
+    delete (withoutDisplayOrder as { displayOrder?: number }).displayOrder;
+    const withoutSolutionDisplayOrder = {
+      ...exercise("no-solution-order"),
+      solutions: [{
+        sequence: "i",
+        normalizedActions: [{ type: "vim_command" as const, command: "i" }],
+        keystrokeCount: 1,
+        recommended: true,
+        explanation: "e",
+        // displayOrder omitted
+      }],
+    };
+    const base = snapshot(
+      [withoutDisplayOrder, withoutSolutionDisplayOrder],
+      1,
+      "unit",
+      [],
+    );
+    // Also give the unit a skill without primary/displayOrder.
+    const baseWithBareSkillDraft: CatalogSnapshot = {
+      ...base,
+      units: base.units.map((unit, index) => index === 0
+        ? { ...unit, skills: [{ slug: "movement", name: "Movement", description: "Move", category: "movement" as const, difficulty: "beginner" as const }] }
+        : unit),
+    };
+    const baseWithBareSkill: CatalogSnapshot = { ...baseWithBareSkillDraft, catalogHash: hashCatalog(baseWithBareSkillDraft) };
+    const authoringTarget = baseWithBareSkill;
+
+    const result = materializeCatalogReleaseSnapshot(baseWithBareSkill, authoringTarget);
+
+    const unit = result.units.find((candidate) => candidate.slug === "unit");
+    expect(unit?.skills[0]).toMatchObject({ slug: "movement", primary: false, displayOrder: 0 });
+
+    const noOrder = exercisesIn(result, "unit").find((item) => item.slug === "no-order");
+    expect(noOrder).toHaveProperty("displayOrder", 0);
+
+    const noSolutionOrder = exercisesIn(result, "unit").find((item) => item.slug === "no-solution-order");
+    expect(noSolutionOrder?.solutions[0]).toMatchObject({ sequence: "i", displayOrder: 0 });
+  });
+
+  it("P1-1 regression B: nested arrays materialize in production-export order regardless of authoring order", () => {
+    const exerciseWithNestedOrdering: CatalogExercise = {
+      ...exercise("nested"),
+      skills: [
+        { skillSlug: "z-skill", weight: 0.5, primary: false },
+        { skillSlug: "a-skill", weight: 0.5, primary: true },
+      ],
+      solutions: [
+        { sequence: "explicit-later", normalizedActions: [], keystrokeCount: 1, recommended: false, explanation: "e", displayOrder: 5 },
+        { sequence: "tie-a", normalizedActions: [], keystrokeCount: 1, recommended: false, explanation: "e", displayOrder: 1 },
+        { sequence: "tie-b", normalizedActions: [], keystrokeCount: 1, recommended: true, explanation: "e", displayOrder: 1 },
+      ],
+      hints: [4, 2, 1, 3].map((level) => ({ level: level as 1 | 2 | 3 | 4, content: `Hint ${level}`, commandPreview: null })),
+    };
+    const base = snapshot([exerciseWithNestedOrdering], 1, "unit", []);
+    const baseWithUnorderedUnitSkillsDraft: CatalogSnapshot = {
+      ...base,
+      units: base.units.map((unit, index) => index === 0
+        ? {
+          ...unit,
+          skills: [
+            { slug: "z-second", name: "Z", description: "d", category: "movement" as const, difficulty: "beginner" as const, displayOrder: 2 },
+            { slug: "a-first", name: "A", description: "d", category: "movement" as const, difficulty: "beginner" as const, displayOrder: 2 },
+            { slug: "b-only", name: "B", description: "d", category: "movement" as const, difficulty: "beginner" as const, displayOrder: 1 },
+          ],
+          exercises: unit.exercises.map((item) => ({
+            ...item,
+            skills: [
+              { skillSlug: "z-second", weight: 0.34, primary: false },
+              { skillSlug: "a-first", weight: 0.33, primary: false },
+              { skillSlug: "b-only", weight: 0.33, primary: true },
+            ],
+          })),
+        }
+        : unit),
+    };
+    const baseWithUnorderedUnitSkills: CatalogSnapshot = { ...baseWithUnorderedUnitSkillsDraft, catalogHash: hashCatalog(baseWithUnorderedUnitSkillsDraft) };
+    const authoringTarget = baseWithUnorderedUnitSkills;
+
+    const result = materializeCatalogReleaseSnapshot(baseWithUnorderedUnitSkills, authoringTarget);
+
+    const unit = result.units.find((candidate) => candidate.slug === "unit");
+    expect(unit?.skills.map((skill) => skill.slug)).toEqual(["b-only", "a-first", "z-second"]);
+
+    const nested = exercisesIn(result, "unit").find((item) => item.slug === "nested");
+    expect(nested?.skills.map((skill) => skill.skillSlug)).toEqual(["a-first", "b-only", "z-second"]);
+    expect(nested?.solutions.map((solution) => solution.sequence)).toEqual(["tie-a", "tie-b", "explicit-later"]);
+    expect(nested?.hints.map((hint) => hint.level)).toEqual([1, 2, 3, 4]);
+  });
 });

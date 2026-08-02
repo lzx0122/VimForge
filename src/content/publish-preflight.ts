@@ -20,6 +20,8 @@ export interface PublishManifest {
   targetHash: string;
   migrationPath: string;
   migrationHash: string;
+  /** Optional so historical manifests written before this field existed remain valid. */
+  materializedSnapshotPath?: string;
   counts: PublishManifestCounts;
 }
 

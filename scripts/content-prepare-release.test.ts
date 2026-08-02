@@ -21,6 +21,7 @@ describe("content release preparation", () => {
     const targetPath = join(directory, "catalog-modified.json");
     const migrationDirectory = join(directory, "migrations");
     const manifestPath = join(directory, "release-manifest.json");
+    const materializedSnapshotPath = join(directory, "release-target.json");
     const target = {
       ...base,
       units: base.units.map((unit, unitIndex) => unitIndex === 0
@@ -39,6 +40,7 @@ describe("content release preparation", () => {
       basePath: "content/catalog.json",
       migrationDirectory,
       manifestPath,
+      materializedSnapshotPath,
       now: () => new Date("2026-07-17T01:02:03.000Z"),
     });
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as typeof result.manifest;
@@ -51,8 +53,22 @@ describe("content release preparation", () => {
     // The manifest hash must describe the materialized post-release snapshot,
     // not the pre-release authoring file's own hash.
     const hashedTarget = { ...target, catalogHash: hashCatalog(target) };
-    expect(manifest.targetHash).toBe(hashCatalog(materializeCatalogReleaseSnapshot(base, hashedTarget)));
+    const materialized = materializeCatalogReleaseSnapshot(base, hashedTarget);
+    expect(manifest.targetHash).toBe(hashCatalog(materialized));
     expect(manifest.targetHash).not.toBe(hashedTarget.catalogHash);
+
+    // The finalized post-release snapshot must be written as its own
+    // reviewed artifact — not overwriting content/catalog.json before a
+    // verified publish, and not the same file as the authoring input.
+    expect(result.materializedSnapshotPath).toBeDefined();
+    expect(manifest.materializedSnapshotPath).toBe(result.materializedSnapshotPath);
+    expect(manifest.materializedSnapshotPath).not.toBe(manifest.targetPath);
+    const writtenSnapshot = JSON.parse(
+      readFileSync(resolve(process.cwd(), result.materializedSnapshotPath ?? ""), "utf8"),
+    ) as typeof materialized;
+    expect(writtenSnapshot).toEqual(materialized);
+    expect(writtenSnapshot.catalogRevision).toBe(base.catalogRevision + 1);
+    expect(writtenSnapshot.catalogHash).toBe(manifest.targetHash);
   });
 
   it("requires explicit confirmation for a large catalog change", () => {
@@ -61,6 +77,7 @@ describe("content release preparation", () => {
     const targetPath = join(directory, "catalog-large.json");
     const migrationDirectory = join(directory, "migrations");
     const manifestPath = join(directory, "release-manifest.json");
+    const materializedSnapshotPath = join(directory, "release-target.json");
     const totalExerciseCount = base.units.reduce((count, unit) => count + unit.exercises.length, 0);
     // Comfortably exceed the diff tool's >25%-affected large-change threshold
     // regardless of the base catalog's actual size.
@@ -79,11 +96,12 @@ describe("content release preparation", () => {
     };
     writeFileSync(targetPath, `${JSON.stringify({ ...target, catalogHash: hashCatalog(target) }, null, 2)}\n`, "utf8");
 
-    expect(() => prepareRelease({ targetPath, migrationDirectory, manifestPath })).toThrow(/25%/i);
+    expect(() => prepareRelease({ targetPath, migrationDirectory, manifestPath, materializedSnapshotPath })).toThrow(/25%/i);
     expect(() => prepareRelease({
       targetPath,
       migrationDirectory,
       manifestPath,
+      materializedSnapshotPath,
       confirmLargeChange: true,
       now: () => new Date("2026-07-17T01:02:04.000Z"),
     })).not.toThrow();

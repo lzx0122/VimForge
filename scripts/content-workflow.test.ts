@@ -13,11 +13,13 @@ import {
   hashCatalog,
   parseCatalogSnapshot,
   type CatalogExercise,
+  type CatalogSkill,
   type CatalogSnapshot,
   type CatalogUnit,
 } from "../src/content/catalog-contract";
 import { buildCatalogReleasePlan, type CatalogReleasePlan } from "../src/content/catalog-release-plan";
 import { materializeCatalogReleaseSnapshot } from "../src/content/catalog-release-materializer";
+import { normalizeCatalogForProductionExportShape } from "../src/content/catalog-production-shape";
 import { diffCatalogFiles } from "./content-diff";
 import { prepareRelease } from "./content-prepare-release";
 import { publishProduction } from "./content-publish-production";
@@ -66,11 +68,16 @@ function modifiedSnapshot(): CatalogSnapshot {
 /**
  * Independently reconstruct the snapshot a real production export would
  * return after the migration runs, using only what the migration SQL
- * actually writes (plan.added/changed/unpublished) and, for every exercise
- * the migration leaves untouched, its unchanged row in `base`. This is
- * deliberately built without calling materializeCatalogReleaseSnapshot again,
- * so it is an independent cross-check rather than the same computation
- * repeated.
+ * actually writes: exercise rows from plan.added/changed/unpublished (and,
+ * for every exercise the migration leaves untouched, its unchanged row in
+ * `base`), and unit-skill rows from plan.unitSkills/plan.skills — never
+ * base's or the authoring target's raw unit.skills array, since those are
+ * not what gets persisted or read back. This is deliberately built without
+ * calling materializeCatalogReleaseSnapshot again, so it is an independent
+ * cross-check rather than the same computation repeated. It applies the
+ * same production-shape normalization catalog-sql.ts's persisted defaults
+ * and PRODUCTION_EXPORT_QUERY's ordering rules require — not the
+ * unnormalized authoring array order.
  */
 function simulateProductionExport(base: CatalogSnapshot, plan: CatalogReleasePlan): CatalogSnapshot {
   const touchedSlugs = new Set([
@@ -94,14 +101,21 @@ function simulateProductionExport(base: CatalogSnapshot, plan: CatalogReleasePla
       }
     }
   }
-  const units: CatalogUnit[] = plan.units
-    .map((unit) => ({
-      ...unit,
-      skills: base.units.find((candidate) => candidate.slug === unit.slug)?.skills ?? [],
-      exercises: [...(exercisesByUnitSlug.get(unit.slug) ?? [])]
-        .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0) || a.slug.localeCompare(b.slug)),
-    }))
-    .sort((a, b) => a.displayOrder - b.displayOrder);
+  const skillsByUnitSlug = (unitSlug: string): CatalogSkill[] =>
+    plan.unitSkills
+      .filter((relation) => relation.unitSlug === unitSlug)
+      .map((relation) => {
+        const skill = plan.skills.find((candidate) => candidate.slug === relation.skillSlug);
+        if (skill === undefined) {
+          throw new Error(`Skill ${relation.skillSlug} referenced by unit_skills but missing from plan.skills.`);
+        }
+        return { ...skill, primary: relation.isPrimary, displayOrder: relation.displayOrder };
+      });
+  const units: CatalogUnit[] = plan.units.map((unit) => ({
+    ...unit,
+    skills: skillsByUnitSlug(unit.slug),
+    exercises: exercisesByUnitSlug.get(unit.slug) ?? [],
+  }));
   const draft: CatalogSnapshot = {
     schemaVersion: 1,
     catalogRevision: plan.targetRevision,
@@ -109,7 +123,8 @@ function simulateProductionExport(base: CatalogSnapshot, plan: CatalogReleasePla
     exportedAt: "2026-07-17T01:02:03.000Z",
     units,
   };
-  return { ...draft, catalogHash: hashCatalog(draft) };
+  const normalized = normalizeCatalogForProductionExportShape(draft);
+  return { ...normalized, catalogHash: hashCatalog(normalized) };
 }
 
 describe("mocked catalog file workflow", () => {
@@ -120,6 +135,7 @@ describe("mocked catalog file workflow", () => {
     const modifiedPath = join(directory, "catalog-modified.json");
     const migrationDirectory = join(directory, "migrations");
     const manifestPath = join(directory, "release-manifest.json");
+    const materializedSnapshotPath = join(directory, "release-target.json");
     const authoringTarget = modifiedSnapshot();
     writeSnapshot(basePath, base);
     writeSnapshot(modifiedPath, authoringTarget);
@@ -138,6 +154,7 @@ describe("mocked catalog file workflow", () => {
       basePath,
       migrationDirectory,
       manifestPath,
+      materializedSnapshotPath,
       now: () => new Date("2026-07-17T01:02:03.000Z"),
     });
 
@@ -167,7 +184,29 @@ describe("mocked catalog file workflow", () => {
     // 9: it must not merely equal the pre-release authoring snapshot's hash.
     expect(plan.targetHash).not.toBe(authoringTarget.catalogHash);
 
+    // 10: a mocked post-publish production export, built independently from
+    // what the migration actually writes (not by re-calling the
+    // materializer), matches the manifest's target revision and hash
+    // exactly. This is the check the old implementation could not pass: it
+    // would compare the export against the pre-release authoring hash.
+    // Computed before publishing so the mocked CLI's full production-row
+    // export query (P1-2) can return it, not just the release-state table.
+    const simulatedExport = simulateProductionExport(base, plan);
+    expect(simulatedExport.catalogRevision).toBe(prepared.manifest.targetRevision);
+    expect(hashCatalog(simulatedExport)).toBe(prepared.manifest.targetHash);
+
     const runSupabase = vi.fn(async (args: readonly string[]) => {
+      if (args.includes("--help")) {
+        return "Usage: supabase db query [flags]\n  --linked\n  --output string";
+      }
+      if (args.some((value) => value.includes("unit_payload"))) {
+        return JSON.stringify({
+          catalog_export: {
+            releaseState: { revision: prepared.manifest.targetRevision, catalog_hash: prepared.manifest.targetHash },
+            snapshot: { schemaVersion: 1, units: simulatedExport.units },
+          },
+        });
+      }
       if (args.includes("query")) {
         return JSON.stringify({
           release_state: {
@@ -192,15 +231,6 @@ describe("mocked catalog file workflow", () => {
       finalConfirmation: "PUBLISH",
     });
     expect(result.success).toBe(true);
-
-    // 10: a mocked post-publish production export, built independently from
-    // what the migration actually writes (not by re-calling the
-    // materializer), matches the manifest's target revision and hash
-    // exactly. This is the check the old implementation could not pass: it
-    // would compare the export against the pre-release authoring hash.
-    const simulatedExport = simulateProductionExport(base, plan);
-    expect(simulatedExport.catalogRevision).toBe(prepared.manifest.targetRevision);
-    expect(hashCatalog(simulatedExport)).toBe(prepared.manifest.targetHash);
     expect(hashCatalog(simulatedExport)).toBe(result.hash);
   });
 
@@ -212,6 +242,7 @@ describe("mocked catalog file workflow", () => {
     const modifiedPath = join(directory, "catalog-modified.json");
     const migrationDirectory = join(directory, "migrations");
     const manifestPath = join(directory, "release-manifest.json");
+    const materializedSnapshotPath = join(directory, "release-target.json");
     writeSnapshot(basePath, base);
     writeSnapshot(modifiedPath, modifiedSnapshot());
 
@@ -239,6 +270,7 @@ describe("mocked catalog file workflow", () => {
       basePath,
       migrationDirectory,
       manifestPath,
+      materializedSnapshotPath,
       now: () => new Date("2026-07-17T01:02:03.000Z"),
     });
     const totalBaseExerciseCount = base.units.reduce((count, unit) => count + unit.exercises.length, 0);
@@ -255,7 +287,20 @@ describe("mocked catalog file workflow", () => {
       "catalog_release",
     );
 
+    const plan = buildCatalogReleasePlan(base, fileDiff.next);
+    const simulatedExport = simulateProductionExport(base, plan);
     const runSupabase = vi.fn(async (args: readonly string[]) => {
+      if (args.includes("--help")) {
+        return "Usage: supabase db query [flags]\n  --linked\n  --output string";
+      }
+      if (args.some((value) => value.includes("unit_payload"))) {
+        return JSON.stringify({
+          catalog_export: {
+            releaseState: { revision: prepared.manifest.targetRevision, catalog_hash: prepared.manifest.targetHash },
+            snapshot: { schemaVersion: 1, units: simulatedExport.units },
+          },
+        });
+      }
       if (args.includes("query")) {
         return JSON.stringify({
           release_state: {

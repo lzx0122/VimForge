@@ -1,4 +1,5 @@
 import { diffCatalog } from "./catalog-diff";
+import { normalizeCatalogForProductionExportShape } from "./catalog-production-shape";
 import {
   exerciseVersionChanged,
   hashCatalog,
@@ -13,11 +14,6 @@ function unitSlugForExercise(snapshot: CatalogSnapshot, slug: string): string {
     throw new Error(`Exercise ${slug} is not owned by a catalog unit.`);
   }
   return unit.slug;
-}
-
-function sortExercises(exercises: readonly CatalogExercise[]): CatalogExercise[] {
-  return [...exercises].sort((a, b) =>
-    (a.displayOrder ?? 0) - (b.displayOrder ?? 0) || a.slug.localeCompare(b.slug));
 }
 
 /**
@@ -72,11 +68,9 @@ export function materializeCatalogReleaseSnapshot(
     if (authoredUnit === undefined) {
       throw new Error(`Unit ${slug} is missing from the authoring snapshot.`);
     }
-    const exercises = sortExercises(
-      [...materializedBySlug.values()]
-        .filter((entry) => entry.unitSlug === slug)
-        .map((entry) => entry.exercise),
-    );
+    const exercises = [...materializedBySlug.values()]
+      .filter((entry) => entry.unitSlug === slug)
+      .map((entry) => entry.exercise);
     return {
       slug: authoredUnit.slug,
       title: authoredUnit.title,
@@ -88,7 +82,7 @@ export function materializeCatalogReleaseSnapshot(
       skills: authoredUnit.skills,
       exercises,
     };
-  }).sort((a, b) => a.displayOrder - b.displayOrder);
+  });
 
   const draft: CatalogSnapshot = {
     schemaVersion: authoringTarget.schemaVersion,
@@ -97,5 +91,10 @@ export function materializeCatalogReleaseSnapshot(
     exportedAt: authoringTarget.exportedAt,
     units: materializedUnits,
   };
-  return { ...draft, catalogHash: hashCatalog(draft) };
+  // Production persists and re-exports this data through catalog-sql.ts and
+  // PRODUCTION_EXPORT_QUERY; the materialized snapshot's canonical shape
+  // (defaulted fields, nested ordering) must match that round trip exactly,
+  // or its hash will never agree with a real post-publish export.
+  const normalized = normalizeCatalogForProductionExportShape(draft);
+  return { ...normalized, catalogHash: hashCatalog(normalized) };
 }
