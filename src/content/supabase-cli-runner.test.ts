@@ -34,4 +34,41 @@ describe("Supabase CLI linked project discovery", () => {
       }),
     })).resolves.toContain("20260717111721_catalog_release.sql");
   });
+
+  it("preserves a plain ASCII round trip through the real child process path", async () => {
+    const script = "process.stdout.write('hello-world');";
+
+    const output = await runSupabase(["-e", script], { command: process.execPath });
+
+    expect(output).toBe("hello-world");
+  });
+
+  it("preserves a CJK character whose UTF-8 bytes are split across stdout chunks", async () => {
+    // 還 (U+9084) is UTF-8 bytes E9 82 84. Splitting the write after the first
+    // byte forces Node to deliver it across two separate 'data' events, which
+    // is exactly what happens over a real OS pipe / child process stdout.
+    const script = [
+      "const part1 = Buffer.concat([Buffer.from('prefix-', 'utf8'), Buffer.from([0xE9])]);",
+      "const part2 = Buffer.concat([Buffer.from([0x82, 0x84]), Buffer.from('-suffix', 'utf8')]);",
+      "process.stdout.write(part1, () => { setTimeout(() => { process.stdout.write(part2); }, 20); });",
+    ].join("\n");
+
+    const output = await runSupabase(["-e", script], { command: process.execPath });
+
+    expect(output).toBe("prefix-還-suffix");
+    expect(output).not.toContain("�");
+  });
+
+  it("preserves a CJK character whose UTF-8 bytes are split across stderr chunks", async () => {
+    const script = [
+      "const part1 = Buffer.concat([Buffer.from('prefix-', 'utf8'), Buffer.from([0xE9])]);",
+      "const part2 = Buffer.concat([Buffer.from([0x82, 0x84]), Buffer.from('-suffix', 'utf8')]);",
+      "process.stderr.write(part1, () => { setTimeout(() => { process.stderr.write(part2); }, 20); });",
+    ].join("\n");
+
+    const output = await runSupabase(["-e", script], { command: process.execPath });
+
+    expect(output).toBe("prefix-還-suffix");
+    expect(output).not.toContain("�");
+  });
 });
