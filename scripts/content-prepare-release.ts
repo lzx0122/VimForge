@@ -91,7 +91,10 @@ export function prepareRelease(options: PrepareReleaseOptions): PrepareReleaseRe
     targetPath: targetRelativePath,
     baseRevision: base.catalogRevision,
     targetRevision: plan.targetRevision,
-    targetHash: target.catalogHash,
+    // The plan's hash describes the materialized post-release snapshot, not
+    // the pre-release authoring file's own hash — those differ once the
+    // revision advances, so the manifest must record the former.
+    targetHash: plan.targetHash,
     migrationPath: migrationRelativePath,
     migrationHash: hashMigration(migrationSql),
     counts: {

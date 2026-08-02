@@ -4,6 +4,7 @@ import { join, relative, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { hashCatalog, parseCatalogSnapshot } from "../src/content/catalog-contract";
+import { materializeCatalogReleaseSnapshot } from "../src/content/catalog-release-materializer";
 import { prepareRelease } from "./content-prepare-release";
 
 const base = parseCatalogSnapshot(JSON.parse(readFileSync("content/catalog.json", "utf8")) as unknown);
@@ -47,6 +48,11 @@ describe("content release preparation", () => {
     expect(manifest.targetPath).not.toBe("content/catalog.json");
     expect(manifest.migrationPath).toBe(result.migrationPath);
     expect(manifest.counts).toEqual(expect.objectContaining({ changed: 1 }));
+    // The manifest hash must describe the materialized post-release snapshot,
+    // not the pre-release authoring file's own hash.
+    const hashedTarget = { ...target, catalogHash: hashCatalog(target) };
+    expect(manifest.targetHash).toBe(hashCatalog(materializeCatalogReleaseSnapshot(base, hashedTarget)));
+    expect(manifest.targetHash).not.toBe(hashedTarget.catalogHash);
   });
 
   it("requires explicit confirmation for a large catalog change", () => {
@@ -55,13 +61,17 @@ describe("content release preparation", () => {
     const targetPath = join(directory, "catalog-large.json");
     const migrationDirectory = join(directory, "migrations");
     const manifestPath = join(directory, "release-manifest.json");
+    const totalExerciseCount = base.units.reduce((count, unit) => count + unit.exercises.length, 0);
+    // Comfortably exceed the diff tool's >25%-affected large-change threshold
+    // regardless of the base catalog's actual size.
+    const largeChangeCount = Math.floor(totalExerciseCount * 0.25) + 1;
     let changedCount = 0;
     const target = {
       ...base,
       units: base.units.map((unit) => ({
         ...unit,
         exercises: unit.exercises.map((exercise) => {
-          const shouldChange = changedCount < 30;
+          const shouldChange = changedCount < largeChangeCount;
           changedCount += 1;
           return shouldChange ? { ...exercise, title: `${exercise.title} (重新設計)` } : exercise;
         }),

@@ -3,6 +3,47 @@
 Use this checklist when changing `content/catalog.json`. The release is
 reviewed as a complete snapshot and is safe to stop before the publish step.
 
+## Terminology
+
+The release pipeline moves through four distinct snapshots plus one unrelated
+local artifact. Confusing these is the root cause of past release bugs —
+know which one you're looking at:
+
+1. **Current production canonical baseline** — `content/catalog.json`. Always
+   equal to the currently live production catalog (today: revision 2,
+   `content/catalog-v2.json`; guarded by `content/canonical-baseline.test.ts`).
+   Every release tool reads this file by default as its diff base.
+2. **Pre-release authoring snapshot** — the file you hand-edit or send to
+   ChatGPT (e.g. `content/catalog-modified.json`). By convention it keeps the
+   *same* `catalogRevision` as the baseline it was exported from; the tooling
+   advances the revision for you, it does not read a revision bump from this
+   file.
+3. **Materialized post-release snapshot** — not a file you write. Computed by
+   `materializeCatalogReleaseSnapshot(base, authoringTarget)`
+   (`src/content/catalog-release-materializer.ts`): the exact data production
+   will contain after the migration runs — `catalogRevision` advanced by one,
+   changed-exercise versions incremented, and removed exercises retained as
+   unpublished rows (never deleted) rather than dropped. This is the only
+   correct source of the release's canonical hash.
+4. **Release manifest / migration evidence** — `content/release-manifest.json`
+   and the generated file under `supabase/migrations/`, produced by
+   `content:prepare-release`. `manifest.targetHash` must be the materialized
+   post-release snapshot's hash (step 3), never the pre-release authoring
+   snapshot's own hash (step 2) — those differ because `catalogRevision` and
+   exercise versions are part of the canonical hash, and the release always
+   advances both.
+5. **`supabase/seed.sql`** — a separate, smaller local development bootstrap
+   dataset. It is **not** read by `content:publish:production` and is **not**
+   reconciled to the canonical catalog by the normal release flow. Its
+   ongoing drift from the canonical baseline is known, deliberate, and
+   deferred (see `scripts/validate-seed.test.ts`).
+
+After a publish succeeds and the post-publish export verification passes
+(the final checklist item below), advance step 1 — overwrite
+`content/catalog.json` with the finalized snapshot and commit it alongside the
+migration and manifest. Skipping this step is exactly what causes the next
+release to diff against a stale baseline.
+
 ## Before editing
 
 - [ ] Confirm the intended production project ref with the deployment owner.
@@ -60,7 +101,10 @@ npm run content:prepare-release -- content/catalog-modified.json
       `supabase/migrations/`.
 - [ ] Review `content/release-manifest.json`: base revision, target revision,
       target hash, migration hash/path, and added/changed/unpublished/unchanged
-      counts match the diff.
+      counts match the diff. `targetHash` is the *materialized post-release*
+      snapshot's hash (revision advanced, exercise versions computed) — it will
+      not equal `content/catalog-modified.json`'s own `catalogHash`, and that
+      is expected, not a bug.
 - [ ] Confirm the migration contains no credentials and only upserts catalog
       data plus non-destructive unpublishes.
 - [ ] Commit the modified snapshot, migration, manifest, and documentation as
@@ -83,6 +127,10 @@ npm run content:publish:production -- content/release-manifest.json
 - [ ] Type `PUBLISH` at the separate final confirmation prompt.
 - [ ] Confirm the post-publish private release state has the manifest's target
       revision and catalog hash.
+- [ ] Overwrite `content/catalog.json` with the finalized (materialized)
+      snapshot and commit it in the same change as the migration and
+      manifest, so the next release diffs against the real production state
+      instead of a stale baseline.
 
 If any preflight, project-ref, pending-migration, or post-publish check fails,
 stop promotion. Preserve the snapshot, migration, and manifest as evidence and

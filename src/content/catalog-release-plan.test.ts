@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildCatalogReleasePlan } from "./catalog-release-plan";
+import { materializeCatalogReleaseSnapshot } from "./catalog-release-materializer";
 import { escapeSqlString, renderCatalogMigration } from "./catalog-sql";
 import { hashCatalog, type CatalogExercise, type CatalogSnapshot } from "./catalog-contract";
 
@@ -73,6 +74,46 @@ function snapshot(
 }
 
 describe("catalog release planning", () => {
+  it("hashes the materialized post-release snapshot, not the pre-release authoring snapshot", () => {
+    const base = snapshot([exercise("keep"), exercise("remove")]);
+    const next = snapshot([exercise("keep"), exercise("new")]);
+
+    const plan = buildCatalogReleasePlan(base, next);
+
+    expect(plan.targetHash).toBe(hashCatalog(materializeCatalogReleaseSnapshot(base, next)));
+    // catalogRevision is baked into the hash, and the target snapshot always
+    // advances the revision, so the pre-release authoring hash can never be
+    // the correct post-release hash.
+    expect(plan.targetHash).not.toBe(next.catalogHash);
+  });
+
+  it("regression: revision 1 base and authoring snapshot produce a revision-2 hash computed at revision 2, not reused from the revision-1 authoring file (the historical v1→v2 bug)", () => {
+    // This reproduces the exact shape of the historical failure: the
+    // repository previously stored the pre-release (revision 1) authoring
+    // hash as the release target, which could never equal the canonical
+    // hash of the actual revision-2 production data, and needed a separate
+    // forward hash-reconciliation migration to fix. If this test ever
+    // fails, that workaround would be needed again.
+    const base = snapshot([exercise("keep"), exercise("changed", "before")], 1);
+    const authoringTarget = snapshot([exercise("keep"), exercise("changed", "after")], 1);
+
+    const plan = buildCatalogReleasePlan(base, authoringTarget);
+    const materialized = materializeCatalogReleaseSnapshot(base, authoringTarget);
+
+    expect(base.catalogRevision).toBe(1);
+    expect(authoringTarget.catalogRevision).toBe(1);
+    expect(plan.targetRevision).toBe(2);
+    expect(materialized.catalogRevision).toBe(2);
+    // The published hash must be the canonical hash of the revision-2
+    // snapshot, independently recomputed here...
+    expect(plan.targetHash).toBe(hashCatalog(materialized));
+    // ...and it must not equal a hash computed while still labeled
+    // revision 1 (the authoring file's own hash, or any other revision-1
+    // canonicalization of the same exercise content).
+    expect(plan.targetHash).not.toBe(authoringTarget.catalogHash);
+    expect(plan.targetHash).not.toBe(hashCatalog({ ...materialized, catalogRevision: 1 }));
+  });
+
   it("preserves existing slugs, versions changed content once, adds rows, replaces affected children, and unpublishes removals", () => {
     const base = snapshot([exercise("keep"), exercise("change"), exercise("remove")]);
     const next = snapshot([exercise("keep"), { ...exercise("change", "after"), version: 99 }, exercise("new")]);

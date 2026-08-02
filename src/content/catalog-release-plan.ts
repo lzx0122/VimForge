@@ -2,6 +2,7 @@ import {
   diffCatalog,
   type CatalogDiff,
 } from "./catalog-diff";
+import { materializeCatalogReleaseSnapshot } from "./catalog-release-materializer";
 import {
   exerciseVersionChanged,
   type CatalogExercise,
@@ -139,13 +140,18 @@ export function buildCatalogReleasePlan(base: CatalogSnapshot, next: CatalogSnap
       });
     });
   }
+  // Snapshots are edited from the exported base revision. Publishing the
+  // next snapshot advances the private release-state revision exactly once.
+  // The target hash must describe the snapshot production will actually
+  // contain after the migration (advanced revision, computed exercise
+  // versions, retained unpublished rows) — never the pre-release authoring
+  // snapshot's own hash, which cannot equal the canonical post-release hash.
+  const materialized = materializeCatalogReleaseSnapshot(base, next);
   return {
     baseRevision: base.catalogRevision,
     baseHash: base.catalogHash,
-    // Snapshots are edited from the exported base revision. Publishing the
-    // next snapshot advances the private release-state revision exactly once.
-    targetRevision: base.catalogRevision + 1,
-    targetHash: next.catalogHash,
+    targetRevision: materialized.catalogRevision,
+    targetHash: materialized.catalogHash,
     units,
     skills: [...skillBySlug.values()].sort((a, b) => a.slug.localeCompare(b.slug)),
     unitSkills,

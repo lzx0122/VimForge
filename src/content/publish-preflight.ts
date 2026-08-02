@@ -68,7 +68,7 @@ function assertProject(input: PublishInput): void {
   }
 }
 
-function assertManifest(input: PublishInput, diff: CatalogDiff, migrationHash: string): void {
+function assertManifest(input: PublishInput, diff: CatalogDiff, migrationHash: string, plan: CatalogReleasePlan): void {
   const manifest = input.manifest;
   if (typeof manifest.targetPath !== "string" || manifest.targetPath.trim().length === 0) {
     throw new Error("Release manifest target snapshot path is missing.");
@@ -91,8 +91,13 @@ function assertManifest(input: PublishInput, diff: CatalogDiff, migrationHash: s
   if (manifest.targetRevision !== input.baseSnapshot.catalogRevision + 1) {
     throw new Error("Release manifest target revision is invalid.");
   }
-  if (manifest.targetHash !== input.targetSnapshot.catalogHash) {
-    throw new Error("Release manifest target hash does not match the target catalog.");
+  // The manifest hash must describe the snapshot production will actually
+  // contain after the migration (advanced revision, computed exercise
+  // versions, retained unpublished rows) — never the pre-release authoring
+  // snapshot's own hash, which is independently verified above but cannot
+  // equal the canonical post-release hash once the revision advances.
+  if (manifest.targetHash !== plan.targetHash) {
+    throw new Error("Release manifest target hash does not match the materialized post-release catalog.");
   }
   const expectedCounts: PublishManifestCounts = {
     added: diff.added.length,
@@ -132,9 +137,9 @@ export function preflightProductionPublish(input: PublishInput): PublishPrefligh
   if (diff.largeChange && !(input.confirmLargeChange ?? input.largeChangeConfirmed)) {
     throw new Error("Catalog change exceeds the 25% threshold; explicit confirmation is required.");
   }
-  assertManifest(input, diff, migrationHash);
-  assertPendingMigrations(input);
   const plan = buildCatalogReleasePlan(input.baseSnapshot, input.targetSnapshot);
+  assertManifest(input, diff, migrationHash, plan);
+  assertPendingMigrations(input);
   return {
     diff,
     plan,

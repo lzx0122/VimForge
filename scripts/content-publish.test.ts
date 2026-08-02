@@ -4,9 +4,14 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 import { hashCatalog, parseCatalogSnapshot } from "../src/content/catalog-contract";
+import { materializeCatalogReleaseSnapshot } from "../src/content/catalog-release-materializer";
 import { pendingFromDryRun, publishProduction, type PublishProductionInput } from "./content-publish-production";
 
 const base = parseCatalogSnapshot(JSON.parse(readFileSync("content/catalog.json", "utf8")) as unknown);
+// The authoring target is unchanged from base in this fixture; the true
+// post-release hash still differs from base's own hash because the revision
+// advances.
+const materializedTargetHash = hashCatalog(materializeCatalogReleaseSnapshot(base, base));
 const migrationSql = "begin;\ncommit;\n";
 const migrationPath = "supabase/migrations/20260717000000_catalog_release.sql";
 const targetPath = "content/catalog.json";
@@ -25,7 +30,7 @@ function input(runSupabase: PublishProductionInput["runSupabase"]): PublishProdu
       targetPath,
       baseRevision: base.catalogRevision,
       targetRevision: base.catalogRevision + 1,
-      targetHash: hashCatalog(base),
+      targetHash: materializedTargetHash,
       migrationPath,
       migrationHash: `sha256:${createHash("sha256").update(migrationSql).digest("hex")}`,
       counts: { added: 0, changed: 0, unpublished: 0, unchanged: base.units.reduce((count, unit) => count + unit.exercises.length, 0) },
@@ -38,7 +43,7 @@ function input(runSupabase: PublishProductionInput["runSupabase"]): PublishProdu
 describe("production publisher", () => {
   it("pushes only after preflight and verifies the resulting release state", async () => {
     const run = vi.fn(async (args: readonly string[]) => args.includes("db") && args.includes("query")
-      ? JSON.stringify({ release_state: { revision: base.catalogRevision + 1, catalog_hash: hashCatalog(base) } })
+      ? JSON.stringify({ release_state: { revision: base.catalogRevision + 1, catalog_hash: materializedTargetHash } })
       : "");
     const result = await publishProduction(input(run));
     expect(result.success).toBe(true);
@@ -57,7 +62,7 @@ describe("production publisher", () => {
 
   it("prints counts and requires a separate final confirmation before db push", async () => {
     const run = vi.fn(async (args: readonly string[]) => args.includes("query")
-      ? JSON.stringify({ release_state: { revision: base.catalogRevision + 1, catalog_hash: hashCatalog(base) } })
+      ? JSON.stringify({ release_state: { revision: base.catalogRevision + 1, catalog_hash: materializedTargetHash } })
       : "");
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
     try {
@@ -71,7 +76,7 @@ describe("production publisher", () => {
 
   it("asks for project-ref confirmation and then a distinct final confirmation", async () => {
     const run = vi.fn(async (args: readonly string[]) => args.includes("query")
-      ? JSON.stringify({ release_state: { revision: base.catalogRevision + 1, catalog_hash: hashCatalog(base) } })
+      ? JSON.stringify({ release_state: { revision: base.catalogRevision + 1, catalog_hash: materializedTargetHash } })
       : "");
     const prompt = vi.fn(async (question: string) => question.includes("PUBLISH") ? "PUBLISH" : "prod-ref");
     const result = await publishProduction({
@@ -91,7 +96,7 @@ describe("production publisher", () => {
     expect(pendingFromDryRun(dryRunOutput)).toEqual([migrationPath.split("/").pop()]);
     const run = vi.fn(async (args: readonly string[]) => {
       if (args.includes("--dry-run")) return dryRunOutput;
-      if (args.includes("query")) return JSON.stringify({ release_state: { revision: base.catalogRevision + 1, catalog_hash: hashCatalog(base) } });
+      if (args.includes("query")) return JSON.stringify({ release_state: { revision: base.catalogRevision + 1, catalog_hash: materializedTargetHash } });
       return "";
     });
 
@@ -101,7 +106,7 @@ describe("production publisher", () => {
 
   it("verifies release state when db query returns a rows envelope", async () => {
     const run = vi.fn(async (args: readonly string[]) => args.includes("query")
-      ? JSON.stringify({ rows: [{ release_state: { revision: base.catalogRevision + 1, catalog_hash: hashCatalog(base) } }] })
+      ? JSON.stringify({ rows: [{ release_state: { revision: base.catalogRevision + 1, catalog_hash: materializedTargetHash } }] })
       : "");
 
     await expect(publishProduction(input(run))).resolves.toMatchObject({ success: true });

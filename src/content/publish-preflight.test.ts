@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { hashCatalog, parseCatalogSnapshot, type CatalogSnapshot } from "./catalog-contract";
+import { materializeCatalogReleaseSnapshot } from "./catalog-release-materializer";
 import { preflightProductionPublish, type PublishInput } from "./publish-preflight";
 
 const base = parseCatalogSnapshot(JSON.parse(readFileSync("content/catalog.json", "utf8")) as unknown);
@@ -27,7 +28,7 @@ function input(overrides: Partial<PublishInput> = {}): PublishInput {
       targetPath: "content/catalog.json",
       baseRevision: base.catalogRevision,
       targetRevision: base.catalogRevision + 1,
-      targetHash: hashCatalog(target),
+      targetHash: hashCatalog(materializeCatalogReleaseSnapshot(base, target)),
       migrationPath: "supabase/migrations/20260717000000_catalog_release.sql",
       migrationHash: `sha256:${createHash("sha256").update(migrationSql).digest("hex")}`,
       counts: { added: 0, changed: 0, unpublished: 0, unchanged: base.units.reduce((count, unit) => count + unit.exercises.length, 0) },
@@ -38,6 +39,18 @@ function input(overrides: Partial<PublishInput> = {}): PublishInput {
 }
 
 describe("production publish preflight", () => {
+  it("accepts a manifest hash that matches the materialized post-release snapshot", () => {
+    expect(() => preflightProductionPublish(input())).not.toThrow();
+  });
+
+  it("rejects a manifest that reuses the pre-release authoring snapshot's own hash", () => {
+    const target: CatalogSnapshot = { ...base, exportedAt: "2026-07-17T00:00:00.000Z" };
+    const staleManifestInput = input({
+      manifest: { ...input().manifest, targetHash: hashCatalog(target) },
+    });
+    expect(() => preflightProductionPublish(staleManifestInput)).toThrow(/target hash/i);
+  });
+
   it("rejects a linked project mismatch", () => {
     expect(() => preflightProductionPublish(input({ linkedProjectRef: "other-ref" }))).toThrow(/project/i);
   });

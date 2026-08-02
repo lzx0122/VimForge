@@ -177,6 +177,7 @@ describe("production catalog export", () => {
 
   it("unwraps the rows envelope returned by supabase db query", async () => {
     const base = JSON.parse(readFileSync(resolve(process.cwd(), "content/catalog.json"), "utf8")) as CatalogSnapshot;
+    const expectedExerciseCount = base.units.reduce((count, unit) => count + unit.exercises.length, 0);
     const run = vi.fn(async (args: readonly string[]) => args.includes("--help")
       ? "Usage: supabase db query [flags]\n  --linked\n  --output string"
       : JSON.stringify({
@@ -198,7 +199,7 @@ describe("production catalog export", () => {
       expectedHash: base.catalogHash,
       runSupabase: run,
       outputDirectory: mkdtempSync(resolve(tmpdir(), "vimforge-export-")),
-    })).resolves.toMatchObject({ exerciseCount: 100 });
+    })).resolves.toMatchObject({ exerciseCount: expectedExerciseCount });
   });
 
   it("inspects canonical production data while strict export rejects a stale release hash", async () => {
