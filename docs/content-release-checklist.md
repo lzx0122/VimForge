@@ -10,9 +10,14 @@ local artifact. Confusing these is the root cause of past release bugs —
 know which one you're looking at:
 
 1. **Current production canonical baseline** — `content/catalog.json`. Always
-   equal to the currently live production catalog (today: revision 2,
-   `content/catalog-v2.json`; guarded by `content/canonical-baseline.test.ts`).
-   Every release tool reads this file by default as its diff base.
+   equal to the currently live production catalog (today: revision 3,
+   `content/catalog-v3-production.json`; guarded by
+   `content/canonical-baseline.test.ts`). Every release tool reads this file
+   by default as its diff base. Do not confuse this with `content/catalog-v3.json`
+   (the Golden content-generation artifact) or `content/catalog-v3-authoring.json`
+   (the pre-release authoring snapshot rebased onto the prior baseline) — only
+   `content/catalog-v3-production.json` is the immutable, independently
+   verified record of what production actually contains at this revision.
 2. **Pre-release authoring snapshot** — the file you hand-edit or send to
    ChatGPT (e.g. `content/catalog-modified.json`). By convention it keeps the
    *same* `catalogRevision` as the baseline it was exported from; the tooling

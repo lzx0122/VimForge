@@ -29,7 +29,7 @@ npm run test:e2e
 題庫另可執行：
 
 ```bash
-npm run content:validate -- content/catalog-v2.json
+npm run content:validate -- content/catalog.json
 ```
 
 ## 文件
