@@ -1,15 +1,16 @@
 {
   "schemaVersion": 1,
-  "targetPath": "content/catalog-v2.json",
-  "baseRevision": 1,
-  "targetRevision": 2,
-  "targetHash": "sha256:a1ea1b9f32fc9b3ed6ef25b8989c7f5c465ad10df10df6af62e2cb2d4aa96467",
-  "migrationPath": "supabase/migrations/20260717111721_catalog_release.sql",
-  "migrationHash": "sha256:89b50df41180df239235e0418c0c73f4d1ae3a25e88dcece0390e2c99587a4c5",
+  "targetPath": "content/catalog-v3-authoring.json",
+  "baseRevision": 2,
+  "targetRevision": 3,
+  "targetHash": "sha256:755e919d2570013a22158c265df53b1b30768a0fc739b739663124efd0fa6adc",
+  "migrationPath": "supabase/migrations/20260802085514_catalog_release.sql",
+  "migrationHash": "sha256:4d0a291b624348336ba1b1af3861fc15be31bf878fd34b77e7945e2866fffde8",
+  "materializedSnapshotPath": "content/release-target.json",
   "counts": {
-    "added": 144,
-    "changed": 100,
+    "added": 0,
+    "changed": 144,
     "unpublished": 0,
-    "unchanged": 0
+    "unchanged": 100
   }
 }
