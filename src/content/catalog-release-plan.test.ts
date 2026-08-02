@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildCatalogReleasePlan } from "./catalog-release-plan";
+import { materializeCatalogReleaseSnapshot } from "./catalog-release-materializer";
 import { escapeSqlString, renderCatalogMigration } from "./catalog-sql";
 import { hashCatalog, type CatalogExercise, type CatalogSnapshot } from "./catalog-contract";
 
@@ -73,6 +74,46 @@ function snapshot(
 }
 
 describe("catalog release planning", () => {
+  it("hashes the materialized post-release snapshot, not the pre-release authoring snapshot", () => {
+    const base = snapshot([exercise("keep"), exercise("remove")]);
+    const next = snapshot([exercise("keep"), exercise("new")]);
+
+    const plan = buildCatalogReleasePlan(base, next);
+
+    expect(plan.targetHash).toBe(hashCatalog(materializeCatalogReleaseSnapshot(base, next)));
+    // catalogRevision is baked into the hash, and the target snapshot always
+    // advances the revision, so the pre-release authoring hash can never be
+    // the correct post-release hash.
+    expect(plan.targetHash).not.toBe(next.catalogHash);
+  });
+
+  it("regression: revision 1 base and authoring snapshot produce a revision-2 hash computed at revision 2, not reused from the revision-1 authoring file (the historical v1→v2 bug)", () => {
+    // This reproduces the exact shape of the historical failure: the
+    // repository previously stored the pre-release (revision 1) authoring
+    // hash as the release target, which could never equal the canonical
+    // hash of the actual revision-2 production data, and needed a separate
+    // forward hash-reconciliation migration to fix. If this test ever
+    // fails, that workaround would be needed again.
+    const base = snapshot([exercise("keep"), exercise("changed", "before")], 1);
+    const authoringTarget = snapshot([exercise("keep"), exercise("changed", "after")], 1);
+
+    const plan = buildCatalogReleasePlan(base, authoringTarget);
+    const materialized = materializeCatalogReleaseSnapshot(base, authoringTarget);
+
+    expect(base.catalogRevision).toBe(1);
+    expect(authoringTarget.catalogRevision).toBe(1);
+    expect(plan.targetRevision).toBe(2);
+    expect(materialized.catalogRevision).toBe(2);
+    // The published hash must be the canonical hash of the revision-2
+    // snapshot, independently recomputed here...
+    expect(plan.targetHash).toBe(hashCatalog(materialized));
+    // ...and it must not equal a hash computed while still labeled
+    // revision 1 (the authoring file's own hash, or any other revision-1
+    // canonicalization of the same exercise content).
+    expect(plan.targetHash).not.toBe(authoringTarget.catalogHash);
+    expect(plan.targetHash).not.toBe(hashCatalog({ ...materialized, catalogRevision: 1 }));
+  });
+
   it("preserves existing slugs, versions changed content once, adds rows, replaces affected children, and unpublishes removals", () => {
     const base = snapshot([exercise("keep"), exercise("change"), exercise("remove")]);
     const next = snapshot([exercise("keep"), { ...exercise("change", "after"), version: 99 }, exercise("new")]);
@@ -175,6 +216,42 @@ describe("catalog release planning", () => {
     expect(sql).toContain("update public.exercises set is_published = false");
     expect(sql).not.toContain("insert into public.exercises");
     expect(sql).not.toContain("delete from public.exercise_skills");
+  });
+
+  it("P1-1b regression: a solution displayOrder-only change persists without advancing the exercise version", () => {
+    const solutionAt = (displayOrder: number) => ({
+      ...exercise("reordered-solution"),
+      solutions: [{
+        sequence: "i",
+        normalizedActions: [{ type: "vim_command" as const, command: "i" }],
+        keystrokeCount: 1,
+        recommended: true,
+        explanation: "Type Bob's target.",
+        displayOrder,
+      }],
+    });
+    const base = snapshot([solutionAt(0)]);
+    const next = snapshot([solutionAt(5)]);
+
+    const plan = buildCatalogReleasePlan(base, next);
+
+    expect(plan.changed[0]).toMatchObject({
+      slug: "reordered-solution",
+      version: 1,
+      versionChanged: false,
+      // Content didn't change by the version-owned definition (solution
+      // displayOrder is deliberately excluded from version semantics), but
+      // the children DID change and must still be persisted.
+      replaceChildren: true,
+    });
+
+    const sql = renderCatalogMigration(plan);
+    expect(sql).toMatch(/insert into public\.exercise_solutions[\s\S]*,\s*5\s*(from|,)/i);
+
+    const materialized = materializeCatalogReleaseSnapshot(base, next);
+    const materializedExercise = materialized.units.flatMap((unit) => unit.exercises).find((item) => item.slug === "reordered-solution");
+    expect(materializedExercise?.version).toBe(1);
+    expect(materializedExercise?.solutions[0]).toMatchObject({ displayOrder: 5 });
   });
 
   it("detects a unit move, updates unit_id, and replaces stale child links", () => {

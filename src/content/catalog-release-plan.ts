@@ -1,7 +1,9 @@
+import { canonicalizeValue } from "./catalog-canonicalizer";
 import {
   diffCatalog,
   type CatalogDiff,
 } from "./catalog-diff";
+import { materializeCatalogReleaseSnapshot } from "./catalog-release-materializer";
 import {
   exerciseVersionChanged,
   type CatalogExercise,
@@ -91,6 +93,20 @@ function releaseExercise(
   };
 }
 
+/**
+ * True when an exercise's skills, solutions, or hints differ at all — even a
+ * displayOrder-only reorder — regardless of whether that difference is
+ * version-owned. exerciseVersionChanged() deliberately excludes solution
+ * displayOrder from version semantics, so a pure displayOrder change can be
+ * childrenChanged (must persist) without being versionChanged (must not
+ * bump the exercise version).
+ */
+function childrenChanged(before: CatalogExercise, after: CatalogExercise): boolean {
+  return canonicalizeValue(before.skills) !== canonicalizeValue(after.skills)
+    || canonicalizeValue(before.solutions) !== canonicalizeValue(after.solutions)
+    || canonicalizeValue(before.hints) !== canonicalizeValue(after.hints);
+}
+
 function releaseExercises(diff: CatalogDiff, base: CatalogSnapshot, next: CatalogSnapshot) {
   const added = diff.added.map((entry) => releaseExercise("add", next, entry.exercise, 1, true, false, false));
   const changed = diff.changed.map((entry) => releaseExercise(
@@ -98,7 +114,7 @@ function releaseExercises(diff: CatalogDiff, base: CatalogSnapshot, next: Catalo
     next,
     entry.exercise,
     exerciseVersionChanged(entry.before, entry.after) ? entry.before.version + 1 : entry.before.version,
-    exerciseVersionChanged(entry.before, entry.after) || entry.unitChanged,
+    exerciseVersionChanged(entry.before, entry.after) || entry.unitChanged || childrenChanged(entry.before, entry.after),
     exerciseVersionChanged(entry.before, entry.after),
     entry.unitChanged,
   ));
@@ -139,13 +155,18 @@ export function buildCatalogReleasePlan(base: CatalogSnapshot, next: CatalogSnap
       });
     });
   }
+  // Snapshots are edited from the exported base revision. Publishing the
+  // next snapshot advances the private release-state revision exactly once.
+  // The target hash must describe the snapshot production will actually
+  // contain after the migration (advanced revision, computed exercise
+  // versions, retained unpublished rows) — never the pre-release authoring
+  // snapshot's own hash, which cannot equal the canonical post-release hash.
+  const materialized = materializeCatalogReleaseSnapshot(base, next);
   return {
     baseRevision: base.catalogRevision,
     baseHash: base.catalogHash,
-    // Snapshots are edited from the exported base revision. Publishing the
-    // next snapshot advances the private release-state revision exactly once.
-    targetRevision: base.catalogRevision + 1,
-    targetHash: next.catalogHash,
+    targetRevision: materialized.catalogRevision,
+    targetHash: materialized.catalogHash,
     units,
     skills: [...skillBySlug.values()].sort((a, b) => a.slug.localeCompare(b.slug)),
     unitSkills,

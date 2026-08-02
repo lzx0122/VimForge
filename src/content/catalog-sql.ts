@@ -109,7 +109,7 @@ export function renderCatalogMigration(plan: CatalogReleasePlan): string {
   lines.push(renderUnitSkillReconciliation(plan));
   for (const exercise of plan.added) lines.push(renderExercise(exercise));
   for (const exercise of plan.changed) {
-    if (!exercise.versionChanged && !exercise.unitChanged) {
+    if (!exercise.replaceChildren) {
       lines.push(renderMetadataUpdate(exercise));
     } else {
       lines.push(renderExercise(exercise));

@@ -184,9 +184,13 @@ only command that can change production is the separately guarded publish step.
    ```
 
    Review the generated SQL and `content/release-manifest.json`. Confirm the
-   manifest counts, target hash, base revision, and migration path are exactly
-   the values shown by the diff. Keep the modified snapshot and migration in
-   the same change for review.
+   manifest counts, base revision, and migration path are exactly the values
+   shown by the diff. The manifest's target hash is the *materialized
+   post-release* snapshot's hash — production revision advanced by one,
+   exercise versions computed, removed exercises retained as unpublished
+   rows — not `content/catalog-modified.json`'s own hash; see
+   `docs/content-release-checklist.md` for the full terminology. Keep the
+   modified snapshot and migration in the same change for review.
 
 5. Before publishing, verify the production project twice. The linked project
    must be the intended production ref, and the command requires typing that
